@@ -3,8 +3,10 @@ import {
   Box, Typography, Paper, Button, TextField, Grid, IconButton,
   Table, TableBody, TableCell, TableContainer, TableHead, TableRow,
   Chip, Alert, CircularProgress, FormControl, InputLabel, Select, MenuItem, Divider,
-  Dialog, DialogTitle, DialogContent, DialogContentText, DialogActions
+  Dialog, DialogTitle, DialogContent, DialogContentText, DialogActions,
+  Accordion, AccordionSummary, AccordionDetails
 } from '@mui/material'
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
 import DeleteIcon from '@mui/icons-material/Delete'
 import UploadFileIcon from '@mui/icons-material/UploadFile'
 import RefreshIcon from '@mui/icons-material/Refresh'
@@ -533,14 +535,20 @@ export default function TemplatesPage() {
             {selectedTemplate ? (
               <Box>
                 {selectedTemplate.keywords && selectedTemplate.keywords.length > 0 && (
-                  <Box sx={{ mb: 2 }}>
-                    <Typography variant="subtitle2" gutterBottom>Keywords:</Typography>
-                    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-                      {selectedTemplate.keywords.map((kw) => (
-                        <Chip key={kw.id} label={kw.keyword} size="small" />
-                      ))}
-                    </Box>
-                  </Box>
+                  <Accordion sx={{ mb: 2 }} defaultExpanded={false}>
+                    <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                      <Typography variant="subtitle2">
+                        Keywords ({selectedTemplate.keywords.length})
+                      </Typography>
+                    </AccordionSummary>
+                    <AccordionDetails>
+                      <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+                        {selectedTemplate.keywords.map((kw) => (
+                          <Chip key={kw.id} label={kw.keyword} size="small" />
+                        ))}
+                      </Box>
+                    </AccordionDetails>
+                  </Accordion>
                 )}
                 
                 <TableContainer sx={{ maxHeight: 400 }}>
