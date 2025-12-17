@@ -1,0 +1,121 @@
+# Cover Making Application
+
+A full-stack web application for managing custom fabric covers for musical instruments, calculating prices, and generating marketplace listing templates.
+
+## Overview
+
+This application helps manage:
+- Manufacturers, series, and equipment models with dimensions
+- Material types with cost, weight, and labor time properties
+- Customers and orders with line items
+- Pricing calculations (area, material cost, labor, options, shipping)
+- Amazon template import and management
+
+## Technology Stack
+
+### Backend
+- **Framework**: Python 3.11 + FastAPI
+- **Database**: SQLite with SQLAlchemy ORM
+- **Migrations**: Alembic
+- **Validation**: Pydantic
+- **Excel Parsing**: Pandas + OpenPyXL
+
+### Frontend
+- **Framework**: React 18 with TypeScript
+- **UI Library**: Material UI (MUI)
+- **HTTP Client**: Axios
+- **Build Tool**: Vite
+- **Routing**: React Router
+
+## Project Structure
+
+```
+/
+├── app/                    # Backend Python application
+│   ├── api/               # API route handlers
+│   ├── models/            # SQLAlchemy database models
+│   ├── schemas/           # Pydantic request/response schemas
+│   ├── services/          # Business logic services
+│   ├── database.py        # Database configuration
+│   ├── main.py           # FastAPI application entry
+│   └── seed_data.py      # Database seeding script
+├── client/                # React frontend application
+│   ├── src/
+│   │   ├── components/   # Reusable UI components
+│   │   ├── pages/        # Page components
+│   │   ├── services/     # API client functions
+│   │   └── types/        # TypeScript type definitions
+│   └── package.json
+└── cover_app.db          # SQLite database file
+```
+
+## API Endpoints
+
+- `GET /health` - Health check
+- `GET/POST /manufacturers` - Manage manufacturers
+- `GET/POST /series` - Manage product series
+- `GET/POST /equipment-types` - Manage equipment types
+- `GET/POST /models` - Manage equipment models
+- `GET/POST /materials` - Manage materials
+- `GET/POST /suppliers` - Manage suppliers
+- `GET/POST /customers` - Manage customers
+- `GET/POST /orders` - Manage orders
+- `POST /pricing/calculate` - Calculate cover pricing
+- `POST /templates/import` - Import Amazon template
+- `GET /templates` - List imported templates
+- `GET /enums/*` - Get enum values
+
+## Key Features
+
+1. **Pricing Calculator**: Calculates cover costs based on:
+   - Surface area: 2*(W×D + W×H + D×H) with 5% waste
+   - Material cost per square inch
+   - Labor cost (material labor time × hourly rate)
+   - Option surcharges (handle zipper, two-in-one pocket, music rest)
+   - Shipping rates by carrier and zone
+
+2. **Amazon Template Import**: Parses Excel files to extract:
+   - Data Definitions (field names, requirements)
+   - Valid Values for each field
+   - Item type keywords
+
+## Development
+
+The application runs on:
+- Backend API: http://localhost:8000
+- Frontend: http://localhost:5000 (proxied to backend)
+
+## Database
+
+SQLite database with the following main tables:
+- manufacturers, series, equipment_types, models
+- materials, material_colour_surcharges
+- suppliers, supplier_materials
+- customers, orders, order_lines
+- pricing_options, shipping_rates
+- amazon_product_types, product_type_fields, product_type_field_values
+
+## Database Migrations
+
+The project uses Alembic for database migrations:
+
+```bash
+# Generate a new migration after model changes
+alembic revision --autogenerate -m "description"
+
+# Apply all pending migrations
+alembic upgrade head
+
+# Rollback one migration
+alembic downgrade -1
+```
+
+## Seeding Data
+
+To populate the database with initial data:
+
+```bash
+python -c "from app.seed_data import seed_database; seed_database()"
+```
+
+This adds default equipment types, materials, pricing options, shipping rates, and sample manufacturers/series/models.
