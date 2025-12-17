@@ -163,6 +163,7 @@ export default function ModelsPage() {
           <TableHead>
             <TableRow>
               <TableCell>Name</TableCell>
+              <TableCell>Parent SKU</TableCell>
               <TableCell>Series</TableCell>
               <TableCell>Dimensions (W x D x H)</TableCell>
               <TableCell>Handle</TableCell>
@@ -174,6 +175,7 @@ export default function ModelsPage() {
             {models.map((model) => (
               <TableRow key={model.id}>
                 <TableCell>{model.name}</TableCell>
+                <TableCell sx={{ fontFamily: 'monospace', fontSize: '0.85rem' }}>{model.parent_sku || '-'}</TableCell>
                 <TableCell>{getSeriesWithManufacturer(model.series_id)}</TableCell>
                 <TableCell>{`${model.width}" x ${model.depth}" x ${model.height}"`}</TableCell>
                 <TableCell>{model.handle_location}</TableCell>

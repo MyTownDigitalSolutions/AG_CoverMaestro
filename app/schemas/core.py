@@ -60,6 +60,7 @@ class ModelCreate(ModelBase):
 
 class ModelResponse(ModelBase):
     id: int
+    parent_sku: Optional[str] = None
     
     class Config:
         from_attributes = True

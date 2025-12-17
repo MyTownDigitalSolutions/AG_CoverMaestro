@@ -50,6 +50,7 @@ class Model(Base):
     handle_location = Column(Enum(HandleLocation), default=HandleLocation.NO_AMP_HANDLE)
     angle_type = Column(Enum(AngleType), default=AngleType.TOP_ANGLE)
     image_url = Column(String, nullable=True)
+    parent_sku = Column(String(40), nullable=True)
     
     series = relationship("Series", back_populates="models")
     equipment_type = relationship("EquipmentType", back_populates="models")

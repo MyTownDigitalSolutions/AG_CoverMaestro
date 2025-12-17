@@ -29,6 +29,7 @@ export interface Model {
   handle_location: string
   angle_type: string
   image_url?: string
+  parent_sku?: string
 }
 
 export interface Material {

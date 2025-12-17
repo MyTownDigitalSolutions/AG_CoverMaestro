@@ -77,7 +77,15 @@ This application helps manage:
 2. **Amazon Template Import**: Parses Excel files to extract:
    - Data Definitions (field names, requirements)
    - Valid Values for each field
+   - Default Values (custom defaults with placeholder support)
    - Item type keywords
+
+3. **Parent SKU Generation**: Auto-generates 40-character parent/base SKUs when models are saved:
+   - Format: `MFGR(8)-SERIES(8)-MODEL(13)V1 + zeros`
+   - Multi-word names are concatenated and camelCased
+   - Short names are padded with X's
+   - Example: `FENDERXX-TONEMAST-SUPERREVERBXXV10000000`
+   - Endpoint `POST /models/regenerate-skus` to backfill existing models
 
 ## Development
 
