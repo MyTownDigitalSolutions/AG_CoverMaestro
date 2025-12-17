@@ -74,6 +74,12 @@ export const pricingApi = {
   listOptions: () => api.get<PricingOption[]>('/pricing/options').then(r => r.data),
 }
 
+export interface EquipmentTypeProductTypeLink {
+  id: number
+  equipment_type_id: number
+  product_type_id: number
+}
+
 export const templatesApi = {
   list: () => api.get<AmazonProductType[]>('/templates').then(r => r.data),
   get: (code: string) => api.get<AmazonProductType>(`/templates/${code}`).then(r => r.data),
@@ -84,6 +90,10 @@ export const templatesApi = {
     return api.post('/templates/import', formData).then(r => r.data)
   },
   delete: (code: string) => api.delete(`/templates/${code}`),
+  listEquipmentTypeLinks: () => api.get<EquipmentTypeProductTypeLink[]>('/templates/equipment-type-links').then(r => r.data),
+  createEquipmentTypeLink: (equipmentTypeId: number, productTypeId: number) => 
+    api.post<EquipmentTypeProductTypeLink>('/templates/equipment-type-links', { equipment_type_id: equipmentTypeId, product_type_id: productTypeId }).then(r => r.data),
+  deleteEquipmentTypeLink: (linkId: number) => api.delete(`/templates/equipment-type-links/${linkId}`),
 }
 
 export const enumsApi = {

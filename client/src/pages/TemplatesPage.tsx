@@ -10,8 +10,10 @@ import UploadFileIcon from '@mui/icons-material/UploadFile'
 import RefreshIcon from '@mui/icons-material/Refresh'
 import WarningIcon from '@mui/icons-material/Warning'
 import CheckCircleIcon from '@mui/icons-material/CheckCircle'
-import { templatesApi } from '../services/api'
-import type { AmazonProductType } from '../types'
+import LinkIcon from '@mui/icons-material/Link'
+import AddIcon from '@mui/icons-material/Add'
+import { templatesApi, equipmentTypesApi, type EquipmentTypeProductTypeLink } from '../services/api'
+import type { AmazonProductType, EquipmentType } from '../types'
 
 const normalizeText = (text: string): string => {
   return text
@@ -54,14 +56,31 @@ export default function TemplatesPage() {
   const [success, setSuccess] = useState<string | null>(null)
   const [pendingUpload, setPendingUpload] = useState<PendingUpload | null>(null)
   const [fileInputRef, setFileInputRef] = useState<HTMLInputElement | null>(null)
+  
+  const [equipmentTypes, setEquipmentTypes] = useState<EquipmentType[]>([])
+  const [equipmentTypeLinks, setEquipmentTypeLinks] = useState<EquipmentTypeProductTypeLink[]>([])
+  const [selectedEquipmentTypeId, setSelectedEquipmentTypeId] = useState<number | ''>('')
+  const [selectedProductTypeId, setSelectedProductTypeId] = useState<number | ''>('')
 
   const loadTemplates = async () => {
     const data = await templatesApi.list()
     setTemplates(data)
   }
+  
+  const loadEquipmentTypes = async () => {
+    const data = await equipmentTypesApi.list()
+    setEquipmentTypes(data)
+  }
+  
+  const loadLinks = async () => {
+    const data = await templatesApi.listEquipmentTypeLinks()
+    setEquipmentTypeLinks(data)
+  }
 
   useEffect(() => {
     loadTemplates()
+    loadEquipmentTypes()
+    loadLinks()
   }, [])
 
   const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>, isUpdate: boolean) => {
@@ -132,6 +151,44 @@ export default function TemplatesPage() {
     const template = await templatesApi.get(code)
     setSelectedTemplate(template)
   }
+  
+  const handleCreateLink = async () => {
+    if (selectedEquipmentTypeId === '' || selectedProductTypeId === '') {
+      setError('Please select both an Equipment Type and a Product Type')
+      return
+    }
+    
+    try {
+      await templatesApi.createEquipmentTypeLink(selectedEquipmentTypeId, selectedProductTypeId)
+      setSuccess('Equipment Type linked to Product Type successfully')
+      setSelectedEquipmentTypeId('')
+      setSelectedProductTypeId('')
+      loadLinks()
+    } catch (e: unknown) {
+      const err = e as { response?: { data?: { detail?: string } } }
+      setError(err.response?.data?.detail || 'Failed to create link')
+    }
+  }
+  
+  const handleDeleteLink = async (linkId: number) => {
+    try {
+      await templatesApi.deleteEquipmentTypeLink(linkId)
+      loadLinks()
+    } catch (e: unknown) {
+      const err = e as { response?: { data?: { detail?: string } } }
+      setError(err.response?.data?.detail || 'Failed to delete link')
+    }
+  }
+  
+  const getEquipmentTypeName = (id: number) => {
+    const et = equipmentTypes.find(e => e.id === id)
+    return et?.name || `ID: ${id}`
+  }
+  
+  const getProductTypeName = (id: number) => {
+    const pt = templates.find(t => t.id === id)
+    return pt?.code || `ID: ${id}`
+  }
 
   return (
     <Box>
@@ -201,6 +258,85 @@ export default function TemplatesPage() {
         {error && <Alert severity="error" sx={{ mt: 2 }}>{error}</Alert>}
         {success && <Alert severity="success" sx={{ mt: 2 }}>{success}</Alert>}
       </Paper>
+
+      {templates.length > 0 && equipmentTypes.length > 0 && (
+        <Paper sx={{ p: 3, mb: 3 }}>
+          <Typography variant="h6" gutterBottom sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <LinkIcon /> Link Equipment Types to Product Types
+          </Typography>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+            Associate your equipment types with Amazon Product Type templates. This determines which template fields are used when creating listings for each equipment type.
+          </Typography>
+          
+          <Grid container spacing={2} alignItems="center" sx={{ mb: 3 }}>
+            <Grid item xs={12} md={4}>
+              <FormControl fullWidth size="small">
+                <InputLabel>Equipment Type</InputLabel>
+                <Select
+                  value={selectedEquipmentTypeId}
+                  label="Equipment Type"
+                  onChange={(e) => setSelectedEquipmentTypeId(e.target.value as number)}
+                >
+                  {equipmentTypes.map((et) => (
+                    <MenuItem key={et.id} value={et.id}>{et.name}</MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            </Grid>
+            <Grid item xs={12} md={4}>
+              <FormControl fullWidth size="small">
+                <InputLabel>Product Type Template</InputLabel>
+                <Select
+                  value={selectedProductTypeId}
+                  label="Product Type Template"
+                  onChange={(e) => setSelectedProductTypeId(e.target.value as number)}
+                >
+                  {templates.map((t) => (
+                    <MenuItem key={t.id} value={t.id}>{t.code}</MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            </Grid>
+            <Grid item xs={12} md={4}>
+              <Button
+                variant="contained"
+                startIcon={<AddIcon />}
+                onClick={handleCreateLink}
+                disabled={selectedEquipmentTypeId === '' || selectedProductTypeId === ''}
+              >
+                Create Link
+              </Button>
+            </Grid>
+          </Grid>
+          
+          {equipmentTypeLinks.length > 0 && (
+            <TableContainer>
+              <Table size="small">
+                <TableHead>
+                  <TableRow>
+                    <TableCell>Equipment Type</TableCell>
+                    <TableCell>Product Type Template</TableCell>
+                    <TableCell>Actions</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {equipmentTypeLinks.map((link) => (
+                    <TableRow key={link.id}>
+                      <TableCell>{getEquipmentTypeName(link.equipment_type_id)}</TableCell>
+                      <TableCell>{getProductTypeName(link.product_type_id)}</TableCell>
+                      <TableCell>
+                        <IconButton size="small" onClick={() => handleDeleteLink(link.id)}>
+                          <DeleteIcon />
+                        </IconButton>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </TableContainer>
+          )}
+        </Paper>
+      )}
 
       <Dialog open={pendingUpload !== null} onClose={handleCancelUpload}>
         <DialogTitle sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
