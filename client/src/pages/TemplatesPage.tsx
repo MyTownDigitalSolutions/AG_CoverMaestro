@@ -4,7 +4,7 @@ import {
   Table, TableBody, TableCell, TableContainer, TableHead, TableRow,
   Chip, Alert, CircularProgress, FormControl, InputLabel, Select, MenuItem, Divider,
   Dialog, DialogTitle, DialogContent, DialogContentText, DialogActions,
-  Accordion, AccordionSummary, AccordionDetails
+  Accordion, AccordionSummary, AccordionDetails, Switch
 } from '@mui/material'
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
 import DeleteIcon from '@mui/icons-material/Delete'
@@ -571,12 +571,31 @@ export default function TemplatesPage() {
                         >
                           <TableCell>{field.field_name}</TableCell>
                           <TableCell>{field.attribute_group || '-'}</TableCell>
-                          <TableCell>
-                            {field.required ? (
-                              <Chip label="Required" size="small" color="error" />
-                            ) : (
-                              <Chip label="Optional" size="small" />
-                            )}
+                          <TableCell onClick={(e) => e.stopPropagation()}>
+                            <Switch
+                              size="small"
+                              checked={field.required}
+                              onChange={async (e) => {
+                                const newRequired = e.target.checked
+                                try {
+                                  const updated = await templatesApi.updateField(field.id, { required: newRequired })
+                                  const updatedField = { ...field, required: updated.required }
+                                  setSelectedTemplate({
+                                    ...selectedTemplate,
+                                    fields: selectedTemplate.fields.map(f => 
+                                      f.id === field.id ? updatedField : f
+                                    )
+                                  })
+                                  setTemplates(templates.map(t => 
+                                    t.id === selectedTemplate.id 
+                                      ? { ...t, fields: t.fields.map(f => f.id === field.id ? updatedField : f) }
+                                      : t
+                                  ))
+                                } catch (err) {
+                                  console.error('Failed to update required status', err)
+                                }
+                              }}
+                            />
                           </TableCell>
                           <TableCell>
                             {field.valid_values?.length > 0 

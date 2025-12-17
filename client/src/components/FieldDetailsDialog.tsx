@@ -7,8 +7,6 @@ import {
   Button,
   Box,
   Typography,
-  Switch,
-  FormControlLabel,
   TextField,
   Chip,
   Divider,
@@ -27,27 +25,11 @@ interface FieldDetailsDialogProps {
 }
 
 export default function FieldDetailsDialog({ field, onClose, onUpdate }: FieldDetailsDialogProps) {
-  const [required, setRequired] = useState(field.required)
   const [validValues, setValidValues] = useState(field.valid_values)
   const [newValue, setNewValue] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [hasChanges, setHasChanges] = useState(false)
-
-  const handleRequiredChange = async (checked: boolean) => {
-    setSaving(true)
-    setError(null)
-    try {
-      const updated = await templatesApi.updateField(field.id, { required: checked })
-      setRequired(checked)
-      setHasChanges(true)
-      onUpdate({ ...field, ...updated, valid_values: validValues })
-    } catch (err) {
-      setError('Failed to update required status')
-    } finally {
-      setSaving(false)
-    }
-  }
 
   const handleAddValue = async () => {
     if (!newValue.trim()) return
@@ -60,7 +42,7 @@ export default function FieldDetailsDialog({ field, onClose, onUpdate }: FieldDe
       setValidValues(newValidValues)
       setNewValue('')
       setHasChanges(true)
-      onUpdate({ ...field, required, valid_values: newValidValues })
+      onUpdate({ ...field, valid_values: newValidValues })
     } catch (err: any) {
       if (err.response?.data?.detail === 'Value already exists') {
         setError('This value already exists')
@@ -80,7 +62,7 @@ export default function FieldDetailsDialog({ field, onClose, onUpdate }: FieldDe
       const newValidValues = validValues.filter(v => v.id !== valueId)
       setValidValues(newValidValues)
       setHasChanges(true)
-      onUpdate({ ...field, required, valid_values: newValidValues })
+      onUpdate({ ...field, valid_values: newValidValues })
     } catch (err) {
       setError('Failed to delete value')
     } finally {
@@ -124,28 +106,6 @@ export default function FieldDetailsDialog({ field, onClose, onUpdate }: FieldDe
             <Typography variant="subtitle2" color="text.secondary">Description</Typography>
             <Typography variant="body1">{field.description || '-'}</Typography>
           </Box>
-        </Box>
-
-        <Divider sx={{ my: 2 }} />
-
-        <Box sx={{ mb: 3 }}>
-          <FormControlLabel
-            control={
-              <Switch
-                checked={required}
-                onChange={(e) => handleRequiredChange(e.target.checked)}
-                disabled={saving}
-              />
-            }
-            label={
-              <Box>
-                <Typography variant="body1">Required Field</Typography>
-                <Typography variant="body2" color="text.secondary">
-                  Mark this field as required for all listings using this template
-                </Typography>
-              </Box>
-            }
-          />
         </Box>
 
         <Divider sx={{ my: 2 }} />
