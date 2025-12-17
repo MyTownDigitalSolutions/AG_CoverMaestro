@@ -599,7 +599,14 @@ export default function TemplatesPage() {
                           </TableCell>
                           <TableCell>
                             {field.selected_value ? (
-                              <Chip label={field.selected_value} size="small" color="primary" />
+                              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                <Chip label={field.selected_value} size="small" color="primary" />
+                                {field.valid_values?.length > 0 && (
+                                  <Typography variant="body2" color="text.secondary">
+                                    ({field.valid_values.length})
+                                  </Typography>
+                                )}
+                              </Box>
                             ) : field.valid_values?.length > 0 ? (
                               <Typography variant="body2" color="text.secondary">
                                 {field.valid_values.length} values
