@@ -33,6 +33,7 @@ class EquipmentType(Base):
     uses_angle_options = Column(Boolean, default=False)
     
     models = relationship("Model", back_populates="equipment_type")
+    product_types = relationship("EquipmentTypeProductType", back_populates="equipment_type")
 
 class Model(Base):
     __tablename__ = "models"

@@ -1,4 +1,5 @@
 import pandas as pd
+import json
 from io import BytesIO
 from sqlalchemy.orm import Session
 from fastapi import UploadFile
@@ -32,67 +33,93 @@ class TemplateService:
         valid_values_imported = 0
         
         try:
-            df_definitions = pd.read_excel(excel_file, sheet_name="Data Definitions")
+            template_df = pd.read_excel(excel_file, sheet_name="Template", header=None)
             excel_file.seek(0)
             
-            for idx, row in df_definitions.iterrows():
-                field_name = str(row.iloc[0]) if pd.notna(row.iloc[0]) else None
-                if not field_name or field_name == 'nan':
+            header_rows = []
+            for i in range(6):
+                row_data = []
+                for val in template_df.iloc[i]:
+                    if pd.isna(val):
+                        row_data.append(None)
+                    else:
+                        row_data.append(str(val))
+                header_rows.append(row_data)
+            
+            product_type.header_rows = header_rows
+            
+            row4_display_names = template_df.iloc[3].tolist()
+            row5_field_names = template_df.iloc[4].tolist()
+            row3_attribute_groups = template_df.iloc[2].tolist()
+            
+            current_group = None
+            for idx, field_name in enumerate(row5_field_names):
+                if pd.isna(field_name):
                     continue
-                    
-                attribute_group = str(row.iloc[1]) if len(row) > 1 and pd.notna(row.iloc[1]) else None
-                required_val = row.iloc[2] if len(row) > 2 else False
-                required = bool(required_val) if pd.notna(required_val) else False
-                description = str(row.iloc[3]) if len(row) > 3 and pd.notna(row.iloc[3]) else None
+                
+                field_name_str = str(field_name)
+                display_name = str(row4_display_names[idx]) if idx < len(row4_display_names) and pd.notna(row4_display_names[idx]) else None
+                
+                if idx < len(row3_attribute_groups) and pd.notna(row3_attribute_groups[idx]):
+                    current_group = str(row3_attribute_groups[idx])
                 
                 field = ProductTypeField(
                     product_type_id=product_type.id,
-                    field_name=field_name,
-                    attribute_group=attribute_group if attribute_group != 'nan' else None,
-                    required=required,
-                    order_index=idx,
-                    description=description if description != 'nan' else None
+                    field_name=field_name_str,
+                    display_name=display_name,
+                    attribute_group=current_group,
+                    order_index=idx
                 )
                 self.db.add(field)
                 fields_imported += 1
-        except Exception:
-            pass
+            
+            self.db.commit()
+        except Exception as e:
+            print(f"Error parsing Template sheet: {e}")
         
         try:
-            df_valid = pd.read_excel(excel_file, sheet_name="Valid Values")
+            valid_values_df = pd.read_excel(excel_file, sheet_name="Valid Values", header=None)
             excel_file.seek(0)
             
-            for col in df_valid.columns:
-                field = self.db.query(ProductTypeField).filter(
-                    ProductTypeField.product_type_id == product_type.id,
-                    ProductTypeField.field_name == col
-                ).first()
+            for row_idx in range(len(valid_values_df)):
+                row = valid_values_df.iloc[row_idx]
                 
-                if field:
-                    for value in df_valid[col].dropna().unique():
-                        field_value = ProductTypeFieldValue(
-                            product_type_field_id=field.id,
-                            value=str(value)
-                        )
-                        self.db.add(field_value)
-                        valid_values_imported += 1
-        except Exception:
-            pass
-        
-        try:
-            df_keywords = pd.read_excel(excel_file, sheet_name="Dropdown Lists")
-            excel_file.seek(0)
+                field_label = row.iloc[1] if len(row) > 1 and pd.notna(row.iloc[1]) else None
+                if not field_label:
+                    continue
+                
+                field_label_str = str(field_label)
+                
+                if " - [" in field_label_str:
+                    display_name = field_label_str.split(" - [")[0].strip()
+                    
+                    field = self.db.query(ProductTypeField).filter(
+                        ProductTypeField.product_type_id == product_type.id,
+                        ProductTypeField.display_name == display_name
+                    ).first()
+                    
+                    if field:
+                        values = [str(v) for v in row.iloc[2:] if pd.notna(v)]
+                        for value in values:
+                            field_value = ProductTypeFieldValue(
+                                product_type_field_id=field.id,
+                                value=value
+                            )
+                            self.db.add(field_value)
+                            valid_values_imported += 1
+                        
+                        if display_name == "Item Type Keyword":
+                            for value in values:
+                                kw = ProductTypeKeyword(
+                                    product_type_id=product_type.id,
+                                    keyword=value
+                                )
+                                self.db.add(kw)
+                                keywords_imported += 1
             
-            if "item_type_keyword" in df_keywords.columns:
-                for keyword in df_keywords["item_type_keyword"].dropna().unique():
-                    kw = ProductTypeKeyword(
-                        product_type_id=product_type.id,
-                        keyword=str(keyword)
-                    )
-                    self.db.add(kw)
-                    keywords_imported += 1
-        except Exception:
-            pass
+            self.db.commit()
+        except Exception as e:
+            print(f"Error parsing Valid Values sheet: {e}")
         
         self.db.commit()
         
@@ -102,3 +129,12 @@ class TemplateService:
             "keywords_imported": keywords_imported,
             "valid_values_imported": valid_values_imported
         }
+    
+    def get_header_rows(self, product_code: str) -> list:
+        product_type = self.db.query(AmazonProductType).filter(
+            AmazonProductType.code == product_code
+        ).first()
+        
+        if product_type and product_type.header_rows:
+            return product_type.header_rows
+        return []

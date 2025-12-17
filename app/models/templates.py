@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Boolean, ForeignKey, Text
+from sqlalchemy import Column, Integer, String, Boolean, ForeignKey, Text, JSON
 from sqlalchemy.orm import relationship
 from app.database import Base
 
@@ -9,9 +9,22 @@ class AmazonProductType(Base):
     code = Column(String, unique=True, nullable=False)
     name = Column(String, nullable=True)
     description = Column(Text, nullable=True)
+    header_rows = Column(JSON, nullable=True)
     
     keywords = relationship("ProductTypeKeyword", back_populates="product_type", cascade="all, delete-orphan")
     fields = relationship("ProductTypeField", back_populates="product_type", cascade="all, delete-orphan")
+    equipment_types = relationship("EquipmentTypeProductType", back_populates="product_type", cascade="all, delete-orphan")
+
+
+class EquipmentTypeProductType(Base):
+    __tablename__ = "equipment_type_product_types"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    equipment_type_id = Column(Integer, ForeignKey("equipment_types.id"), nullable=False)
+    product_type_id = Column(Integer, ForeignKey("amazon_product_types.id"), nullable=False)
+    
+    equipment_type = relationship("EquipmentType", back_populates="product_types")
+    product_type = relationship("AmazonProductType", back_populates="equipment_types")
 
 class ProductTypeKeyword(Base):
     __tablename__ = "product_type_keywords"
@@ -28,6 +41,7 @@ class ProductTypeField(Base):
     id = Column(Integer, primary_key=True, index=True)
     product_type_id = Column(Integer, ForeignKey("amazon_product_types.id"), nullable=False)
     field_name = Column(String, nullable=False)
+    display_name = Column(String, nullable=True)
     attribute_group = Column(String, nullable=True)
     required = Column(Boolean, default=False)
     order_index = Column(Integer, default=0)

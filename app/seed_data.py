@@ -3,6 +3,7 @@ from app.models.core import (
     Manufacturer, Series, EquipmentType, Model, Material,
     MaterialColourSurcharge, Supplier, PricingOption, ShippingRate
 )
+from app.models.templates import EquipmentTypeProductType
 from app.models.enums import HandleLocation, AngleType, Carrier
 
 def seed_database():

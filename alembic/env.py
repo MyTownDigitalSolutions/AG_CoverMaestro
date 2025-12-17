@@ -12,7 +12,8 @@ from app.models.core import (
     Customer, Order, OrderLine, PricingOption, ShippingRate
 )
 from app.models.templates import (
-    AmazonProductType, ProductTypeKeyword, ProductTypeField, ProductTypeFieldValue
+    AmazonProductType, ProductTypeKeyword, ProductTypeField, ProductTypeFieldValue,
+    EquipmentTypeProductType
 )
 
 config = context.config

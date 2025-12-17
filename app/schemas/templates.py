@@ -11,6 +11,7 @@ class ProductTypeFieldValueResponse(BaseModel):
 class ProductTypeFieldResponse(BaseModel):
     id: int
     field_name: str
+    display_name: Optional[str] = None
     attribute_group: Optional[str] = None
     required: bool = False
     order_index: int = 0
@@ -32,6 +33,7 @@ class AmazonProductTypeResponse(BaseModel):
     code: str
     name: Optional[str] = None
     description: Optional[str] = None
+    header_rows: Optional[List[List[Optional[str]]]] = None
     keywords: List[ProductTypeKeywordResponse] = []
     fields: List[ProductTypeFieldResponse] = []
     
@@ -43,3 +45,15 @@ class TemplateImportResponse(BaseModel):
     fields_imported: int
     keywords_imported: int
     valid_values_imported: int
+
+class EquipmentTypeProductTypeLinkCreate(BaseModel):
+    equipment_type_id: int
+    product_type_id: int
+
+class EquipmentTypeProductTypeLinkResponse(BaseModel):
+    id: int
+    equipment_type_id: int
+    product_type_id: int
+    
+    class Config:
+        from_attributes = True
