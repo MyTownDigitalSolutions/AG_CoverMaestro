@@ -1,16 +1,18 @@
 import enum
 
 class HandleLocation(str, enum.Enum):
-    TOP = "top"
-    SIDE = "side"
-    BACK = "back"
-    NONE = "none"
+    TOP_AMP_HANDLE = "Top Amp Handle"
+    SIDE_AMP_HANDLES = "Side Amp Handles"
+    REAR_AMP_HANDLE = "Rear Amp Handle"
+    NO_AMP_HANDLE = "No Amp Handle"
+    TOP_AND_SIDE_AMP_HANDLES = "Top & Side Amp Handles"
 
 class AngleType(str, enum.Enum):
-    STRAIGHT = "straight"
-    ANGLED = "angled"
-    SLANT = "slant"
-    NONE = "none"
+    TOP_ANGLE = "Top Angle"
+    MID_ANGLE = "Mid Angle"
+    FULL_ANGLE = "Full Angle"
+    MIDCURVE = "Midcurve"
+    FULLCURVE = "Fullcurve"
 
 class Carrier(str, enum.Enum):
     USPS = "usps"

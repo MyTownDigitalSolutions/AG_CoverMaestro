@@ -143,8 +143,8 @@ def seed_database():
                         width=24.5,
                         depth=10.5,
                         height=17.5,
-                        handle_location=HandleLocation.TOP,
-                        angle_type=AngleType.STRAIGHT
+                        handle_location=HandleLocation.TOP_AMP_HANDLE,
+                        angle_type=AngleType.TOP_ANGLE
                     ),
                     Model(
                         name="Hot Rod DeVille 212",
@@ -153,8 +153,8 @@ def seed_database():
                         width=26.5,
                         depth=10.5,
                         height=20.5,
-                        handle_location=HandleLocation.TOP,
-                        angle_type=AngleType.STRAIGHT
+                        handle_location=HandleLocation.TOP_AMP_HANDLE,
+                        angle_type=AngleType.TOP_ANGLE
                     ),
                 ]
                 db.add_all(sample_models)

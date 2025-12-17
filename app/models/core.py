@@ -46,8 +46,8 @@ class Model(Base):
     height = Column(Float, nullable=False)
     handle_length = Column(Float, nullable=True)
     handle_width = Column(Float, nullable=True)
-    handle_location = Column(Enum(HandleLocation), default=HandleLocation.NONE)
-    angle_type = Column(Enum(AngleType), default=AngleType.NONE)
+    handle_location = Column(Enum(HandleLocation), default=HandleLocation.NO_AMP_HANDLE)
+    angle_type = Column(Enum(AngleType), default=AngleType.TOP_ANGLE)
     image_url = Column(String, nullable=True)
     
     series = relationship("Series", back_populates="models")

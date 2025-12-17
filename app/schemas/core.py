@@ -51,8 +51,8 @@ class ModelBase(BaseModel):
     height: float
     handle_length: Optional[float] = None
     handle_width: Optional[float] = None
-    handle_location: HandleLocation = HandleLocation.NONE
-    angle_type: AngleType = AngleType.NONE
+    handle_location: HandleLocation = HandleLocation.NO_AMP_HANDLE
+    angle_type: AngleType = AngleType.TOP_ANGLE
     image_url: Optional[str] = None
 
 class ModelCreate(ModelBase):
