@@ -29,9 +29,14 @@ export default function FieldDetailsDialog({ field, onClose, onUpdate }: FieldDe
   const [validValues, setValidValues] = useState(field.valid_values)
   const [selectedValue, setSelectedValue] = useState<string | undefined>(field.selected_value)
   const [newValue, setNewValue] = useState('')
+  const [searchQuery, setSearchQuery] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [hasChanges, setHasChanges] = useState(false)
+  
+  const filteredValues = validValues.filter(v => 
+    v.value.toLowerCase().includes(searchQuery.toLowerCase())
+  )
 
   const handleAddValue = async () => {
     if (!newValue.trim()) return
@@ -182,31 +187,46 @@ export default function FieldDetailsDialog({ field, onClose, onUpdate }: FieldDe
           </Box>
 
           {validValues.length > 0 && (
-            <Box sx={{ 
-              maxHeight: 300, 
-              overflowY: 'auto', 
-              border: '1px solid',
-              borderColor: 'divider',
-              borderRadius: 1,
-              p: 1
-            }}>
-              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-                {validValues.map((value) => (
-                  <Chip
-                    key={value.id}
-                    label={value.value}
-                    onClick={() => handleSelectValue(value.value)}
-                    onDelete={() => handleDeleteValue(value.id)}
-                    deleteIcon={<DeleteIcon />}
-                    icon={selectedValue === value.value ? <CheckIcon /> : undefined}
-                    color={selectedValue === value.value ? 'primary' : 'default'}
-                    variant={selectedValue === value.value ? 'filled' : 'outlined'}
-                    size="small"
-                    sx={{ cursor: 'pointer' }}
-                  />
-                ))}
+            <>
+              <TextField
+                size="small"
+                placeholder="Search values..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                fullWidth
+                sx={{ mb: 1 }}
+              />
+              {searchQuery && (
+                <Typography variant="caption" color="text.secondary" sx={{ mb: 1, display: 'block' }}>
+                  Showing {filteredValues.length} of {validValues.length} values
+                </Typography>
+              )}
+              <Box sx={{ 
+                maxHeight: 300, 
+                overflowY: 'auto', 
+                border: '1px solid',
+                borderColor: 'divider',
+                borderRadius: 1,
+                p: 1
+              }}>
+                <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+                  {filteredValues.map((value) => (
+                    <Chip
+                      key={value.id}
+                      label={value.value}
+                      onClick={() => handleSelectValue(value.value)}
+                      onDelete={() => handleDeleteValue(value.id)}
+                      deleteIcon={<DeleteIcon />}
+                      icon={selectedValue === value.value ? <CheckIcon /> : undefined}
+                      color={selectedValue === value.value ? 'primary' : 'default'}
+                      variant={selectedValue === value.value ? 'filled' : 'outlined'}
+                      size="small"
+                      sx={{ cursor: 'pointer' }}
+                    />
+                  ))}
+                </Box>
               </Box>
-            </Box>
+            </>
           )}
         </Box>
       </DialogContent>
