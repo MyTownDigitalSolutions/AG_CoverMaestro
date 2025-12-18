@@ -377,24 +377,27 @@ def get_field_value(field: ProductTypeField, model: Model, series, manufacturer,
     if 'contribution_sku' in field_name_lower and listing_type == 'individual':
         return model.parent_sku if model.parent_sku else None
     
-    if field.custom_value:
-        return substitute_placeholders(field.custom_value, model, series, manufacturer, equipment_type, is_image_url=is_image_field)
-    
-    if field.selected_value:
-        return field.selected_value
-    
-    if 'item_name' in field_name_lower or 'product_name' in field_name_lower or 'title' in field_name_lower:
-        mfr_name = manufacturer.name if manufacturer else ''
-        series_name = series.name if series else ''
-        return f"{mfr_name} {series_name} {model.name} Cover"
-    
-    if 'brand' in field_name_lower or 'brand_name' in field_name_lower:
-        return manufacturer.name if manufacturer else None
-    
-    if 'model' in field_name_lower or 'model_number' in field_name_lower or 'model_name' in field_name_lower:
-        return model.name
-    
-    if 'manufacturer' in field_name_lower:
-        return manufacturer.name if manufacturer else None
+    # Only include custom_value or selected_value if field is marked as required
+    if field.required:
+        if field.custom_value:
+            return substitute_placeholders(field.custom_value, model, series, manufacturer, equipment_type, is_image_url=is_image_field)
+        
+        if field.selected_value:
+            return field.selected_value
+        
+        # Auto-generate values for common fields only if required
+        if 'item_name' in field_name_lower or 'product_name' in field_name_lower or 'title' in field_name_lower:
+            mfr_name = manufacturer.name if manufacturer else ''
+            series_name = series.name if series else ''
+            return f"{mfr_name} {series_name} {model.name} Cover"
+        
+        if 'brand' in field_name_lower or 'brand_name' in field_name_lower:
+            return manufacturer.name if manufacturer else None
+        
+        if 'model' in field_name_lower or 'model_number' in field_name_lower or 'model_name' in field_name_lower:
+            return model.name
+        
+        if 'manufacturer' in field_name_lower:
+            return manufacturer.name if manufacturer else None
     
     return None
