@@ -330,7 +330,16 @@ export default function ExportPage() {
           onClose={() => setPreviewOpen(false)} 
           maxWidth={false} 
           fullWidth 
-          PaperProps={{ sx: { maxWidth: '95vw', height: '85vh' } }}
+          PaperProps={{ 
+            sx: { 
+              maxWidth: '95vw', 
+              height: '85vh',
+              resize: 'both',
+              overflow: 'auto',
+              minWidth: 600,
+              minHeight: 400
+            } 
+          }}
         >
           <DialogTitle sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <Box>

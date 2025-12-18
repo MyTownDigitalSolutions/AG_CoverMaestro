@@ -190,7 +190,20 @@ export default function ModelsPage() {
         </Table>
       </TableContainer>
 
-      <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)} maxWidth="md" fullWidth>
+      <Dialog 
+        open={dialogOpen} 
+        onClose={() => setDialogOpen(false)} 
+        maxWidth="md" 
+        fullWidth
+        PaperProps={{
+          sx: {
+            resize: 'both',
+            overflow: 'auto',
+            minWidth: 400,
+            minHeight: 300
+          }
+        }}
+      >
         <DialogTitle>{editingModel ? 'Edit Model' : 'Add Model'}</DialogTitle>
         <DialogContent>
           <Grid container spacing={2} sx={{ mt: 1 }}>

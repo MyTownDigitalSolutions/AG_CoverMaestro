@@ -104,7 +104,22 @@ export default function FieldDetailsDialog({ field, onClose, onUpdate }: FieldDe
   }
 
   return (
-    <Dialog open onClose={onClose} maxWidth="md" fullWidth>
+    <Dialog 
+      open 
+      onClose={onClose} 
+      maxWidth="lg" 
+      fullWidth
+      PaperProps={{
+        sx: {
+          resize: 'both',
+          overflow: 'auto',
+          minWidth: 400,
+          minHeight: 300,
+          maxWidth: '90vw',
+          maxHeight: '90vh'
+        }
+      }}
+    >
       <DialogTitle>
         Field Details: {field.field_name}
       </DialogTitle>
