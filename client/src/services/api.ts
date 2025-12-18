@@ -124,6 +124,18 @@ export interface ExportPreviewResponse {
 export const exportApi = {
   generatePreview: (modelIds: number[], listingType: 'individual' | 'parent_child' = 'individual') => 
     api.post<ExportPreviewResponse>('/export/preview', { model_ids: modelIds, listing_type: listingType }).then(r => r.data),
+  downloadXlsx: async (modelIds: number[], listingType: 'individual' | 'parent_child' = 'individual') => {
+    const response = await api.post('/export/download/xlsx', { model_ids: modelIds, listing_type: listingType }, { responseType: 'blob' })
+    return response
+  },
+  downloadXlsm: async (modelIds: number[], listingType: 'individual' | 'parent_child' = 'individual') => {
+    const response = await api.post('/export/download/xlsm', { model_ids: modelIds, listing_type: listingType }, { responseType: 'blob' })
+    return response
+  },
+  downloadCsv: async (modelIds: number[], listingType: 'individual' | 'parent_child' = 'individual') => {
+    const response = await api.post('/export/download/csv', { model_ids: modelIds, listing_type: listingType }, { responseType: 'blob' })
+    return response
+  },
 }
 
 export default api

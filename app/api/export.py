@@ -1,8 +1,13 @@
 import re
+import io
+import csv
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from typing import List
 from pydantic import BaseModel
+from openpyxl import Workbook
+from openpyxl.styles import Font, PatternFill, Alignment
 from app.database import get_db
 from app.models.core import Model, Series, Manufacturer, EquipmentType
 from app.models.templates import AmazonProductType, ProductTypeField, EquipmentTypeProductType
@@ -88,6 +93,204 @@ def generate_export_preview(request: ExportPreviewRequest, db: Session = Depends
         rows=rows,
         template_code=product_type.code
     )
+
+
+def build_export_data(request: ExportPreviewRequest, db: Session):
+    """Build export data (headers and rows) for the given models."""
+    if not request.model_ids:
+        raise HTTPException(status_code=400, detail="No models selected")
+    
+    models = db.query(Model).filter(Model.id.in_(request.model_ids)).all()
+    if not models:
+        raise HTTPException(status_code=404, detail="No models found")
+    
+    equipment_type_ids = set(m.equipment_type_id for m in models)
+    if len(equipment_type_ids) > 1:
+        raise HTTPException(
+            status_code=400, 
+            detail="All selected models must have the same equipment type for export"
+        )
+    
+    equipment_type_id = list(equipment_type_ids)[0]
+    
+    link = db.query(EquipmentTypeProductType).filter(
+        EquipmentTypeProductType.equipment_type_id == equipment_type_id
+    ).first()
+    
+    if not link:
+        equipment_type = db.query(EquipmentType).filter(EquipmentType.id == equipment_type_id).first()
+        raise HTTPException(
+            status_code=400, 
+            detail=f"No Amazon template linked to equipment type: {equipment_type.name if equipment_type else 'Unknown'}"
+        )
+    
+    product_type = db.query(AmazonProductType).filter(
+        AmazonProductType.id == link.product_type_id
+    ).first()
+    
+    if not product_type:
+        raise HTTPException(status_code=404, detail="Template not found")
+    
+    fields = db.query(ProductTypeField).filter(
+        ProductTypeField.product_type_id == product_type.id
+    ).order_by(ProductTypeField.order_index).all()
+    
+    header_rows = product_type.header_rows or []
+    
+    equipment_type = db.query(EquipmentType).filter(EquipmentType.id == equipment_type_id).first()
+    
+    data_rows = []
+    for model in models:
+        series = db.query(Series).filter(Series.id == model.series_id).first()
+        manufacturer = db.query(Manufacturer).filter(Manufacturer.id == series.manufacturer_id).first() if series else None
+        
+        row_data = []
+        for field in fields:
+            value = get_field_value(field, model, series, manufacturer, equipment_type, request.listing_type)
+            row_data.append(value if value else '')
+        
+        data_rows.append(row_data)
+    
+    return header_rows, data_rows, product_type.code
+
+
+@router.post("/download/xlsx")
+def download_xlsx(request: ExportPreviewRequest, db: Session = Depends(get_db)):
+    """Download export as XLSX file."""
+    header_rows, data_rows, template_code = build_export_data(request, db)
+    
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Template"
+    
+    row_styles = [
+        (Font(bold=True, color="FFFFFF"), PatternFill(start_color="1976D2", end_color="1976D2", fill_type="solid")),
+        (Font(color="FFFFFF"), PatternFill(start_color="2196F3", end_color="2196F3", fill_type="solid")),
+        (Font(bold=True, color="FFFFFF"), PatternFill(start_color="4CAF50", end_color="4CAF50", fill_type="solid")),
+        (Font(bold=True), PatternFill(start_color="8BC34A", end_color="8BC34A", fill_type="solid")),
+        (Font(size=9), PatternFill(start_color="C8E6C9", end_color="C8E6C9", fill_type="solid")),
+        (Font(italic=True, size=9), PatternFill(start_color="FFF9C4", end_color="FFF9C4", fill_type="solid")),
+    ]
+    
+    current_row = 1
+    for row_idx, header_row in enumerate(header_rows):
+        for col_idx, value in enumerate(header_row):
+            cell = ws.cell(row=current_row, column=col_idx + 1, value=value or '')
+            if row_idx < len(row_styles):
+                cell.font = row_styles[row_idx][0]
+                cell.fill = row_styles[row_idx][1]
+            cell.alignment = Alignment(horizontal='left', vertical='center')
+        current_row += 1
+    
+    for data_row in data_rows:
+        for col_idx, value in enumerate(data_row):
+            ws.cell(row=current_row, column=col_idx + 1, value=value or '')
+        current_row += 1
+    
+    for col in ws.columns:
+        max_length = 0
+        column = col[0].column_letter
+        for cell in col:
+            try:
+                if len(str(cell.value)) > max_length:
+                    max_length = min(len(str(cell.value)), 50)
+            except:
+                pass
+        adjusted_width = max_length + 2
+        ws.column_dimensions[column].width = adjusted_width
+    
+    output = io.BytesIO()
+    wb.save(output)
+    output.seek(0)
+    
+    filename = f"amazon_export_{template_code}.xlsx"
+    return StreamingResponse(
+        output,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename={filename}"}
+    )
+
+
+@router.post("/download/xlsm")
+def download_xlsm(request: ExportPreviewRequest, db: Session = Depends(get_db)):
+    """Download export as XLSM file (macro-enabled workbook)."""
+    header_rows, data_rows, template_code = build_export_data(request, db)
+    
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Template"
+    
+    row_styles = [
+        (Font(bold=True, color="FFFFFF"), PatternFill(start_color="1976D2", end_color="1976D2", fill_type="solid")),
+        (Font(color="FFFFFF"), PatternFill(start_color="2196F3", end_color="2196F3", fill_type="solid")),
+        (Font(bold=True, color="FFFFFF"), PatternFill(start_color="4CAF50", end_color="4CAF50", fill_type="solid")),
+        (Font(bold=True), PatternFill(start_color="8BC34A", end_color="8BC34A", fill_type="solid")),
+        (Font(size=9), PatternFill(start_color="C8E6C9", end_color="C8E6C9", fill_type="solid")),
+        (Font(italic=True, size=9), PatternFill(start_color="FFF9C4", end_color="FFF9C4", fill_type="solid")),
+    ]
+    
+    current_row = 1
+    for row_idx, header_row in enumerate(header_rows):
+        for col_idx, value in enumerate(header_row):
+            cell = ws.cell(row=current_row, column=col_idx + 1, value=value or '')
+            if row_idx < len(row_styles):
+                cell.font = row_styles[row_idx][0]
+                cell.fill = row_styles[row_idx][1]
+            cell.alignment = Alignment(horizontal='left', vertical='center')
+        current_row += 1
+    
+    for data_row in data_rows:
+        for col_idx, value in enumerate(data_row):
+            ws.cell(row=current_row, column=col_idx + 1, value=value or '')
+        current_row += 1
+    
+    for col in ws.columns:
+        max_length = 0
+        column = col[0].column_letter
+        for cell in col:
+            try:
+                if len(str(cell.value)) > max_length:
+                    max_length = min(len(str(cell.value)), 50)
+            except:
+                pass
+        adjusted_width = max_length + 2
+        ws.column_dimensions[column].width = adjusted_width
+    
+    output = io.BytesIO()
+    wb.save(output)
+    output.seek(0)
+    
+    filename = f"amazon_export_{template_code}.xlsm"
+    return StreamingResponse(
+        output,
+        media_type="application/vnd.ms-excel.sheet.macroEnabled.12",
+        headers={"Content-Disposition": f"attachment; filename={filename}"}
+    )
+
+
+@router.post("/download/csv")
+def download_csv(request: ExportPreviewRequest, db: Session = Depends(get_db)):
+    """Download export as CSV file."""
+    header_rows, data_rows, template_code = build_export_data(request, db)
+    
+    output = io.StringIO()
+    writer = csv.writer(output)
+    
+    for header_row in header_rows:
+        writer.writerow([v or '' for v in header_row])
+    
+    for data_row in data_rows:
+        writer.writerow([v or '' for v in data_row])
+    
+    content = output.getvalue().encode('utf-8')
+    
+    filename = f"amazon_export_{template_code}.csv"
+    return StreamingResponse(
+        iter([content]),
+        media_type="text/csv",
+        headers={"Content-Disposition": f"attachment; filename={filename}"}
+    )
+
 
 IMAGE_FIELD_TO_NUMBER = {
     'main_product_image_locator': '001',

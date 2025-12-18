@@ -12,15 +12,8 @@ import DownloadIcon from '@mui/icons-material/Download'
 import { manufacturersApi, seriesApi, modelsApi, templatesApi, exportApi } from '../services/api'
 import type { Manufacturer, Series, Model, AmazonProductType } from '../types'
 
-interface ModelWithTemplate extends Model {
-  manufacturer_name: string
-  series_name: string
-  equipment_type_name: string
-  template_code?: string
-}
-
 interface ExportPreviewData {
-  headers: string[][]
+  headers: (string | null)[][]
   rows: { model_id: number; model_name: string; data: (string | null)[] }[]
   template_code: string
 }
@@ -52,6 +45,7 @@ export default function ExportPage() {
   const [previewOpen, setPreviewOpen] = useState(false)
   const [previewData, setPreviewData] = useState<ExportPreviewData | null>(null)
   const [listingType, setListingType] = useState<'individual' | 'parent_child'>('individual')
+  const [downloading, setDownloading] = useState<string | null>(null)
 
   useEffect(() => {
     loadData()
@@ -145,6 +139,51 @@ export default function ExportPage() {
       console.error(err)
     } finally {
       setGenerating(false)
+    }
+  }
+
+  const handleDownload = async (format: 'xlsx' | 'xlsm' | 'csv') => {
+    if (selectedModels.size === 0) return
+
+    try {
+      setDownloading(format)
+      const modelIds = Array.from(selectedModels)
+      let response
+      let filename: string
+      let mimeType: string
+
+      switch (format) {
+        case 'xlsx':
+          response = await exportApi.downloadXlsx(modelIds, listingType)
+          filename = `amazon_export_${previewData?.template_code || 'export'}.xlsx`
+          mimeType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+          break
+        case 'xlsm':
+          response = await exportApi.downloadXlsm(modelIds, listingType)
+          filename = `amazon_export_${previewData?.template_code || 'export'}.xlsm`
+          mimeType = 'application/vnd.ms-excel.sheet.macroEnabled.12'
+          break
+        case 'csv':
+          response = await exportApi.downloadCsv(modelIds, listingType)
+          filename = `amazon_export_${previewData?.template_code || 'export'}.csv`
+          mimeType = 'text/csv'
+          break
+      }
+
+      const blob = new Blob([response.data], { type: mimeType })
+      const url = window.URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = filename
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      window.URL.revokeObjectURL(url)
+    } catch (err: any) {
+      setError(err.response?.data?.detail || `Failed to download ${format.toUpperCase()} file`)
+      console.error(err)
+    } finally {
+      setDownloading(null)
     }
   }
 
@@ -406,10 +445,32 @@ export default function ExportPage() {
               </Table>
             </Box>
           </DialogContent>
-          <DialogActions sx={{ px: 3, py: 2 }}>
+          <DialogActions sx={{ px: 3, py: 2, gap: 1 }}>
             <Button onClick={() => setPreviewOpen(false)}>Close</Button>
-            <Button variant="contained" startIcon={<DownloadIcon />} disabled>
-              Download Excel (Coming Soon)
+            <Box sx={{ flex: 1 }} />
+            <Button 
+              variant="outlined" 
+              startIcon={<DownloadIcon />} 
+              onClick={() => handleDownload('csv')}
+              disabled={downloading !== null}
+            >
+              {downloading === 'csv' ? 'Downloading...' : 'CSV'}
+            </Button>
+            <Button 
+              variant="outlined" 
+              startIcon={<DownloadIcon />} 
+              onClick={() => handleDownload('xlsm')}
+              disabled={downloading !== null}
+            >
+              {downloading === 'xlsm' ? 'Downloading...' : 'XLSM'}
+            </Button>
+            <Button 
+              variant="contained" 
+              startIcon={<DownloadIcon />} 
+              onClick={() => handleDownload('xlsx')}
+              disabled={downloading !== null}
+            >
+              {downloading === 'xlsx' ? 'Downloading...' : 'Download XLSX'}
             </Button>
           </DialogActions>
         </Dialog>
