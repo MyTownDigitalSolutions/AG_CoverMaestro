@@ -195,14 +195,6 @@ export default function ModelsPage() {
         <DialogContent>
           <Grid container spacing={2} sx={{ mt: 1 }}>
             <Grid item xs={12}>
-              <TextField
-                fullWidth
-                label="Name"
-                value={formData.name}
-                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-              />
-            </Grid>
-            <Grid item xs={6}>
               <FormControl fullWidth>
                 <InputLabel>Series</InputLabel>
                 <Select
@@ -217,6 +209,27 @@ export default function ModelsPage() {
                   ))}
                 </Select>
               </FormControl>
+              {formData.series_id > 0 && (
+                <Box sx={{ mt: 1, pl: 1 }}>
+                  <Typography variant="caption" color="text.secondary">
+                    Existing models in this series:
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontStyle: 'italic' }}>
+                    {models
+                      .filter(m => m.series_id === formData.series_id && m.id !== editingModel?.id)
+                      .map(m => m.name)
+                      .join(', ') || 'None yet'}
+                  </Typography>
+                </Box>
+              )}
+            </Grid>
+            <Grid item xs={12}>
+              <TextField
+                fullWidth
+                label="Model Name"
+                value={formData.name}
+                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+              />
             </Grid>
             <Grid item xs={6}>
               <FormControl fullWidth>
@@ -232,6 +245,7 @@ export default function ModelsPage() {
                 </Select>
               </FormControl>
             </Grid>
+            <Grid item xs={6} />
             <Grid item xs={4}>
               <TextField
                 fullWidth
