@@ -11,20 +11,30 @@ class TemplateService:
     
     async def import_amazon_template(self, file: UploadFile, product_code: str) -> dict:
         """
-        Import Amazon template following this exact logic:
+        Import Amazon template with this EXACT logic:
         
-        1. Parse Data Definitions sheet FIRST
-           - Row 2 = headers
-           - Starting Row 3:
-             - When Column A has a value (and nothing else in row), that's a Group Name
-             - Following rows have field data with Column A empty:
-               - Column B = Field Name
-               - Column C = Default Value
-               - Column D onwards = Other values (headers in Row 2 are the local label names)
+        STEP 1: Parse DATA DEFINITIONS sheet
+        - Row 2 = Headers (Group Name, Field Name, Local Label Name, ...)
+        - Row 3+: When Column A has value and Column B is empty = GROUP NAME
+        - Following rows: Column A empty, Column B = Field Name, Column C = Local Label Name
+        - This gives us the mapping of groups -> fields -> local labels
         
-        2. Parse Valid Values sheet for valid value lists
+        STEP 2: Parse VALID VALUES sheet
+        - Column A = Group names (when present, marks new group)
+        - Column B = "Local Label Name - [ FIELD_HINT ]" format
+        - Column C onwards = Valid values user can select from
+        - Match to Data Definitions by local label name
         
-        3. Parse Template sheet for field order and display names
+        STEP 3: Parse DEFAULT VALUES sheet
+        - Row 1 = Headers
+        - Column A = Local Label Name
+        - Column B = Field Name  
+        - Column C = Default Value (what should be pre-selected)
+        - Column D+ = "Other Value" - additional values to ADD to valid values
+        
+        STEP 4: Parse TEMPLATE sheet
+        - Get field order for export
+        - Get display names from row 4
         """
         contents = await file.read()
         excel_file = BytesIO(contents)
@@ -73,13 +83,12 @@ class TemplateService:
         keywords_imported = 0
         valid_values_imported = 0
         
-        data_definitions = {}
+        field_definitions = {}
+        local_label_to_field = {}
         
         try:
             dd_df = pd.read_excel(excel_file, sheet_name="Data Definitions", header=None)
             excel_file.seek(0)
-            
-            row2_headers = dd_df.iloc[1].tolist() if len(dd_df) > 1 else []
             
             current_group = None
             
@@ -92,77 +101,145 @@ class TemplateService:
                 
                 if col_a and not col_b:
                     current_group = col_a
-                    print(f"Found group: {current_group}")
+                    print(f"[DD] Group: {current_group}")
                     continue
                 
                 if col_b:
                     field_name = col_b
-                    default_value = col_c
+                    local_label = col_c
                     
-                    other_values = []
-                    for col_idx in range(3, len(row)):
-                        cell_value = row.iloc[col_idx]
-                        if pd.notna(cell_value):
-                            header_name = str(row2_headers[col_idx]).strip() if col_idx < len(row2_headers) and pd.notna(row2_headers[col_idx]) else None
-                            other_values.append({
-                                "header": header_name,
-                                "value": str(cell_value).strip()
-                            })
-                    
-                    data_definitions[field_name] = {
+                    field_definitions[field_name] = {
                         "group_name": current_group,
-                        "default_value": default_value,
-                        "other_values": other_values
+                        "local_label": local_label,
+                        "valid_values": [],
+                        "default_value": None,
+                        "other_values": []
                     }
-                    print(f"  Field: {field_name[:40]}, default: {default_value[:30] if default_value else 'None'}, others: {len(other_values)}")
                     
+                    if local_label:
+                        local_label_to_field[local_label] = field_name
+                    
+                    print(f"[DD]   Field: {field_name[:50]} -> Label: {local_label}")
+            
+            print(f"[DD] Total fields from Data Definitions: {len(field_definitions)}")
+            
         except Exception as e:
             print(f"Error parsing Data Definitions sheet: {e}")
         
-        valid_values_by_field = {}
         try:
             vv_df = pd.read_excel(excel_file, sheet_name="Valid Values", header=None)
             excel_file.seek(0)
             
+            current_vv_group = None
+            
             for row_idx in range(len(vv_df)):
                 row = vv_df.iloc[row_idx]
                 
-                col_b = row.iloc[1] if len(row) > 1 and pd.notna(row.iloc[1]) else None
-                if not col_b:
+                col_a = str(row.iloc[0]).strip() if pd.notna(row.iloc[0]) else None
+                col_b = str(row.iloc[1]).strip() if len(row) > 1 and pd.notna(row.iloc[1]) else None
+                
+                if col_a and not col_b:
+                    current_vv_group = col_a
+                    print(f"[VV] Group: {current_vv_group}")
                     continue
                 
-                col_b_str = str(col_b)
-                
-                if " - [" in col_b_str:
-                    display_name = col_b_str.split(" - [")[0].strip()
-                    bracket_start = col_b_str.find("[")
-                    bracket_end = col_b_str.find("]")
-                    field_name_hint = col_b_str[bracket_start+1:bracket_end] if bracket_start != -1 and bracket_end != -1 else None
+                if col_b:
+                    local_label_part = None
+                    field_hint = None
+                    
+                    if " - [" in col_b:
+                        parts = col_b.split(" - [")
+                        local_label_part = parts[0].strip()
+                        if len(parts) > 1:
+                            field_hint = parts[1].rstrip("]").strip()
+                    else:
+                        local_label_part = col_b
                     
                     values = [str(v).strip() for v in row.iloc[2:] if pd.notna(v)]
                     
-                    if field_name_hint:
-                        for dd_field_name in data_definitions.keys():
-                            if field_name_hint in dd_field_name:
-                                if dd_field_name not in valid_values_by_field:
-                                    valid_values_by_field[dd_field_name] = []
-                                valid_values_by_field[dd_field_name].extend(values)
-                                
-                                if display_name == "Item Type Keyword":
-                                    for value in values:
-                                        kw = ProductTypeKeyword(
-                                            product_type_id=product_type.id,
-                                            keyword=value
-                                        )
-                                        self.db.add(kw)
-                                        keywords_imported += 1
+                    matched_field = None
+                    
+                    if local_label_part and local_label_part in local_label_to_field:
+                        matched_field = local_label_to_field[local_label_part]
+                    
+                    if not matched_field and field_hint:
+                        for fn in field_definitions.keys():
+                            if field_hint in fn:
+                                matched_field = fn
                                 break
                     
-                    valid_values_imported += len(values)
+                    if not matched_field and local_label_part:
+                        for label, fn in local_label_to_field.items():
+                            if local_label_part.lower() in label.lower() or label.lower() in local_label_part.lower():
+                                matched_field = fn
+                                break
+                    
+                    if matched_field:
+                        field_definitions[matched_field]["valid_values"].extend(values)
+                        valid_values_imported += len(values)
+                        print(f"[VV]   Matched '{local_label_part}' to field, {len(values)} values")
+                        
+                        if local_label_part == "Item Type Keyword":
+                            for value in values:
+                                kw = ProductTypeKeyword(
+                                    product_type_id=product_type.id,
+                                    keyword=value
+                                )
+                                self.db.add(kw)
+                                keywords_imported += 1
+                    else:
+                        print(f"[VV]   No match for: {local_label_part}")
             
             self.db.commit()
+            print(f"[VV] Valid values imported: {valid_values_imported}")
+            
         except Exception as e:
             print(f"Error parsing Valid Values sheet: {e}")
+        
+        try:
+            dv_df = pd.read_excel(excel_file, sheet_name="Default Values", header=None)
+            excel_file.seek(0)
+            
+            for row_idx in range(1, len(dv_df)):
+                row = dv_df.iloc[row_idx]
+                
+                col_a_local_label = str(row.iloc[0]).strip() if pd.notna(row.iloc[0]) else None
+                col_b_field_name = str(row.iloc[1]).strip() if len(row) > 1 and pd.notna(row.iloc[1]) else None
+                col_c_default = str(row.iloc[2]).strip() if len(row) > 2 and pd.notna(row.iloc[2]) else None
+                
+                if not col_a_local_label and not col_b_field_name:
+                    continue
+                
+                matched_field = None
+                
+                if col_b_field_name and col_b_field_name in field_definitions:
+                    matched_field = col_b_field_name
+                elif col_a_local_label and col_a_local_label in local_label_to_field:
+                    matched_field = local_label_to_field[col_a_local_label]
+                
+                if not matched_field and col_b_field_name:
+                    for fn in field_definitions.keys():
+                        if col_b_field_name in fn or fn in col_b_field_name:
+                            matched_field = fn
+                            break
+                
+                if matched_field:
+                    if col_c_default:
+                        field_definitions[matched_field]["default_value"] = col_c_default
+                        print(f"[DV]   Default for '{matched_field[:40]}': {col_c_default[:30]}")
+                    
+                    other_values = [str(v).strip() for v in row.iloc[3:] if pd.notna(v)]
+                    if other_values:
+                        existing_vals = field_definitions[matched_field]["valid_values"]
+                        for ov in other_values:
+                            if ov not in existing_vals:
+                                field_definitions[matched_field]["other_values"].append(ov)
+                        print(f"[DV]   Other values for '{matched_field[:40]}': {len(other_values)}")
+            
+            print(f"[DV] Default values processed")
+            
+        except Exception as e:
+            print(f"Default Values sheet not found or error: {e}")
         
         template_field_order = {}
         try:
@@ -205,16 +282,19 @@ class TemplateService:
                 }
             
             self.db.commit()
+            print(f"[Template] Fields in template: {len(template_field_order)}")
+            
         except Exception as e:
             print(f"Error parsing Template sheet: {e}")
         
         field_name_to_db = {}
         
         for field_name, template_info in template_field_order.items():
-            dd_info = data_definitions.get(field_name, {})
+            dd_info = field_definitions.get(field_name, {})
             
             group_name = dd_info.get("group_name") or template_info.get("group_from_template")
-            display_name = template_info.get("display_name")
+            local_label = dd_info.get("local_label")
+            display_name = template_info.get("display_name") or local_label
             default_value = dd_info.get("default_value")
             
             prev_settings = existing_field_settings.get(field_name, {})
@@ -238,27 +318,20 @@ class TemplateService:
             field_name_to_db[field_name] = field
             fields_imported += 1
             
-            other_values = dd_info.get("other_values", [])
-            for ov in other_values:
-                field_value = ProductTypeFieldValue(
-                    product_type_field_id=field.id,
-                    value=ov["value"]
-                )
-                self.db.add(field_value)
-            
-            if field_name in valid_values_by_field:
-                for value in valid_values_by_field[field_name]:
-                    existing_values = [ov["value"] for ov in other_values]
-                    if value not in existing_values:
-                        field_value = ProductTypeFieldValue(
-                            product_type_field_id=field.id,
-                            value=value
-                        )
-                        self.db.add(field_value)
+            all_values = dd_info.get("valid_values", []) + dd_info.get("other_values", [])
+            seen_values = set()
+            for value in all_values:
+                if value not in seen_values:
+                    seen_values.add(value)
+                    field_value = ProductTypeFieldValue(
+                        product_type_field_id=field.id,
+                        value=value
+                    )
+                    self.db.add(field_value)
         
         self.db.commit()
         
-        print(f"Import complete: {fields_imported} fields, {keywords_imported} keywords, {valid_values_imported} valid values")
+        print(f"[DONE] Import complete: {fields_imported} fields, {keywords_imported} keywords, {valid_values_imported} valid values")
         
         return {
             "product_code": product_code,
