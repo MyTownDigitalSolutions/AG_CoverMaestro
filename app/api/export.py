@@ -90,10 +90,24 @@ def generate_export_preview(request: ExportPreviewRequest, db: Session = Depends
 
 def substitute_placeholders(value: str, model: Model, series, manufacturer, equipment_type) -> str:
     result = value
-    result = result.replace('[Manufacturer_Name]', manufacturer.name if manufacturer else '')
-    result = result.replace('[Series_Name]', series.name if series else '')
-    result = result.replace('[Model_Name]', model.name if model else '')
-    result = result.replace('[Equipment_Type]', equipment_type.name if equipment_type else '')
+    # Support both uppercase and mixed-case placeholder formats
+    mfr_name = manufacturer.name if manufacturer else ''
+    series_name = series.name if series else ''
+    model_name = model.name if model else ''
+    equip_type = equipment_type.name if equipment_type else ''
+    
+    # Uppercase format (from imported templates)
+    result = result.replace('[MANUFACTURER_NAME]', mfr_name)
+    result = result.replace('[SERIES_NAME]', series_name)
+    result = result.replace('[MODEL_NAME]', model_name)
+    result = result.replace('[EQUIPMENT_TYPE]', equip_type)
+    
+    # Mixed-case format (legacy support)
+    result = result.replace('[Manufacturer_Name]', mfr_name)
+    result = result.replace('[Series_Name]', series_name)
+    result = result.replace('[Model_Name]', model_name)
+    result = result.replace('[Equipment_Type]', equip_type)
+    
     return result
 
 def get_field_value(field: ProductTypeField, model: Model, series, manufacturer, equipment_type=None, listing_type: str = "individual") -> str | None:
