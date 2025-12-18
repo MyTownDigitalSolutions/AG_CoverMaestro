@@ -17,7 +17,18 @@ class TemplateService:
             AmazonProductType.code == product_code
         ).first()
         
+        existing_field_settings = {}
         if existing:
+            existing_fields = self.db.query(ProductTypeField).filter(
+                ProductTypeField.product_type_id == existing.id
+            ).all()
+            for field in existing_fields:
+                existing_field_settings[field.field_name] = {
+                    'required': field.required,
+                    'selected_value': field.selected_value,
+                    'custom_value': field.custom_value
+                }
+            
             self.db.query(ProductTypeFieldValue).filter(
                 ProductTypeFieldValue.product_type_field_id.in_(
                     self.db.query(ProductTypeField.id).filter(
@@ -112,12 +123,17 @@ class TemplateService:
             display_name = dd_info.get("display_name") or template_info.get("display_name_from_template")
             group_name = dd_info.get("group_name") or template_info.get("current_group")
             
+            prev_settings = existing_field_settings.get(field_name, {})
+            
             field = ProductTypeField(
                 product_type_id=product_type.id,
                 field_name=field_name,
                 display_name=display_name,
                 attribute_group=group_name,
-                order_index=template_info["order_index"]
+                order_index=template_info["order_index"],
+                required=prev_settings.get('required', False),
+                selected_value=prev_settings.get('selected_value'),
+                custom_value=prev_settings.get('custom_value')
             )
             self.db.add(field)
             self.db.flush()

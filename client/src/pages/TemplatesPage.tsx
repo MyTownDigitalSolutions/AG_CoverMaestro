@@ -147,6 +147,7 @@ export default function TemplatesPage() {
   const [selectedProductTypeId, setSelectedProductTypeId] = useState<number | ''>('')
   const [showPreview, setShowPreview] = useState(false)
   const [selectedField, setSelectedField] = useState<ProductTypeField | null>(null)
+  const [showOnlyRequired, setShowOnlyRequired] = useState(false)
 
   const loadTemplates = async () => {
     const data = await templatesApi.list()
@@ -520,16 +521,28 @@ export default function TemplatesPage() {
                 Template Fields
                 {selectedTemplate && ` - ${selectedTemplate.code}`}
               </Typography>
-              {selectedTemplate && (
-                <Button
-                  variant="outlined"
-                  size="small"
-                  startIcon={<PreviewIcon />}
-                  onClick={() => setShowPreview(true)}
-                >
-                  Preview Export
-                </Button>
-              )}
+              <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
+                {selectedTemplate && (
+                  <>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                      <Switch
+                        size="small"
+                        checked={showOnlyRequired}
+                        onChange={(e) => setShowOnlyRequired(e.target.checked)}
+                      />
+                      <Typography variant="body2">Required Only</Typography>
+                    </Box>
+                    <Button
+                      variant="outlined"
+                      size="small"
+                      startIcon={<PreviewIcon />}
+                      onClick={() => setShowPreview(true)}
+                    >
+                      Preview Export
+                    </Button>
+                  </>
+                )}
+              </Box>
             </Box>
             
             {selectedTemplate ? (
@@ -553,7 +566,12 @@ export default function TemplatesPage() {
                 
                 <Box sx={{ maxHeight: 500, overflowY: 'auto' }}>
                   {(() => {
-                    const groupedFields = selectedTemplate.fields?.reduce((acc, field) => {
+                    const allFields = selectedTemplate.fields || []
+                    const filteredFields = showOnlyRequired 
+                      ? allFields.filter(f => f.required)
+                      : allFields
+                    
+                    const groupedFields = filteredFields.reduce((acc, field) => {
                       const group = field.attribute_group || 'Other'
                       if (!acc[group]) acc[group] = []
                       acc[group].push(field)
@@ -562,7 +580,41 @@ export default function TemplatesPage() {
                     
                     const groups = Object.keys(groupedFields || {})
                     
-                    return groups.map((groupName) => (
+                    if (showOnlyRequired && filteredFields.length === 0) {
+                      return (
+                        <Typography color="text.secondary" sx={{ py: 2 }}>
+                          No fields marked as required. Toggle the switches to mark fields as required.
+                        </Typography>
+                      )
+                    }
+                    
+                    const handleToggleGroupRequired = async (groupName: string, setRequired: boolean) => {
+                      const groupFields = groupedFields![groupName] || []
+                      for (const field of groupFields) {
+                        if (field.required !== setRequired) {
+                          try {
+                            await templatesApi.updateField(field.id, { required: setRequired })
+                          } catch (err) {
+                            console.error('Failed to update field', err)
+                          }
+                        }
+                      }
+                      const updatedFields = selectedTemplate.fields.map(f => {
+                        const inGroup = groupFields.some(gf => gf.id === f.id)
+                        return inGroup ? { ...f, required: setRequired } : f
+                      })
+                      setSelectedTemplate({ ...selectedTemplate, fields: updatedFields })
+                      setTemplates(templates.map(t => 
+                        t.id === selectedTemplate.id ? { ...t, fields: updatedFields } : t
+                      ))
+                    }
+                    
+                    return groups.map((groupName) => {
+                      const groupFields = groupedFields![groupName] || []
+                      const allRequired = groupFields.every(f => f.required)
+                      const noneRequired = groupFields.every(f => !f.required)
+                      
+                      return (
                       <Accordion key={groupName} defaultExpanded={false} sx={{ '&:before': { display: 'none' } }}>
                         <AccordionSummary 
                           expandIcon={<ExpandMoreIcon />}
@@ -571,11 +623,37 @@ export default function TemplatesPage() {
                             '&:hover': { backgroundColor: 'action.selected' }
                           }}
                         >
-                          <Typography variant="subtitle2" sx={{ fontWeight: 'medium' }}>
-                            {groupName} ({groupedFields![groupName].length})
-                          </Typography>
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, width: '100%', pr: 2 }}>
+                            <Typography variant="subtitle2" sx={{ fontWeight: 'medium', flexGrow: 1 }}>
+                              {groupName} ({groupFields.length})
+                            </Typography>
+                            <Chip 
+                              label={`${groupFields.filter(f => f.required).length} req`}
+                              size="small"
+                              color={allRequired ? 'primary' : noneRequired ? 'default' : 'warning'}
+                              sx={{ fontSize: '10px', height: 20 }}
+                            />
+                          </Box>
                         </AccordionSummary>
                         <AccordionDetails sx={{ p: 0 }}>
+                          <Box sx={{ display: 'flex', gap: 1, p: 1, backgroundColor: '#f5f5f5', borderBottom: '1px solid #ddd' }}>
+                            <Button 
+                              size="small" 
+                              variant="outlined"
+                              onClick={() => handleToggleGroupRequired(groupName, true)}
+                              disabled={allRequired}
+                            >
+                              Mark All Required
+                            </Button>
+                            <Button 
+                              size="small" 
+                              variant="outlined"
+                              onClick={() => handleToggleGroupRequired(groupName, false)}
+                              disabled={noneRequired}
+                            >
+                              Clear All Required
+                            </Button>
+                          </Box>
                           <Table size="small">
                             <TableHead>
                               <TableRow>
@@ -585,7 +663,7 @@ export default function TemplatesPage() {
                               </TableRow>
                             </TableHead>
                             <TableBody>
-                              {groupedFields![groupName].map((field) => (
+                              {groupFields.map((field) => (
                                 <TableRow 
                                   key={field.id}
                                   hover
@@ -657,7 +735,7 @@ export default function TemplatesPage() {
                           </Table>
                         </AccordionDetails>
                       </Accordion>
-                    ))
+                    )})
                   })()}
                 </Box>
               </Box>
