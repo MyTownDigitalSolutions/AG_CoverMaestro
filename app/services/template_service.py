@@ -201,61 +201,10 @@ class TemplateService:
         except Exception as e:
             print(f"  ERROR: {e}")
         
-        default_values_by_field = {}
-        other_values_by_field = {}
-        
-        print("=" * 60)
-        print("STEP 3: Parsing DEFAULT VALUES sheet")
-        print("=" * 60)
-        
-        try:
-            dv_df = pd.read_excel(excel_file, sheet_name="Default Values", header=None)
-            excel_file.seek(0)
-            
-            for row_idx in range(1, len(dv_df)):
-                row = dv_df.iloc[row_idx]
-                
-                col_a_local_label = str(row.iloc[0]).strip() if pd.notna(row.iloc[0]) else None
-                col_b_field_name = str(row.iloc[1]).strip() if len(row) > 1 and pd.notna(row.iloc[1]) else None
-                col_c_default = str(row.iloc[2]).strip() if len(row) > 2 and pd.notna(row.iloc[2]) else None
-                
-                if not col_a_local_label and not col_b_field_name:
-                    continue
-                
-                matched_field = None
-                
-                if col_b_field_name and col_b_field_name in field_definitions:
-                    matched_field = col_b_field_name
-                elif col_a_local_label and col_a_local_label in local_label_to_field:
-                    matched_field = local_label_to_field[col_a_local_label]
-                
-                if not matched_field and col_b_field_name:
-                    for fn in field_definitions.keys():
-                        if col_b_field_name in fn or fn in col_b_field_name:
-                            matched_field = fn
-                            break
-                
-                if matched_field:
-                    if col_c_default:
-                        default_values_by_field[matched_field] = col_c_default
-                        print(f"    Default: {col_a_local_label} = {col_c_default[:30]}...")
-                    
-                    other_values = [str(v).strip() for v in row.iloc[3:] if pd.notna(v)]
-                    if other_values:
-                        if matched_field not in other_values_by_field:
-                            other_values_by_field[matched_field] = []
-                        other_values_by_field[matched_field].extend(other_values)
-                        print(f"    Other values: {col_a_local_label} +{len(other_values)}")
-            
-            print(f"  TOTAL: {len(default_values_by_field)} defaults, {len(other_values_by_field)} with other values")
-            
-        except Exception as e:
-            print(f"  Default Values sheet: {e}")
-        
         template_field_order = {}
         
         print("=" * 60)
-        print("STEP 4: Parsing TEMPLATE sheet")
+        print("STEP 3: Parsing TEMPLATE sheet")
         print("=" * 60)
         
         try:
@@ -302,6 +251,62 @@ class TemplateService:
             
         except Exception as e:
             print(f"  ERROR: {e}")
+        
+        all_known_fields = set(field_definitions.keys()) | set(template_field_order.keys())
+        
+        default_values_by_field = {}
+        other_values_by_field = {}
+        
+        print("=" * 60)
+        print("STEP 4: Parsing DEFAULT VALUES sheet")
+        print("=" * 60)
+        
+        try:
+            dv_df = pd.read_excel(excel_file, sheet_name="Default Values", header=None)
+            excel_file.seek(0)
+            
+            for row_idx in range(1, len(dv_df)):
+                row = dv_df.iloc[row_idx]
+                
+                col_a_local_label = str(row.iloc[0]).strip() if pd.notna(row.iloc[0]) else None
+                col_b_field_name = str(row.iloc[1]).strip() if len(row) > 1 and pd.notna(row.iloc[1]) else None
+                col_c_default = str(row.iloc[2]).strip() if len(row) > 2 and pd.notna(row.iloc[2]) else None
+                
+                if not col_a_local_label and not col_b_field_name:
+                    continue
+                
+                matched_field = None
+                
+                if col_b_field_name and col_b_field_name in all_known_fields:
+                    matched_field = col_b_field_name
+                elif col_a_local_label and col_a_local_label in local_label_to_field:
+                    matched_field = local_label_to_field[col_a_local_label]
+                
+                if not matched_field and col_b_field_name:
+                    for fn in all_known_fields:
+                        if col_b_field_name in fn or fn in col_b_field_name:
+                            matched_field = fn
+                            break
+                
+                if matched_field:
+                    if col_c_default:
+                        default_values_by_field[matched_field] = col_c_default
+                        print(f"    Default: {col_a_local_label} = {col_c_default[:30]}...")
+                    
+                    other_values = [str(v).strip() for v in row.iloc[3:] if pd.notna(v)]
+                    if other_values:
+                        if matched_field not in other_values_by_field:
+                            other_values_by_field[matched_field] = []
+                        other_values_by_field[matched_field].extend(other_values)
+                        print(f"    Other values: {col_a_local_label} +{len(other_values)}")
+                else:
+                    if col_b_field_name:
+                        print(f"    NO MATCH: {col_a_local_label} | {col_b_field_name[:40]}...")
+            
+            print(f"  TOTAL: {len(default_values_by_field)} defaults, {len(other_values_by_field)} with other values")
+            
+        except Exception as e:
+            print(f"  Default Values sheet: {e}")
         
         print("=" * 60)
         print("STEP 5: Creating database records")
