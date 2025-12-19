@@ -2,7 +2,7 @@ import axios from 'axios'
 import type {
   Manufacturer, Series, EquipmentType, Model, Material,
   Customer, Order, PricingOption, PricingResult, AmazonProductType,
-  EnumValue, ProductTypeField, ProductTypeFieldValue
+  EnumValue, ProductTypeField, ProductTypeFieldValue, DesignOption
 } from '../types'
 
 const api = axios.create({
@@ -31,6 +31,16 @@ export const equipmentTypesApi = {
   delete: (id: number) => api.delete(`/equipment-types/${id}`),
   getPricingOptions: (id: number) => api.get<PricingOption[]>(`/equipment-types/${id}/pricing-options`).then(r => r.data),
   setPricingOptions: (id: number, pricingOptionIds: number[]) => api.put(`/equipment-types/${id}/pricing-options`, { pricing_option_ids: pricingOptionIds }).then(r => r.data),
+  getDesignOptions: (id: number) => api.get<DesignOption[]>(`/equipment-types/${id}/design-options`).then(r => r.data),
+  setDesignOptions: (id: number, designOptionIds: number[]) => api.put(`/equipment-types/${id}/design-options`, { design_option_ids: designOptionIds }).then(r => r.data),
+}
+
+export const designOptionsApi = {
+  list: () => api.get<DesignOption[]>('/design-options').then(r => r.data),
+  get: (id: number) => api.get<DesignOption>(`/design-options/${id}`).then(r => r.data),
+  create: (data: { name: string; description?: string }) => api.post<DesignOption>('/design-options', data).then(r => r.data),
+  update: (id: number, data: { name: string; description?: string }) => api.put<DesignOption>(`/design-options/${id}`, data).then(r => r.data),
+  delete: (id: number) => api.delete(`/design-options/${id}`),
 }
 
 export const modelsApi = {

@@ -12,8 +12,12 @@ export interface Series {
 export interface EquipmentType {
   id: number
   name: string
-  uses_handle_options: boolean
-  uses_angle_options: boolean
+}
+
+export interface DesignOption {
+  id: number
+  name: string
+  description?: string
 }
 
 export interface Model {

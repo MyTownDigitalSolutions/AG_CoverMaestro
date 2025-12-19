@@ -2,41 +2,51 @@ import { useEffect, useState } from 'react'
 import {
   Box, Typography, Paper, Button, TextField, Dialog, DialogTitle,
   DialogContent, DialogActions, IconButton, Table, TableBody, TableCell,
-  TableContainer, TableHead, TableRow, Switch, FormControlLabel,
+  TableContainer, TableHead, TableRow,
   Chip, FormControl, InputLabel, Select, MenuItem, OutlinedInput, Checkbox, ListItemText
 } from '@mui/material'
 import DeleteIcon from '@mui/icons-material/Delete'
 import EditIcon from '@mui/icons-material/Edit'
 import AddIcon from '@mui/icons-material/Add'
 import SettingsIcon from '@mui/icons-material/Settings'
-import { equipmentTypesApi, pricingApi } from '../services/api'
-import type { EquipmentType, PricingOption } from '../types'
+import DesignServicesIcon from '@mui/icons-material/DesignServices'
+import { equipmentTypesApi, pricingApi, designOptionsApi } from '../services/api'
+import type { EquipmentType, PricingOption, DesignOption } from '../types'
 
 export default function EquipmentTypesPage() {
   const [equipmentTypes, setEquipmentTypes] = useState<EquipmentType[]>([])
   const [allPricingOptions, setAllPricingOptions] = useState<PricingOption[]>([])
+  const [allDesignOptions, setAllDesignOptions] = useState<DesignOption[]>([])
   const [equipmentTypePricingOptions, setEquipmentTypePricingOptions] = useState<Record<number, PricingOption[]>>({})
+  const [equipmentTypeDesignOptions, setEquipmentTypeDesignOptions] = useState<Record<number, DesignOption[]>>({})
   const [dialogOpen, setDialogOpen] = useState(false)
   const [pricingDialogOpen, setPricingDialogOpen] = useState(false)
+  const [designDialogOpen, setDesignDialogOpen] = useState(false)
   const [selectedEquipmentType, setSelectedEquipmentType] = useState<EquipmentType | null>(null)
   const [selectedPricingOptionIds, setSelectedPricingOptionIds] = useState<number[]>([])
+  const [selectedDesignOptionIds, setSelectedDesignOptionIds] = useState<number[]>([])
   const [editing, setEditing] = useState<EquipmentType | null>(null)
   const [name, setName] = useState('')
-  const [usesHandleOptions, setUsesHandleOptions] = useState(false)
-  const [usesAngleOptions, setUsesAngleOptions] = useState(false)
 
   const loadEquipmentTypes = async () => {
     const data = await equipmentTypesApi.list()
     setEquipmentTypes(data)
-    const optionsByType: Record<number, PricingOption[]> = {}
+    const pricingByType: Record<number, PricingOption[]> = {}
+    const designByType: Record<number, DesignOption[]> = {}
     for (const et of data) {
       try {
-        optionsByType[et.id] = await equipmentTypesApi.getPricingOptions(et.id)
+        pricingByType[et.id] = await equipmentTypesApi.getPricingOptions(et.id)
       } catch {
-        optionsByType[et.id] = []
+        pricingByType[et.id] = []
+      }
+      try {
+        designByType[et.id] = await equipmentTypesApi.getDesignOptions(et.id)
+      } catch {
+        designByType[et.id] = []
       }
     }
-    setEquipmentTypePricingOptions(optionsByType)
+    setEquipmentTypePricingOptions(pricingByType)
+    setEquipmentTypeDesignOptions(designByType)
   }
 
   const loadPricingOptions = async () => {
@@ -44,32 +54,30 @@ export default function EquipmentTypesPage() {
     setAllPricingOptions(data)
   }
 
+  const loadDesignOptions = async () => {
+    const data = await designOptionsApi.list()
+    setAllDesignOptions(data)
+  }
+
   useEffect(() => {
     loadEquipmentTypes()
     loadPricingOptions()
+    loadDesignOptions()
   }, [])
 
   const handleOpenDialog = (equipmentType?: EquipmentType) => {
     if (equipmentType) {
       setEditing(equipmentType)
       setName(equipmentType.name)
-      setUsesHandleOptions(equipmentType.uses_handle_options)
-      setUsesAngleOptions(equipmentType.uses_angle_options)
     } else {
       setEditing(null)
       setName('')
-      setUsesHandleOptions(false)
-      setUsesAngleOptions(false)
     }
     setDialogOpen(true)
   }
 
   const handleSave = async () => {
-    const data = {
-      name,
-      uses_handle_options: usesHandleOptions,
-      uses_angle_options: usesAngleOptions
-    }
+    const data = { name }
     if (editing) {
       await equipmentTypesApi.update(editing.id, data)
     } else {
@@ -100,6 +108,20 @@ export default function EquipmentTypesPage() {
     loadEquipmentTypes()
   }
 
+  const handleOpenDesignDialog = (equipmentType: EquipmentType) => {
+    setSelectedEquipmentType(equipmentType)
+    const currentOptions = equipmentTypeDesignOptions[equipmentType.id] || []
+    setSelectedDesignOptionIds(currentOptions.map(o => o.id))
+    setDesignDialogOpen(true)
+  }
+
+  const handleSaveDesignOptions = async () => {
+    if (!selectedEquipmentType) return
+    await equipmentTypesApi.setDesignOptions(selectedEquipmentType.id, selectedDesignOptionIds)
+    setDesignDialogOpen(false)
+    loadEquipmentTypes()
+  }
+
   return (
     <Box>
       <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 3 }}>
@@ -118,8 +140,7 @@ export default function EquipmentTypesPage() {
           <TableHead>
             <TableRow>
               <TableCell>Name</TableCell>
-              <TableCell align="center">Uses Handle Options</TableCell>
-              <TableCell align="center">Uses Angle Options</TableCell>
+              <TableCell>Design Options</TableCell>
               <TableCell>Pricing Options</TableCell>
               <TableCell align="right">Actions</TableCell>
             </TableRow>
@@ -128,8 +149,16 @@ export default function EquipmentTypesPage() {
             {equipmentTypes.map((et) => (
               <TableRow key={et.id}>
                 <TableCell>{et.name}</TableCell>
-                <TableCell align="center">{et.uses_handle_options ? 'Yes' : 'No'}</TableCell>
-                <TableCell align="center">{et.uses_angle_options ? 'Yes' : 'No'}</TableCell>
+                <TableCell>
+                  <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap' }}>
+                    {(equipmentTypeDesignOptions[et.id] || []).map((option) => (
+                      <Chip key={option.id} label={option.name} size="small" color="primary" variant="outlined" />
+                    ))}
+                    {(!equipmentTypeDesignOptions[et.id] || equipmentTypeDesignOptions[et.id].length === 0) && (
+                      <Typography variant="body2" color="text.secondary">None</Typography>
+                    )}
+                  </Box>
+                </TableCell>
                 <TableCell>
                   <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap' }}>
                     {(equipmentTypePricingOptions[et.id] || []).map((option) => (
@@ -141,6 +170,9 @@ export default function EquipmentTypesPage() {
                   </Box>
                 </TableCell>
                 <TableCell align="right">
+                  <IconButton onClick={() => handleOpenDesignDialog(et)} size="small" title="Manage Design Options">
+                    <DesignServicesIcon />
+                  </IconButton>
                   <IconButton onClick={() => handleOpenPricingDialog(et)} size="small" title="Manage Pricing Options">
                     <SettingsIcon />
                   </IconButton>
@@ -155,7 +187,7 @@ export default function EquipmentTypesPage() {
             ))}
             {equipmentTypes.length === 0 && (
               <TableRow>
-                <TableCell colSpan={5} align="center">
+                <TableCell colSpan={4} align="center">
                   No equipment types found
                 </TableCell>
               </TableRow>
@@ -175,28 +207,6 @@ export default function EquipmentTypesPage() {
             value={name}
             onChange={(e) => setName(e.target.value)}
           />
-          <Box sx={{ mt: 2 }}>
-            <FormControlLabel
-              control={
-                <Switch
-                  checked={usesHandleOptions}
-                  onChange={(e) => setUsesHandleOptions(e.target.checked)}
-                />
-              }
-              label="Uses Handle Options"
-            />
-          </Box>
-          <Box sx={{ mt: 1 }}>
-            <FormControlLabel
-              control={
-                <Switch
-                  checked={usesAngleOptions}
-                  onChange={(e) => setUsesAngleOptions(e.target.checked)}
-                />
-              }
-              label="Uses Angle Options"
-            />
-          </Box>
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setDialogOpen(false)}>Cancel</Button>
@@ -240,6 +250,45 @@ export default function EquipmentTypesPage() {
         <DialogActions>
           <Button onClick={() => setPricingDialogOpen(false)}>Cancel</Button>
           <Button onClick={handleSavePricingOptions} variant="contained">
+            Save
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={designDialogOpen} onClose={() => setDesignDialogOpen(false)} maxWidth="sm" fullWidth>
+        <DialogTitle>Manage Design Options for {selectedEquipmentType?.name}</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+            Select the design features that apply to this equipment type (e.g., Handle Options, Angle Options).
+          </Typography>
+          <FormControl fullWidth sx={{ mt: 1 }}>
+            <InputLabel>Design Options</InputLabel>
+            <Select
+              multiple
+              value={selectedDesignOptionIds}
+              onChange={(e) => setSelectedDesignOptionIds(e.target.value as number[])}
+              input={<OutlinedInput label="Design Options" />}
+              renderValue={(selected) => (
+                <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                  {selected.map((id) => {
+                    const option = allDesignOptions.find(o => o.id === id)
+                    return option ? <Chip key={id} label={option.name} size="small" color="primary" variant="outlined" /> : null
+                  })}
+                </Box>
+              )}
+            >
+              {allDesignOptions.map((option) => (
+                <MenuItem key={option.id} value={option.id}>
+                  <Checkbox checked={selectedDesignOptionIds.includes(option.id)} />
+                  <ListItemText primary={option.name} secondary={option.description} />
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setDesignDialogOpen(false)}>Cancel</Button>
+          <Button onClick={handleSaveDesignOptions} variant="contained">
             Save
           </Button>
         </DialogActions>
