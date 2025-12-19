@@ -25,7 +25,10 @@ export const seriesApi = {
 
 export const equipmentTypesApi = {
   list: () => api.get<EquipmentType[]>('/equipment-types').then(r => r.data),
+  get: (id: number) => api.get<EquipmentType>(`/equipment-types/${id}`).then(r => r.data),
   create: (data: Partial<EquipmentType>) => api.post<EquipmentType>('/equipment-types', data).then(r => r.data),
+  update: (id: number, data: Partial<EquipmentType>) => api.put<EquipmentType>(`/equipment-types/${id}`, data).then(r => r.data),
+  delete: (id: number) => api.delete(`/equipment-types/${id}`),
 }
 
 export const modelsApi = {
