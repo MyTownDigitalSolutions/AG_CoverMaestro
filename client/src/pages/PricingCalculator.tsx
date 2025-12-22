@@ -15,7 +15,7 @@ export default function PricingCalculator() {
   const [manufacturers, setManufacturers] = useState<Manufacturer[]>([])
   const [result, setResult] = useState<PricingResult | null>(null)
   const [error, setError] = useState<string | null>(null)
-  
+
   const [formData, setFormData] = useState({
     model_id: 0,
     material_id: 0,
@@ -56,12 +56,12 @@ export default function PricingCalculator() {
   const handleCalculate = async () => {
     setError(null)
     setResult(null)
-    
+
     if (!formData.model_id || !formData.material_id) {
       setError('Please select a model and material')
       return
     }
-    
+
     try {
       const data = await pricingApi.calculate({
         model_id: formData.model_id,
@@ -89,7 +89,7 @@ export default function PricingCalculator() {
         <Grid item xs={12} md={6}>
           <Paper sx={{ p: 3 }}>
             <Typography variant="h6" gutterBottom>Configuration</Typography>
-            
+
             <Grid container spacing={2}>
               <Grid item xs={12}>
                 <FormControl fullWidth>
@@ -107,7 +107,7 @@ export default function PricingCalculator() {
                   </Select>
                 </FormControl>
               </Grid>
-              
+
               <Grid item xs={12}>
                 <FormControl fullWidth>
                   <InputLabel>Material</InputLabel>
@@ -124,7 +124,7 @@ export default function PricingCalculator() {
                   </Select>
                 </FormControl>
               </Grid>
-              
+
               <Grid item xs={6}>
                 <TextField
                   fullWidth
@@ -134,7 +134,7 @@ export default function PricingCalculator() {
                   helperText="Optional color override"
                 />
               </Grid>
-              
+
               <Grid item xs={6}>
                 <TextField
                   fullWidth
@@ -145,7 +145,7 @@ export default function PricingCalculator() {
                   inputProps={{ min: 1 }}
                 />
               </Grid>
-              
+
               <Grid item xs={12}>
                 <Typography variant="subtitle2" gutterBottom>Options</Typography>
                 <FormControlLabel
@@ -176,7 +176,7 @@ export default function PricingCalculator() {
                   label="Music Rest Zipper (+$10.00)"
                 />
               </Grid>
-              
+
               <Grid item xs={6}>
                 <FormControl fullWidth>
                   <InputLabel>Carrier</InputLabel>
@@ -191,7 +191,7 @@ export default function PricingCalculator() {
                   </Select>
                 </FormControl>
               </Grid>
-              
+
               <Grid item xs={6}>
                 <FormControl fullWidth>
                   <InputLabel>Zone</InputLabel>
@@ -206,7 +206,7 @@ export default function PricingCalculator() {
                   </Select>
                 </FormControl>
               </Grid>
-              
+
               <Grid item xs={12}>
                 <Button
                   variant="contained"
@@ -221,51 +221,51 @@ export default function PricingCalculator() {
             </Grid>
           </Paper>
         </Grid>
-        
+
         <Grid item xs={12} md={6}>
           <Paper sx={{ p: 3 }}>
             <Typography variant="h6" gutterBottom>Cost Breakdown</Typography>
-            
+
             {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
-            
+
             {result ? (
               <Box>
                 <Grid container spacing={1}>
                   <Grid item xs={8}><Typography>Surface Area:</Typography></Grid>
                   <Grid item xs={4}><Typography align="right">{result.area} sq in</Typography></Grid>
-                  
+
                   <Grid item xs={8}><Typography>Area with Waste (5%):</Typography></Grid>
                   <Grid item xs={4}><Typography align="right">{result.waste_area} sq in</Typography></Grid>
-                  
+
                   <Grid item xs={12}><Divider sx={{ my: 1 }} /></Grid>
-                  
+
                   <Grid item xs={8}><Typography>Material Cost:</Typography></Grid>
                   <Grid item xs={4}><Typography align="right">${result.material_cost.toFixed(2)}</Typography></Grid>
-                  
+
                   <Grid item xs={8}><Typography>Colour Surcharge:</Typography></Grid>
                   <Grid item xs={4}><Typography align="right">${result.colour_surcharge.toFixed(2)}</Typography></Grid>
-                  
+
                   <Grid item xs={8}><Typography>Option Surcharge:</Typography></Grid>
                   <Grid item xs={4}><Typography align="right">${result.option_surcharge.toFixed(2)}</Typography></Grid>
-                  
+
                   <Grid item xs={12}><Divider sx={{ my: 1 }} /></Grid>
-                  
+
                   <Grid item xs={8}><Typography fontWeight="bold">Unit Total:</Typography></Grid>
                   <Grid item xs={4}><Typography align="right" fontWeight="bold">${result.unit_total.toFixed(2)}</Typography></Grid>
-                  
+
                   <Grid item xs={8}><Typography>Quantity:</Typography></Grid>
                   <Grid item xs={4}><Typography align="right">x {formData.quantity}</Typography></Grid>
-                  
+
                   <Grid item xs={12}><Divider sx={{ my: 1 }} /></Grid>
-                  
+
                   <Grid item xs={8}><Typography>Estimated Weight:</Typography></Grid>
-                  <Grid item xs={4}><Typography align="right">{result.weight.toFixed(2)} lbs</Typography></Grid>
-                  
+                  <Grid item xs={4}><Typography align="right">{result.weight.toFixed(2)} oz</Typography></Grid>
+
                   <Grid item xs={8}><Typography>Shipping Cost:</Typography></Grid>
                   <Grid item xs={4}><Typography align="right">${result.shipping_cost.toFixed(2)}</Typography></Grid>
-                  
+
                   <Grid item xs={12}><Divider sx={{ my: 1 }} /></Grid>
-                  
+
                   <Grid item xs={8}>
                     <Typography variant="h5" color="primary">Grand Total:</Typography>
                   </Grid>

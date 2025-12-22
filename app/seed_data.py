@@ -13,14 +13,14 @@ def seed_database():
     try:
         if db.query(EquipmentType).count() == 0:
             equipment_types = [
-                EquipmentType(name="Guitar Amplifier", uses_handle_options=True, uses_angle_options=True),
-                EquipmentType(name="Bass Amplifier", uses_handle_options=True, uses_angle_options=True),
-                EquipmentType(name="Keyboard Amplifier", uses_handle_options=True, uses_angle_options=False),
-                EquipmentType(name="Speaker Cabinet", uses_handle_options=True, uses_angle_options=False),
-                EquipmentType(name="Combo Amp", uses_handle_options=True, uses_angle_options=True),
-                EquipmentType(name="Head Unit", uses_handle_options=True, uses_angle_options=False),
-                EquipmentType(name="Pedalboard", uses_handle_options=False, uses_angle_options=False),
-                EquipmentType(name="Mixer", uses_handle_options=False, uses_angle_options=False),
+                EquipmentType(name="Guitar Amplifier"),
+                EquipmentType(name="Bass Amplifier"),
+                EquipmentType(name="Keyboard Amplifier"),
+                EquipmentType(name="Speaker Cabinet"),
+                EquipmentType(name="Combo Amp"),
+                EquipmentType(name="Head Unit"),
+                EquipmentType(name="Pedalboard"),
+                EquipmentType(name="Mixer"),
             ]
             db.add_all(equipment_types)
             db.commit()
@@ -31,33 +31,25 @@ def seed_database():
                     name="Waterproof Nylon",
                     base_color="Black",
                     linear_yard_width=54,
-                    cost_per_linear_yard=12.50,
-                    weight_per_linear_yard=0.5,
-                    labor_time_minutes=45
+                    weight_per_linear_yard=8.0,
                 ),
                 Material(
                     name="Waterproof Nylon + Padding",
                     base_color="Black",
                     linear_yard_width=54,
-                    cost_per_linear_yard=18.00,
-                    weight_per_linear_yard=0.8,
-                    labor_time_minutes=60
+                    weight_per_linear_yard=12.8,
                 ),
                 Material(
                     name="Heavy Duty Canvas",
                     base_color="Tan",
                     linear_yard_width=60,
-                    cost_per_linear_yard=15.00,
-                    weight_per_linear_yard=0.7,
-                    labor_time_minutes=55
+                    weight_per_linear_yard=11.2,
                 ),
                 Material(
                     name="Vinyl Cover",
                     base_color="Black",
                     linear_yard_width=54,
-                    cost_per_linear_yard=10.00,
-                    weight_per_linear_yard=0.4,
-                    labor_time_minutes=40
+                    weight_per_linear_yard=6.4,
                 ),
             ]
             db.add_all(materials)

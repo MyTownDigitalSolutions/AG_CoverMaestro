@@ -110,11 +110,14 @@ class PricingService:
         carrier: Carrier = Carrier.USPS, 
         zone: str = "1"
     ) -> float:
+        # Convert weight (oz) to pounds (lbs) for shipping rate lookup
+        weight_lbs = weight / 16.0
+        
         rate = self.db.query(ShippingRate).filter(
             ShippingRate.carrier == carrier,
             ShippingRate.zone == zone,
-            ShippingRate.min_weight <= weight,
-            ShippingRate.max_weight >= weight
+            ShippingRate.min_weight <= weight_lbs,
+            ShippingRate.max_weight >= weight_lbs
         ).first()
         if rate:
             return rate.rate + rate.surcharge

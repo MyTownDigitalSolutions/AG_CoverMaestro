@@ -34,6 +34,7 @@ export interface Model {
   angle_type: string
   image_url?: string
   parent_sku?: string
+  surface_area_sq_in?: number
 }
 
 export type MaterialType = 'fabric' | 'hardware' | 'packaging'

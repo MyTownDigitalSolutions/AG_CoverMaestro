@@ -20,6 +20,13 @@ export default function ManufacturersPage() {
   const [name, setName] = useState('')
   const [seriesName, setSeriesName] = useState('')
 
+  // Delete confirmation states
+  const [deleteManufacturerOpen, setDeleteManufacturerOpen] = useState(false)
+  const [manufacturerToDelete, setManufacturerToDelete] = useState<number | null>(null)
+
+  const [deleteSeriesOpen, setDeleteSeriesOpen] = useState(false)
+  const [seriesToDelete, setSeriesToDelete] = useState<number | null>(null)
+
   const loadManufacturers = async () => {
     const data = await manufacturersApi.list()
     setManufacturers(data)
@@ -52,14 +59,21 @@ export default function ManufacturersPage() {
     loadManufacturers()
   }
 
-  const handleDelete = async (id: number) => {
-    if (confirm('Are you sure you want to delete this manufacturer?')) {
-      await manufacturersApi.delete(id)
+  const handleDeleteManufacturerClick = (id: number) => {
+    setManufacturerToDelete(id)
+    setDeleteManufacturerOpen(true)
+  }
+
+  const handleConfirmDeleteManufacturer = async () => {
+    if (manufacturerToDelete !== null) {
+      await manufacturersApi.delete(manufacturerToDelete)
       loadManufacturers()
-      if (selectedManufacturer?.id === id) {
+      if (selectedManufacturer?.id === manufacturerToDelete) {
         setSelectedManufacturer(null)
         setSeries([])
       }
+      setDeleteManufacturerOpen(false)
+      setManufacturerToDelete(null)
     }
   }
 
@@ -72,12 +86,19 @@ export default function ManufacturersPage() {
     }
   }
 
-  const handleDeleteSeries = async (id: number) => {
-    if (confirm('Are you sure you want to delete this series?')) {
-      await seriesApi.delete(id)
+  const handleDeleteSeriesClick = (id: number) => {
+    setSeriesToDelete(id)
+    setDeleteSeriesOpen(true)
+  }
+
+  const handleConfirmDeleteSeries = async () => {
+    if (seriesToDelete !== null) {
+      await seriesApi.delete(seriesToDelete)
       if (selectedManufacturer) {
         loadSeries(selectedManufacturer.id)
       }
+      setDeleteSeriesOpen(false)
+      setSeriesToDelete(null)
     }
   }
 
@@ -122,7 +143,7 @@ export default function ManufacturersPage() {
                     >
                       <EditIcon />
                     </IconButton>
-                    <IconButton edge="end" onClick={() => handleDelete(manufacturer.id)}>
+                    <IconButton edge="end" onClick={() => handleDeleteManufacturerClick(manufacturer.id)}>
                       <DeleteIcon />
                     </IconButton>
                   </ListItemSecondaryAction>
@@ -154,7 +175,7 @@ export default function ManufacturersPage() {
                   <ListItem key={s.id}>
                     <ListItemText primary={s.name} />
                     <ListItemSecondaryAction>
-                      <IconButton edge="end" onClick={() => handleDeleteSeries(s.id)}>
+                      <IconButton edge="end" onClick={() => handleDeleteSeriesClick(s.id)}>
                         <DeleteIcon />
                       </IconButton>
                     </ListItemSecondaryAction>
@@ -210,6 +231,44 @@ export default function ManufacturersPage() {
         <DialogActions>
           <Button onClick={() => setSeriesDialogOpen(false)}>Cancel</Button>
           <Button onClick={handleAddSeries} variant="contained">Save</Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Delete Manufacturer Confirmation Dialog */}
+      <Dialog
+        open={deleteManufacturerOpen}
+        onClose={() => setDeleteManufacturerOpen(false)}
+      >
+        <DialogTitle>Confirm Delete</DialogTitle>
+        <DialogContent>
+          <Typography>
+            Are you sure you want to delete this manufacturer? This action cannot be undone.
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setDeleteManufacturerOpen(false)}>Cancel</Button>
+          <Button onClick={handleConfirmDeleteManufacturer} color="error" variant="contained" autoFocus>
+            Delete
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Delete Series Confirmation Dialog */}
+      <Dialog
+        open={deleteSeriesOpen}
+        onClose={() => setDeleteSeriesOpen(false)}
+      >
+        <DialogTitle>Confirm Delete</DialogTitle>
+        <DialogContent>
+          <Typography>
+            Are you sure you want to delete this series? This action cannot be undone.
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setDeleteSeriesOpen(false)}>Cancel</Button>
+          <Button onClick={handleConfirmDeleteSeries} color="error" variant="contained" autoFocus>
+            Delete
+          </Button>
         </DialogActions>
       </Dialog>
     </Box>

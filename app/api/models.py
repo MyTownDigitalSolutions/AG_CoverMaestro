@@ -8,6 +8,16 @@ from app.schemas.core import ModelCreate, ModelResponse
 
 router = APIRouter(prefix="/models", tags=["models"])
 
+WASTE_FACTOR = 0.05
+
+def calculate_surface_area(width: float, depth: float, height: float) -> float:
+    """
+    Calculate surface area in square inches including waste factor.
+    Formula: 2 * (width*depth + width*height + depth*height) * (1 + WASTE_FACTOR)
+    """
+    base_area = 2 * (width * depth + width * height + depth * height)
+    return base_area * (1 + WASTE_FACTOR)
+
 def generate_parent_sku(manufacturer_name: str, series_name: str, model_name: str, version: str = "V1") -> str:
     """
     Generate a 40-character parent SKU.
@@ -78,6 +88,9 @@ def create_model(data: ModelCreate, db: Session = Depends(get_db)):
         # Generate parent SKU
         parent_sku = generate_parent_sku(manufacturer.name, series.name, data.name)
         
+        # Calculate surface area
+        surface_area = calculate_surface_area(data.width, data.depth, data.height)
+        
         model = Model(
             name=data.name,
             series_id=data.series_id,
@@ -90,7 +103,8 @@ def create_model(data: ModelCreate, db: Session = Depends(get_db)):
             handle_location=data.handle_location,
             angle_type=data.angle_type,
             image_url=data.image_url,
-            parent_sku=parent_sku
+            parent_sku=parent_sku,
+            surface_area_sq_in=surface_area
         )
         db.add(model)
         db.commit()
@@ -117,6 +131,9 @@ def update_model(id: int, data: ModelCreate, db: Session = Depends(get_db)):
         # Regenerate parent SKU if name, series, or manufacturer changed
         parent_sku = generate_parent_sku(manufacturer.name, series.name, data.name)
         
+        # Recalculate surface area
+        surface_area = calculate_surface_area(data.width, data.depth, data.height)
+        
         model.name = data.name
         model.series_id = data.series_id
         model.equipment_type_id = data.equipment_type_id
@@ -129,6 +146,7 @@ def update_model(id: int, data: ModelCreate, db: Session = Depends(get_db)):
         model.angle_type = data.angle_type
         model.image_url = data.image_url
         model.parent_sku = parent_sku
+        model.surface_area_sq_in = surface_area
         db.commit()
         db.refresh(model)
         return model

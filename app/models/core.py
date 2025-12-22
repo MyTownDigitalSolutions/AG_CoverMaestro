@@ -51,6 +51,7 @@ class Model(Base):
     angle_type = Column(Enum(AngleType), default=AngleType.TOP_ANGLE)
     image_url = Column(String, nullable=True)
     parent_sku = Column(String(40), nullable=True)
+    surface_area_sq_in = Column(Float, nullable=True)
     
     series = relationship("Series", back_populates="models")
     equipment_type = relationship("EquipmentType", back_populates="models")
@@ -71,7 +72,7 @@ class Material(Base):
     package_quantity = Column(Float, nullable=True)
     
     colour_surcharges = relationship("MaterialColourSurcharge", back_populates="material", cascade="all, delete-orphan")
-    supplier_materials = relationship("SupplierMaterial", back_populates="material")
+    supplier_materials = relationship("SupplierMaterial", back_populates="material", cascade="all, delete-orphan")
     order_lines = relationship("OrderLine", back_populates="material")
 
 class MaterialColourSurcharge(Base):

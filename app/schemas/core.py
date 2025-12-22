@@ -59,6 +59,7 @@ class ModelCreate(ModelBase):
 class ModelResponse(ModelBase):
     id: int
     parent_sku: Optional[str] = None
+    surface_area_sq_in: Optional[float] = None
     
     class Config:
         from_attributes = True

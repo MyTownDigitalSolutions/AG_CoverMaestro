@@ -31,9 +31,7 @@ def create_material(data: MaterialCreate, db: Session = Depends(get_db)):
             base_color=data.base_color,
             material_type=data.material_type,
             linear_yard_width=data.linear_yard_width,
-            cost_per_linear_yard=data.cost_per_linear_yard,
             weight_per_linear_yard=data.weight_per_linear_yard,
-            labor_time_minutes=data.labor_time_minutes,
             unit_of_measure=data.unit_of_measure,
             package_quantity=data.package_quantity
         )
@@ -55,9 +53,7 @@ def update_material(id: int, data: MaterialCreate, db: Session = Depends(get_db)
         material.base_color = data.base_color
         material.material_type = data.material_type
         material.linear_yard_width = data.linear_yard_width
-        material.cost_per_linear_yard = data.cost_per_linear_yard
         material.weight_per_linear_yard = data.weight_per_linear_yard
-        material.labor_time_minutes = data.labor_time_minutes
         material.unit_of_measure = data.unit_of_measure
         material.package_quantity = data.package_quantity
         db.commit()
@@ -72,8 +68,15 @@ def delete_material(id: int, db: Session = Depends(get_db)):
     material = db.query(Material).filter(Material.id == id).first()
     if not material:
         raise HTTPException(status_code=404, detail="Material not found")
-    db.delete(material)
-    db.commit()
+    try:
+        db.delete(material)
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(
+            status_code=400, 
+            detail="Cannot delete material because it is referenced by other records (e.g. orders)."
+        )
     return {"message": "Material deleted"}
 
 @router.get("/{id}/surcharges", response_model=List[MaterialColourSurchargeResponse])

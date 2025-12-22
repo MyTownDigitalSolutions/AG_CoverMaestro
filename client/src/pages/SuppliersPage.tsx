@@ -29,7 +29,7 @@ export default function SuppliersPage() {
     email: '',
     website: ''
   })
-  
+
   const [selectedSupplier, setSelectedSupplier] = useState<Supplier | null>(null)
   const [supplierMaterials, setSupplierMaterials] = useState<SupplierMaterialWithMaterial[]>([])
   const [addMaterialDialogOpen, setAddMaterialDialogOpen] = useState(false)
@@ -42,6 +42,13 @@ export default function SuppliersPage() {
     quantity_purchased: 1,
     is_preferred: false
   })
+
+  // Delete confirmation states
+  const [deleteConfirmationOpen, setDeleteConfirmationOpen] = useState(false)
+  const [supplierToDelete, setSupplierToDelete] = useState<number | null>(null)
+
+  const [removeMaterialConfirmationOpen, setRemoveMaterialConfirmationOpen] = useState(false)
+  const [materialLinkToDelete, setMaterialLinkToDelete] = useState<number | null>(null)
 
   useEffect(() => {
     loadSuppliers()
@@ -132,13 +139,22 @@ export default function SuppliersPage() {
     }
   }
 
-  const handleDelete = async (id: number) => {
-    if (!window.confirm('Are you sure you want to delete this supplier?')) return
-    try {
-      await suppliersApi.delete(id)
-      loadSuppliers()
-    } catch (err: any) {
-      setError(err.response?.data?.detail || 'Failed to delete supplier')
+  const handleDeleteClick = (id: number) => {
+    setSupplierToDelete(id)
+    setDeleteConfirmationOpen(true)
+  }
+
+  const handleConfirmDelete = async () => {
+    if (supplierToDelete !== null) {
+      try {
+        await suppliersApi.delete(supplierToDelete)
+        loadSuppliers()
+        setDeleteConfirmationOpen(false)
+        setSupplierToDelete(null)
+      } catch (err: any) {
+        setError(err.response?.data?.detail || 'Failed to delete supplier')
+        setDeleteConfirmationOpen(false)
+      }
     }
   }
 
@@ -212,15 +228,24 @@ export default function SuppliersPage() {
     }
   }
 
-  const handleDeleteMaterial = async (linkId: number) => {
-    if (!window.confirm('Remove this material from this supplier?')) return
-    try {
-      await suppliersApi.deleteMaterialLink(linkId)
-      if (selectedSupplier) {
-        loadSupplierMaterials(selectedSupplier.id)
+  const handleDeleteMaterialClick = (linkId: number) => {
+    setMaterialLinkToDelete(linkId)
+    setRemoveMaterialConfirmationOpen(true)
+  }
+
+  const handleConfirmRemoveMaterial = async () => {
+    if (materialLinkToDelete !== null) {
+      try {
+        await suppliersApi.deleteMaterialLink(materialLinkToDelete)
+        if (selectedSupplier) {
+          loadSupplierMaterials(selectedSupplier.id)
+        }
+        setRemoveMaterialConfirmationOpen(false)
+        setMaterialLinkToDelete(null)
+      } catch (err: any) {
+        setError(err.response?.data?.detail || 'Failed to remove material')
+        setRemoveMaterialConfirmationOpen(false)
       }
-    } catch (err: any) {
-      setError(err.response?.data?.detail || 'Failed to remove material')
     }
   }
 
@@ -297,39 +322,39 @@ export default function SuppliersPage() {
                 supplierMaterials.map(sm => {
                   const isFabric = sm.material_type === 'fabric'
                   return (
-                  <TableRow key={sm.id} hover>
-                    <TableCell>{sm.material_name}</TableCell>
-                    <TableCell>
-                      <Chip 
-                        label={sm.material_type || 'fabric'} 
-                        size="small"
-                        color={isFabric ? 'primary' : 'default'}
-                      />
-                    </TableCell>
-                    <TableCell>${sm.unit_cost.toFixed(2)}</TableCell>
-                    <TableCell>${sm.shipping_cost.toFixed(2)}</TableCell>
-                    <TableCell>{sm.quantity_purchased.toFixed(1)}</TableCell>
-                    <TableCell>${sm.cost_per_linear_yard.toFixed(2)}</TableCell>
-                    <TableCell>{isFabric ? `$${sm.cost_per_square_inch.toFixed(4)}` : '-'}</TableCell>
-                    <TableCell>
-                      {sm.is_preferred && (
+                    <TableRow key={sm.id} hover>
+                      <TableCell>{sm.material_name}</TableCell>
+                      <TableCell>
                         <Chip
-                          icon={<StarIcon />}
-                          label="Preferred"
+                          label={sm.material_type || 'fabric'}
                           size="small"
-                          color="primary"
+                          color={isFabric ? 'primary' : 'default'}
                         />
-                      )}
-                    </TableCell>
-                    <TableCell align="right">
-                      <IconButton size="small" onClick={() => handleOpenEditMaterial(sm)}>
-                        <EditIcon />
-                      </IconButton>
-                      <IconButton size="small" color="error" onClick={() => handleDeleteMaterial(sm.id)}>
-                        <DeleteIcon />
-                      </IconButton>
-                    </TableCell>
-                  </TableRow>
+                      </TableCell>
+                      <TableCell>${sm.unit_cost.toFixed(2)}</TableCell>
+                      <TableCell>${sm.shipping_cost.toFixed(2)}</TableCell>
+                      <TableCell>{sm.quantity_purchased.toFixed(1)}</TableCell>
+                      <TableCell>${sm.cost_per_linear_yard.toFixed(2)}</TableCell>
+                      <TableCell>{isFabric ? `$${sm.cost_per_square_inch.toFixed(4)}` : '-'}</TableCell>
+                      <TableCell>
+                        {sm.is_preferred && (
+                          <Chip
+                            icon={<StarIcon />}
+                            label="Preferred"
+                            size="small"
+                            color="primary"
+                          />
+                        )}
+                      </TableCell>
+                      <TableCell align="right">
+                        <IconButton size="small" onClick={() => handleOpenEditMaterial(sm)}>
+                          <EditIcon />
+                        </IconButton>
+                        <IconButton size="small" color="error" onClick={() => handleDeleteMaterialClick(sm.id)}>
+                          <DeleteIcon />
+                        </IconButton>
+                      </TableCell>
+                    </TableRow>
                   )
                 })
               )}
@@ -521,7 +546,7 @@ export default function SuppliersPage() {
                       <IconButton size="small" onClick={() => handleOpenDialog(supplier)} title="Edit">
                         <EditIcon />
                       </IconButton>
-                      <IconButton size="small" color="error" onClick={() => handleDelete(supplier.id)} title="Delete">
+                      <IconButton size="small" color="error" onClick={() => handleDeleteClick(supplier.id)} title="Delete">
                         <DeleteIcon />
                       </IconButton>
                     </TableCell>
@@ -586,6 +611,44 @@ export default function SuppliersPage() {
           <Button onClick={handleCloseDialog}>Cancel</Button>
           <Button onClick={handleSave} variant="contained" disabled={!formData.name}>
             {editingSupplier ? 'Save Changes' : 'Add Supplier'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Delete Supplier Confirmation Dialog */}
+      <Dialog
+        open={deleteConfirmationOpen}
+        onClose={() => setDeleteConfirmationOpen(false)}
+      >
+        <DialogTitle>Confirm Delete</DialogTitle>
+        <DialogContent>
+          <Typography>
+            Are you sure you want to delete this supplier? This action cannot be undone.
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setDeleteConfirmationOpen(false)}>Cancel</Button>
+          <Button onClick={handleConfirmDelete} color="error" variant="contained" autoFocus>
+            Delete
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Remove Material Link Confirmation Dialog */}
+      <Dialog
+        open={removeMaterialConfirmationOpen}
+        onClose={() => setRemoveMaterialConfirmationOpen(false)}
+      >
+        <DialogTitle>Remove Material</DialogTitle>
+        <DialogContent>
+          <Typography>
+            Are you sure you want to remove this material from this supplier?
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setRemoveMaterialConfirmationOpen(false)}>Cancel</Button>
+          <Button onClick={handleConfirmRemoveMaterial} color="error" variant="contained" autoFocus>
+            Remove
           </Button>
         </DialogActions>
       </Dialog>

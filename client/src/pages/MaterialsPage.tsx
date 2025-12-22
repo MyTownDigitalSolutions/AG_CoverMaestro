@@ -19,13 +19,17 @@ export default function MaterialsPage() {
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editingMaterial, setEditingMaterial] = useState<Material | null>(null)
   const [error, setError] = useState<string | null>(null)
-  
+
   const [supplierDialogOpen, setSupplierDialogOpen] = useState(false)
   const [selectedMaterial, setSelectedMaterial] = useState<Material | null>(null)
   const [materialSuppliers, setMaterialSuppliers] = useState<SupplierMaterialWithSupplier[]>([])
   const [addSupplierDialogOpen, setAddSupplierDialogOpen] = useState(false)
   const [newSupplierLink, setNewSupplierLink] = useState({ supplier_id: 0, unit_cost: 0, shipping_cost: 0, quantity_purchased: 1 })
-  
+
+  // Delete confirmation state
+  const [deleteConfirmationOpen, setDeleteConfirmationOpen] = useState(false)
+  const [materialToDelete, setMaterialToDelete] = useState<number | null>(null)
+
   const [formData, setFormData] = useState({
     name: '',
     base_color: '',
@@ -66,10 +70,22 @@ export default function MaterialsPage() {
     }
   }
 
-  const handleDelete = async (id: number) => {
-    if (confirm('Are you sure you want to delete this material?')) {
-      await materialsApi.delete(id)
-      loadMaterials()
+  const handleDeleteClick = (id: number) => {
+    setMaterialToDelete(id)
+    setDeleteConfirmationOpen(true)
+  }
+
+  const handleConfirmDelete = async () => {
+    if (materialToDelete !== null) {
+      try {
+        await materialsApi.delete(materialToDelete)
+        loadMaterials()
+        setDeleteConfirmationOpen(false)
+        setMaterialToDelete(null)
+      } catch (err: any) {
+        setError(err.response?.data?.detail || 'Failed to delete material')
+        setDeleteConfirmationOpen(false)
+      }
     }
   }
 
@@ -189,7 +205,7 @@ export default function MaterialsPage() {
               <TableCell>Type</TableCell>
               <TableCell>Base Color</TableCell>
               <TableCell>Width (in)</TableCell>
-              <TableCell>Weight/Yard (lbs)</TableCell>
+              <TableCell>Weight/Yard (oz)</TableCell>
               <TableCell>Weight/Sq In (oz)</TableCell>
               <TableCell>Pkg Qty</TableCell>
               <TableCell>Actions</TableCell>
@@ -201,39 +217,44 @@ export default function MaterialsPage() {
               const width = material.linear_yard_width || 0
               const weight = material.weight_per_linear_yard || 0
               const weightPerSqIn = width > 0 && weight > 0
-                ? (weight * 16) / (width * 36)
+                ? weight / (width * 36)
                 : 0
               return (
-              <TableRow key={material.id}>
-                <TableCell>{material.name}</TableCell>
-                <TableCell>
-                  <Chip 
-                    label={material.material_type || 'fabric'} 
-                    size="small" 
-                    color={isFabric ? 'primary' : 'default'}
-                  />
-                </TableCell>
-                <TableCell>{material.base_color}</TableCell>
-                <TableCell>{isFabric ? width : '-'}</TableCell>
-                <TableCell>{isFabric ? weight : '-'}</TableCell>
-                <TableCell>{isFabric ? weightPerSqIn.toFixed(4) : '-'}</TableCell>
-                <TableCell>{!isFabric && material.package_quantity ? material.package_quantity : '-'}</TableCell>
-                <TableCell>
-                  <IconButton 
-                    onClick={() => openSupplierDialog(material)} 
-                    title="Manage Suppliers"
-                    color="primary"
-                  >
-                    <LocalShippingIcon />
-                  </IconButton>
-                  <IconButton onClick={() => openEdit(material)} title="Edit">
-                    <EditIcon />
-                  </IconButton>
-                  <IconButton onClick={() => handleDelete(material.id)} title="Delete" color="error">
-                    <DeleteIcon />
-                  </IconButton>
-                </TableCell>
-              </TableRow>
+                <TableRow key={material.id}>
+                  <TableCell>{material.name}</TableCell>
+                  <TableCell>
+                    <Chip
+                      label={material.material_type || 'fabric'}
+                      size="small"
+                      color={isFabric ? 'primary' : 'default'}
+                    />
+                  </TableCell>
+                  <TableCell>{material.base_color}</TableCell>
+                  <TableCell>{isFabric ? width : '-'}</TableCell>
+                  <TableCell>{isFabric ? weight : '-'}</TableCell>
+                  <TableCell>{isFabric ? weightPerSqIn.toFixed(4) : '-'}</TableCell>
+                  <TableCell>{!isFabric && material.package_quantity ? material.package_quantity : '-'}</TableCell>
+                  <TableCell>
+                    <IconButton
+                      onClick={() => openSupplierDialog(material)}
+                      title="Manage Suppliers"
+                      color="primary"
+                    >
+                      <LocalShippingIcon />
+                    </IconButton>
+                    <IconButton onClick={() => openEdit(material)} title="Edit">
+                      <EditIcon />
+                    </IconButton>
+                    <IconButton
+                      onClick={() => handleDeleteClick(material.id)}
+                      title="Delete"
+                      color="error"
+                      type="button"
+                    >
+                      <DeleteIcon />
+                    </IconButton>
+                  </TableCell>
+                </TableRow>
               )
             })}
           </TableBody>
@@ -289,7 +310,7 @@ export default function MaterialsPage() {
                   <TextField
                     fullWidth
                     type="number"
-                    label="Weight per Linear Yard (lbs)"
+                    label="Weight per Linear Yard (oz)"
                     value={formData.weight_per_linear_yard || ''}
                     onChange={(e) => setFormData({ ...formData, weight_per_linear_yard: parseFloat(e.target.value) || undefined })}
                   />
@@ -333,10 +354,10 @@ export default function MaterialsPage() {
         </DialogActions>
       </Dialog>
 
-      <Dialog 
-        open={supplierDialogOpen} 
-        onClose={() => setSupplierDialogOpen(false)} 
-        maxWidth="md" 
+      <Dialog
+        open={supplierDialogOpen}
+        onClose={() => setSupplierDialogOpen(false)}
+        maxWidth="md"
         fullWidth
       >
         <DialogTitle>
@@ -344,11 +365,11 @@ export default function MaterialsPage() {
         </DialogTitle>
         <DialogContent>
           <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-            {materialSuppliers.length <= 1 
+            {materialSuppliers.length <= 1
               ? "This material has one supplier. Their cost will be used automatically for pricing."
               : "Multiple suppliers exist. Please select a preferred supplier - their cost will be used for pricing calculations."}
           </Typography>
-          
+
           <TableContainer component={Paper} variant="outlined">
             <Table size="small">
               <TableHead>
@@ -381,17 +402,17 @@ export default function MaterialsPage() {
                       <TableCell>
                         {ms.supplier_name}
                         {ms.is_preferred && (
-                          <Chip 
-                            icon={<StarIcon />} 
-                            label="Preferred" 
-                            size="small" 
-                            color="primary" 
-                            sx={{ ml: 1 }} 
+                          <Chip
+                            icon={<StarIcon />}
+                            label="Preferred"
+                            size="small"
+                            color="primary"
+                            sx={{ ml: 1 }}
                           />
                         )}
                       </TableCell>
                       <TableCell>
-                        <Typography 
+                        <Typography
                           fontWeight={ms.is_preferred ? 'bold' : 'normal'}
                           color={ms.is_preferred ? 'primary' : 'inherit'}
                         >
@@ -399,7 +420,7 @@ export default function MaterialsPage() {
                         </Typography>
                       </TableCell>
                       <TableCell>
-                        <Typography 
+                        <Typography
                           fontWeight={ms.is_preferred ? 'bold' : 'normal'}
                           color={ms.is_preferred ? 'primary' : 'inherit'}
                         >
@@ -407,7 +428,7 @@ export default function MaterialsPage() {
                         </Typography>
                       </TableCell>
                       <TableCell>
-                        <Typography 
+                        <Typography
                           fontWeight={ms.is_preferred ? 'bold' : 'normal'}
                           color={ms.is_preferred ? 'primary' : 'inherit'}
                         >
@@ -415,9 +436,9 @@ export default function MaterialsPage() {
                         </Typography>
                       </TableCell>
                       <TableCell>
-                        <IconButton 
-                          size="small" 
-                          color="error" 
+                        <IconButton
+                          size="small"
+                          color="error"
                           onClick={() => handleRemoveSupplierLink(ms.id)}
                         >
                           <DeleteIcon fontSize="small" />
@@ -429,7 +450,7 @@ export default function MaterialsPage() {
               </TableBody>
             </Table>
           </TableContainer>
-          
+
           <Box sx={{ mt: 2 }}>
             <Button
               startIcon={<AddIcon />}
@@ -487,7 +508,7 @@ export default function MaterialsPage() {
               value={newSupplierLink.quantity_purchased}
               onChange={(e) => setNewSupplierLink({ ...newSupplierLink, quantity_purchased: parseFloat(e.target.value) || 1 })}
               fullWidth
-              helperText={selectedMaterial?.material_type === 'fabric' 
+              helperText={selectedMaterial?.material_type === 'fabric'
                 ? 'Number of yards in this purchase (for shipping cost calculation)'
                 : 'Number of units/packages purchased'}
             />
@@ -495,12 +516,31 @@ export default function MaterialsPage() {
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setAddSupplierDialogOpen(false)}>Cancel</Button>
-          <Button 
-            onClick={handleAddSupplierLink} 
+          <Button
+            onClick={handleAddSupplierLink}
             variant="contained"
             disabled={!newSupplierLink.supplier_id}
           >
             Add
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog
+        open={deleteConfirmationOpen}
+        onClose={() => setDeleteConfirmationOpen(false)}
+      >
+        <DialogTitle>Confirm Delete</DialogTitle>
+        <DialogContent>
+          <Typography>
+            Are you sure you want to delete this material? This action cannot be undone.
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setDeleteConfirmationOpen(false)}>Cancel</Button>
+          <Button onClick={handleConfirmDelete} color="error" variant="contained" autoFocus>
+            Delete
           </Button>
         </DialogActions>
       </Dialog>

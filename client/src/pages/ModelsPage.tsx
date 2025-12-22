@@ -21,7 +21,11 @@ export default function ModelsPage() {
   const [filterSeries, setFilterSeries] = useState<number | ''>('')
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editingModel, setEditingModel] = useState<Model | null>(null)
-  
+
+  // Delete confirmation state
+  const [deleteConfirmationOpen, setDeleteConfirmationOpen] = useState(false)
+  const [modelToDelete, setModelToDelete] = useState<number | null>(null)
+
   const [formData, setFormData] = useState({
     name: '',
     series_id: 0,
@@ -71,7 +75,7 @@ export default function ModelsPage() {
       handle_width: formData.handle_width || undefined,
       image_url: formData.image_url || undefined
     }
-    
+
     if (editingModel) {
       await modelsApi.update(editingModel.id, data)
     } else {
@@ -82,10 +86,17 @@ export default function ModelsPage() {
     loadData()
   }
 
-  const handleDelete = async (id: number) => {
-    if (confirm('Are you sure you want to delete this model?')) {
-      await modelsApi.delete(id)
+  const handleDeleteClick = (id: number) => {
+    setModelToDelete(id)
+    setDeleteConfirmationOpen(true)
+  }
+
+  const handleConfirmDelete = async () => {
+    if (modelToDelete !== null) {
+      await modelsApi.delete(modelToDelete)
       loadData()
+      setDeleteConfirmationOpen(false)
+      setModelToDelete(null)
     }
   }
 
@@ -166,6 +177,7 @@ export default function ModelsPage() {
               <TableCell>Parent SKU</TableCell>
               <TableCell>Series</TableCell>
               <TableCell>Dimensions (W x D x H)</TableCell>
+              <TableCell>Area (sq in)</TableCell>
               <TableCell>Handle</TableCell>
               <TableCell>Angle</TableCell>
               <TableCell>Actions</TableCell>
@@ -178,11 +190,12 @@ export default function ModelsPage() {
                 <TableCell sx={{ fontFamily: 'monospace', fontSize: '0.85rem' }}>{model.parent_sku || '-'}</TableCell>
                 <TableCell>{getSeriesWithManufacturer(model.series_id)}</TableCell>
                 <TableCell>{`${model.width}" x ${model.depth}" x ${model.height}"`}</TableCell>
+                <TableCell>{model.surface_area_sq_in?.toFixed(2) || '-'}</TableCell>
                 <TableCell>{model.handle_location}</TableCell>
                 <TableCell>{model.angle_type}</TableCell>
                 <TableCell>
                   <IconButton onClick={() => openEdit(model)}><EditIcon /></IconButton>
-                  <IconButton onClick={() => handleDelete(model.id)}><DeleteIcon /></IconButton>
+                  <IconButton onClick={() => handleDeleteClick(model.id)}><DeleteIcon /></IconButton>
                 </TableCell>
               </TableRow>
             ))}
@@ -190,10 +203,10 @@ export default function ModelsPage() {
         </Table>
       </TableContainer>
 
-      <Dialog 
-        open={dialogOpen} 
-        onClose={() => setDialogOpen(false)} 
-        maxWidth="md" 
+      <Dialog
+        open={dialogOpen}
+        onClose={() => setDialogOpen(false)}
+        maxWidth="md"
         fullWidth
         PaperProps={{
           sx: {
@@ -327,6 +340,25 @@ export default function ModelsPage() {
         <DialogActions>
           <Button onClick={() => setDialogOpen(false)}>Cancel</Button>
           <Button onClick={handleSave} variant="contained">Save</Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog
+        open={deleteConfirmationOpen}
+        onClose={() => setDeleteConfirmationOpen(false)}
+      >
+        <DialogTitle>Confirm Delete</DialogTitle>
+        <DialogContent>
+          <Typography>
+            Are you sure you want to delete this model? This action cannot be undone.
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setDeleteConfirmationOpen(false)}>Cancel</Button>
+          <Button onClick={handleConfirmDelete} color="error" variant="contained" autoFocus>
+            Delete
+          </Button>
         </DialogActions>
       </Dialog>
     </Box>
