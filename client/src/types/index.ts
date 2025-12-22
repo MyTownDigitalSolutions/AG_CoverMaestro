@@ -36,14 +36,20 @@ export interface Model {
   parent_sku?: string
 }
 
+export type MaterialType = 'fabric' | 'hardware' | 'packaging'
+export type UnitOfMeasure = 'yard' | 'each' | 'package' | 'box' | 'set'
+
 export interface Material {
   id: number
   name: string
   base_color: string
-  linear_yard_width: number
+  material_type: MaterialType
+  linear_yard_width?: number
   cost_per_linear_yard: number
-  weight_per_linear_yard: number
+  weight_per_linear_yard?: number
   labor_time_minutes: number
+  unit_of_measure?: UnitOfMeasure
+  package_quantity?: number
 }
 
 export interface MaterialColourSurcharge {
@@ -69,19 +75,21 @@ export interface SupplierMaterial {
   material_id: number
   unit_cost: number
   shipping_cost: number
-  yards_purchased: number
+  quantity_purchased: number
   is_preferred: boolean
 }
 
 export interface SupplierMaterialWithSupplier extends SupplierMaterial {
   supplier_name: string
+  material_type?: MaterialType
   cost_per_linear_yard: number
   cost_per_square_inch: number
 }
 
 export interface SupplierMaterialWithMaterial extends SupplierMaterial {
   material_name: string
-  linear_yard_width: number
+  material_type?: MaterialType
+  linear_yard_width?: number
   cost_per_linear_yard: number
   cost_per_square_inch: number
 }

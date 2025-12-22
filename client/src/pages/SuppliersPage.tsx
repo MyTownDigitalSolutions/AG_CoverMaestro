@@ -39,7 +39,7 @@ export default function SuppliersPage() {
     material_id: 0,
     unit_cost: 0,
     shipping_cost: 0,
-    yards_purchased: 1,
+    quantity_purchased: 1,
     is_preferred: false
   })
 
@@ -157,7 +157,7 @@ export default function SuppliersPage() {
       material_id: 0,
       unit_cost: 0,
       shipping_cost: 0,
-      yards_purchased: 1,
+      quantity_purchased: 1,
       is_preferred: false
     })
     setAddMaterialDialogOpen(true)
@@ -169,7 +169,7 @@ export default function SuppliersPage() {
       material_id: link.material_id,
       unit_cost: link.unit_cost,
       shipping_cost: link.shipping_cost,
-      yards_purchased: link.yards_purchased || 1,
+      quantity_purchased: link.quantity_purchased || 1,
       is_preferred: link.is_preferred
     })
     setEditMaterialDialogOpen(true)
@@ -183,7 +183,7 @@ export default function SuppliersPage() {
         material_id: materialFormData.material_id,
         unit_cost: materialFormData.unit_cost,
         shipping_cost: materialFormData.shipping_cost,
-        yards_purchased: materialFormData.yards_purchased,
+        quantity_purchased: materialFormData.quantity_purchased,
         is_preferred: materialFormData.is_preferred
       })
       setAddMaterialDialogOpen(false)
@@ -201,7 +201,7 @@ export default function SuppliersPage() {
         material_id: editingMaterialLink.material_id,
         unit_cost: materialFormData.unit_cost,
         shipping_cost: materialFormData.shipping_cost,
-        yards_purchased: materialFormData.yards_purchased,
+        quantity_purchased: materialFormData.quantity_purchased,
         is_preferred: materialFormData.is_preferred
       })
       setEditMaterialDialogOpen(false)
@@ -276,10 +276,11 @@ export default function SuppliersPage() {
             <TableHead>
               <TableRow>
                 <TableCell>Material Name</TableCell>
-                <TableCell>Unit Cost ($/yd)</TableCell>
+                <TableCell>Type</TableCell>
+                <TableCell>Unit Cost</TableCell>
                 <TableCell>Shipping ($)</TableCell>
-                <TableCell>Yards</TableCell>
-                <TableCell>$/Linear Yd</TableCell>
+                <TableCell>Qty</TableCell>
+                <TableCell>$/Unit</TableCell>
                 <TableCell>$/Sq In</TableCell>
                 <TableCell>Status</TableCell>
                 <TableCell align="right">Actions</TableCell>
@@ -288,19 +289,28 @@ export default function SuppliersPage() {
             <TableBody>
               {supplierMaterials.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={8} align="center">
+                  <TableCell colSpan={9} align="center">
                     <Typography color="text.secondary">No materials linked to this supplier</Typography>
                   </TableCell>
                 </TableRow>
               ) : (
-                supplierMaterials.map(sm => (
+                supplierMaterials.map(sm => {
+                  const isFabric = sm.material_type === 'fabric'
+                  return (
                   <TableRow key={sm.id} hover>
                     <TableCell>{sm.material_name}</TableCell>
+                    <TableCell>
+                      <Chip 
+                        label={sm.material_type || 'fabric'} 
+                        size="small"
+                        color={isFabric ? 'primary' : 'default'}
+                      />
+                    </TableCell>
                     <TableCell>${sm.unit_cost.toFixed(2)}</TableCell>
                     <TableCell>${sm.shipping_cost.toFixed(2)}</TableCell>
-                    <TableCell>{sm.yards_purchased.toFixed(1)}</TableCell>
+                    <TableCell>{sm.quantity_purchased.toFixed(1)}</TableCell>
                     <TableCell>${sm.cost_per_linear_yard.toFixed(2)}</TableCell>
-                    <TableCell>${sm.cost_per_square_inch.toFixed(4)}</TableCell>
+                    <TableCell>{isFabric ? `$${sm.cost_per_square_inch.toFixed(4)}` : '-'}</TableCell>
                     <TableCell>
                       {sm.is_preferred && (
                         <Chip
@@ -320,7 +330,8 @@ export default function SuppliersPage() {
                       </IconButton>
                     </TableCell>
                   </TableRow>
-                ))
+                  )
+                })
               )}
             </TableBody>
           </Table>
@@ -343,11 +354,12 @@ export default function SuppliersPage() {
                 </Select>
               </FormControl>
               <TextField
-                label="Unit Cost ($ per yard)"
+                label="Unit Cost ($)"
                 type="number"
                 value={materialFormData.unit_cost}
                 onChange={(e) => setMaterialFormData({ ...materialFormData, unit_cost: parseFloat(e.target.value) || 0 })}
                 fullWidth
+                helperText="Cost per unit (yard for fabric, per package for hardware)"
               />
               <TextField
                 label="Shipping Cost ($)"
@@ -355,15 +367,15 @@ export default function SuppliersPage() {
                 value={materialFormData.shipping_cost}
                 onChange={(e) => setMaterialFormData({ ...materialFormData, shipping_cost: parseFloat(e.target.value) || 0 })}
                 fullWidth
-                helperText="Flat shipping cost - will be divided by yards purchased"
+                helperText="Flat shipping cost - will be divided by quantity purchased"
               />
               <TextField
-                label="Yards Purchased"
+                label="Quantity Purchased"
                 type="number"
-                value={materialFormData.yards_purchased}
-                onChange={(e) => setMaterialFormData({ ...materialFormData, yards_purchased: parseFloat(e.target.value) || 1 })}
+                value={materialFormData.quantity_purchased}
+                onChange={(e) => setMaterialFormData({ ...materialFormData, quantity_purchased: parseFloat(e.target.value) || 1 })}
                 fullWidth
-                helperText="Number of yards in this purchase (for shipping cost calculation)"
+                helperText="Number of units in this purchase (yards for fabric, packages for hardware)"
               />
               <FormControlLabel
                 control={
@@ -393,11 +405,12 @@ export default function SuppliersPage() {
           <DialogContent>
             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 1, minWidth: 350 }}>
               <TextField
-                label="Unit Cost ($ per yard)"
+                label="Unit Cost ($)"
                 type="number"
                 value={materialFormData.unit_cost}
                 onChange={(e) => setMaterialFormData({ ...materialFormData, unit_cost: parseFloat(e.target.value) || 0 })}
                 fullWidth
+                helperText="Cost per unit (yard for fabric, per package for hardware)"
               />
               <TextField
                 label="Shipping Cost ($)"
@@ -405,15 +418,15 @@ export default function SuppliersPage() {
                 value={materialFormData.shipping_cost}
                 onChange={(e) => setMaterialFormData({ ...materialFormData, shipping_cost: parseFloat(e.target.value) || 0 })}
                 fullWidth
-                helperText="Flat shipping cost - will be divided by yards purchased"
+                helperText="Flat shipping cost - will be divided by quantity purchased"
               />
               <TextField
-                label="Yards Purchased"
+                label="Quantity Purchased"
                 type="number"
-                value={materialFormData.yards_purchased}
-                onChange={(e) => setMaterialFormData({ ...materialFormData, yards_purchased: parseFloat(e.target.value) || 1 })}
+                value={materialFormData.quantity_purchased}
+                onChange={(e) => setMaterialFormData({ ...materialFormData, quantity_purchased: parseFloat(e.target.value) || 1 })}
                 fullWidth
-                helperText="Number of yards in this purchase (for shipping cost calculation)"
+                helperText="Number of units in this purchase (yards for fabric, packages for hardware)"
               />
               <FormControlLabel
                 control={

@@ -108,13 +108,22 @@ This application helps manage:
 6. **Supplier Management System**:
    - Manage suppliers with full contact information (name, contact, address, phone, email, website)
    - Link suppliers to materials they sell via `supplier_materials` junction table
-   - Each supplier-material link has: `unit_cost` (per yard), `shipping_cost` (flat fee), `yards_purchased`, `is_preferred` flag
+   - Each supplier-material link has: `unit_cost`, `shipping_cost` (flat fee), `quantity_purchased`, `is_preferred` flag
    - Only one supplier can be preferred per material (business rule enforced)
-   - Calculated fields displayed: Cost per Linear Yard, Cost per Square Inch
-   - Formula: `cost_per_linear_yard = unit_cost + (shipping_cost / yards_purchased)`
+   - Calculated fields displayed: Cost per Linear Yard (fabric) or Cost per Unit (hardware), Cost per Square Inch (fabric only)
+   - Formula: `cost_per_unit = unit_cost + (shipping_cost / quantity_purchased)`
    - Pricing service uses preferred supplier's unit cost + amortized shipping cost
    - Access via Suppliers page (list) and Supplier Detail page (materials table with add/edit/delete)
    - Also accessible from Materials page via "Manage Suppliers" icon button
+
+7. **Material Type System**:
+   - Materials support three types: FABRIC, HARDWARE, PACKAGING (enum: `MaterialType`)
+   - Unit of measure enum: YARD, EACH, PACKAGE, BOX, SET (`UnitOfMeasure`)
+   - Fabric materials: width (inches), weight per linear yard (lbs), cost per yard
+   - Hardware/Packaging materials: unit_of_measure, package_quantity, cost per unit
+   - UI displays material type as color-coded chip (blue for fabric, default for others)
+   - Conditional form fields: fabric shows width/weight fields; hardware/packaging show unit of measure/quantity
+   - Supplier materials table uses dynamic labels: "Yards" for fabric, "Qty" for other types
 
 ## Development
 

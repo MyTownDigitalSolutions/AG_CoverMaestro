@@ -84,13 +84,14 @@ def list_supplier_materials(id: int, db: Session = Depends(get_db)):
     result = []
     for sm in supplier_materials:
         material = db.query(Material).filter(Material.id == sm.material_id).first()
-        yards = sm.yards_purchased or 1.0
+        qty = sm.quantity_purchased or 1.0
         shipping = sm.shipping_cost or 0.0
         unit = sm.unit_cost
         linear_yard_width = material.linear_yard_width if material else 54.0
+        material_type = material.material_type if material else None
         
-        cost_per_linear_yard = unit + (shipping / yards) if yards > 0 else unit
-        linear_yard_area = linear_yard_width * 36
+        cost_per_linear_yard = unit + (shipping / qty) if qty > 0 else unit
+        linear_yard_area = (linear_yard_width or 54.0) * 36
         cost_per_square_inch = cost_per_linear_yard / linear_yard_area if linear_yard_area > 0 else 0
         
         result.append(SupplierMaterialWithMaterialResponse(
@@ -99,9 +100,10 @@ def list_supplier_materials(id: int, db: Session = Depends(get_db)):
             material_id=sm.material_id,
             unit_cost=unit,
             shipping_cost=shipping,
-            yards_purchased=yards,
+            quantity_purchased=qty,
             is_preferred=sm.is_preferred or False,
             material_name=material.name if material else "Unknown",
+            material_type=material_type,
             linear_yard_width=linear_yard_width,
             cost_per_linear_yard=round(cost_per_linear_yard, 4),
             cost_per_square_inch=round(cost_per_square_inch, 6)
@@ -127,7 +129,7 @@ def create_supplier_material(data: SupplierMaterialCreate, db: Session = Depends
         material_id=data.material_id,
         unit_cost=data.unit_cost,
         shipping_cost=data.shipping_cost,
-        yards_purchased=data.yards_purchased,
+        quantity_purchased=data.quantity_purchased,
         is_preferred=data.is_preferred
     )
     db.add(supplier_material)
@@ -148,7 +150,7 @@ def update_supplier_material(id: int, data: SupplierMaterialCreate, db: Session 
     
     supplier_material.unit_cost = data.unit_cost
     supplier_material.shipping_cost = data.shipping_cost
-    supplier_material.yards_purchased = data.yards_purchased
+    supplier_material.quantity_purchased = data.quantity_purchased
     supplier_material.is_preferred = data.is_preferred
     db.commit()
     db.refresh(supplier_material)

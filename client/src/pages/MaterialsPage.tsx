@@ -11,7 +11,7 @@ import AddIcon from '@mui/icons-material/Add'
 import LocalShippingIcon from '@mui/icons-material/LocalShipping'
 import StarIcon from '@mui/icons-material/Star'
 import { materialsApi, suppliersApi } from '../services/api'
-import type { Material, Supplier, SupplierMaterialWithSupplier } from '../types'
+import type { Material, Supplier, SupplierMaterialWithSupplier, MaterialType, UnitOfMeasure } from '../types'
 
 export default function MaterialsPage() {
   const [materials, setMaterials] = useState<Material[]>([])
@@ -24,15 +24,18 @@ export default function MaterialsPage() {
   const [selectedMaterial, setSelectedMaterial] = useState<Material | null>(null)
   const [materialSuppliers, setMaterialSuppliers] = useState<SupplierMaterialWithSupplier[]>([])
   const [addSupplierDialogOpen, setAddSupplierDialogOpen] = useState(false)
-  const [newSupplierLink, setNewSupplierLink] = useState({ supplier_id: 0, unit_cost: 0, shipping_cost: 0 })
+  const [newSupplierLink, setNewSupplierLink] = useState({ supplier_id: 0, unit_cost: 0, shipping_cost: 0, quantity_purchased: 1 })
   
   const [formData, setFormData] = useState({
     name: '',
     base_color: '',
-    linear_yard_width: 54,
+    material_type: 'fabric' as MaterialType,
+    linear_yard_width: 54 as number | undefined,
     cost_per_linear_yard: 0,
-    weight_per_linear_yard: 0,
-    labor_time_minutes: 45
+    weight_per_linear_yard: 0 as number | undefined,
+    labor_time_minutes: 45,
+    unit_of_measure: 'yard' as UnitOfMeasure | undefined,
+    package_quantity: undefined as number | undefined
   })
 
   const loadMaterials = async () => {
@@ -76,10 +79,13 @@ export default function MaterialsPage() {
     setFormData({
       name: '',
       base_color: '',
+      material_type: 'fabric' as MaterialType,
       linear_yard_width: 54,
       cost_per_linear_yard: 0,
       weight_per_linear_yard: 0,
-      labor_time_minutes: 45
+      labor_time_minutes: 45,
+      unit_of_measure: 'yard' as UnitOfMeasure,
+      package_quantity: undefined
     })
     setEditingMaterial(null)
   }
@@ -89,10 +95,13 @@ export default function MaterialsPage() {
     setFormData({
       name: material.name,
       base_color: material.base_color,
+      material_type: material.material_type || 'fabric',
       linear_yard_width: material.linear_yard_width,
       cost_per_linear_yard: material.cost_per_linear_yard,
       weight_per_linear_yard: material.weight_per_linear_yard,
-      labor_time_minutes: material.labor_time_minutes
+      labor_time_minutes: material.labor_time_minutes,
+      unit_of_measure: material.unit_of_measure,
+      package_quantity: material.package_quantity
     })
     setDialogOpen(true)
   }
@@ -127,12 +136,13 @@ export default function MaterialsPage() {
         material_id: selectedMaterial.id,
         unit_cost: newSupplierLink.unit_cost,
         shipping_cost: newSupplierLink.shipping_cost,
+        quantity_purchased: newSupplierLink.quantity_purchased,
         is_preferred: false
       })
       const data = await materialsApi.getSuppliers(selectedMaterial.id)
       setMaterialSuppliers(data)
       setAddSupplierDialogOpen(false)
-      setNewSupplierLink({ supplier_id: 0, unit_cost: 0, shipping_cost: 0 })
+      setNewSupplierLink({ supplier_id: 0, unit_cost: 0, shipping_cost: 0, quantity_purchased: 1 })
     } catch (err: any) {
       setError(err.response?.data?.detail || 'Failed to add supplier')
     }
@@ -182,25 +192,38 @@ export default function MaterialsPage() {
           <TableHead>
             <TableRow>
               <TableCell>Name</TableCell>
+              <TableCell>Type</TableCell>
               <TableCell>Base Color</TableCell>
               <TableCell>Width (in)</TableCell>
               <TableCell>Weight/Yard (lbs)</TableCell>
               <TableCell>Weight/Sq In (oz)</TableCell>
+              <TableCell>Pkg Qty</TableCell>
               <TableCell>Actions</TableCell>
             </TableRow>
           </TableHead>
           <TableBody>
             {materials.map((material) => {
-              const weightPerSqIn = material.linear_yard_width > 0 
-                ? (material.weight_per_linear_yard * 16) / (material.linear_yard_width * 36)
+              const isFabric = material.material_type === 'fabric'
+              const width = material.linear_yard_width || 0
+              const weight = material.weight_per_linear_yard || 0
+              const weightPerSqIn = width > 0 && weight > 0
+                ? (weight * 16) / (width * 36)
                 : 0
               return (
               <TableRow key={material.id}>
                 <TableCell>{material.name}</TableCell>
+                <TableCell>
+                  <Chip 
+                    label={material.material_type || 'fabric'} 
+                    size="small" 
+                    color={isFabric ? 'primary' : 'default'}
+                  />
+                </TableCell>
                 <TableCell>{material.base_color}</TableCell>
-                <TableCell>{material.linear_yard_width}</TableCell>
-                <TableCell>{material.weight_per_linear_yard}</TableCell>
-                <TableCell>{weightPerSqIn.toFixed(4)}</TableCell>
+                <TableCell>{isFabric ? width : '-'}</TableCell>
+                <TableCell>{isFabric ? weight : '-'}</TableCell>
+                <TableCell>{isFabric ? weightPerSqIn.toFixed(4) : '-'}</TableCell>
+                <TableCell>{!isFabric && material.package_quantity ? material.package_quantity : '-'}</TableCell>
                 <TableCell>
                   <IconButton 
                     onClick={() => openSupplierDialog(material)} 
@@ -236,6 +259,20 @@ export default function MaterialsPage() {
               />
             </Grid>
             <Grid item xs={6}>
+              <FormControl fullWidth>
+                <InputLabel>Material Type</InputLabel>
+                <Select
+                  value={formData.material_type}
+                  label="Material Type"
+                  onChange={(e) => setFormData({ ...formData, material_type: e.target.value as MaterialType })}
+                >
+                  <MenuItem value="fabric">Fabric</MenuItem>
+                  <MenuItem value="hardware">Hardware</MenuItem>
+                  <MenuItem value="packaging">Packaging</MenuItem>
+                </Select>
+              </FormControl>
+            </Grid>
+            <Grid item xs={6}>
               <TextField
                 fullWidth
                 label="Base Color"
@@ -243,35 +280,68 @@ export default function MaterialsPage() {
                 onChange={(e) => setFormData({ ...formData, base_color: e.target.value })}
               />
             </Grid>
+            {formData.material_type === 'fabric' && (
+              <>
+                <Grid item xs={6}>
+                  <TextField
+                    fullWidth
+                    type="number"
+                    label="Width (inches)"
+                    value={formData.linear_yard_width || ''}
+                    onChange={(e) => setFormData({ ...formData, linear_yard_width: parseFloat(e.target.value) || undefined })}
+                  />
+                </Grid>
+                <Grid item xs={6}>
+                  <TextField
+                    fullWidth
+                    type="number"
+                    label="Weight per Linear Yard (lbs)"
+                    value={formData.weight_per_linear_yard || ''}
+                    onChange={(e) => setFormData({ ...formData, weight_per_linear_yard: parseFloat(e.target.value) || undefined })}
+                  />
+                </Grid>
+              </>
+            )}
+            {formData.material_type !== 'fabric' && (
+              <>
+                <Grid item xs={6}>
+                  <FormControl fullWidth>
+                    <InputLabel>Unit of Measure</InputLabel>
+                    <Select
+                      value={formData.unit_of_measure || 'each'}
+                      label="Unit of Measure"
+                      onChange={(e) => setFormData({ ...formData, unit_of_measure: e.target.value as UnitOfMeasure })}
+                    >
+                      <MenuItem value="each">Each</MenuItem>
+                      <MenuItem value="package">Package</MenuItem>
+                      <MenuItem value="box">Box</MenuItem>
+                      <MenuItem value="set">Set</MenuItem>
+                    </Select>
+                  </FormControl>
+                </Grid>
+                <Grid item xs={6}>
+                  <TextField
+                    fullWidth
+                    type="number"
+                    label="Quantity per Package"
+                    value={formData.package_quantity || ''}
+                    onChange={(e) => setFormData({ ...formData, package_quantity: parseFloat(e.target.value) || undefined })}
+                    helperText="How many items in one package/box"
+                  />
+                </Grid>
+              </>
+            )}
             <Grid item xs={6}>
               <TextField
                 fullWidth
                 type="number"
-                label="Width (inches)"
-                value={formData.linear_yard_width}
-                onChange={(e) => setFormData({ ...formData, linear_yard_width: parseFloat(e.target.value) })}
-              />
-            </Grid>
-            <Grid item xs={6}>
-              <TextField
-                fullWidth
-                type="number"
-                label="Default Cost per Yard ($)"
+                label="Default Cost ($)"
                 value={formData.cost_per_linear_yard}
                 onChange={(e) => setFormData({ ...formData, cost_per_linear_yard: parseFloat(e.target.value) })}
                 helperText="Fallback cost if no preferred supplier"
               />
             </Grid>
             <Grid item xs={6}>
-              <TextField
-                fullWidth
-                type="number"
-                label="Weight per Linear Yard (lbs)"
-                value={formData.weight_per_linear_yard}
-                onChange={(e) => setFormData({ ...formData, weight_per_linear_yard: parseFloat(e.target.value) })}
-              />
-            </Grid>
-            <Grid item xs={12}>
               <TextField
                 fullWidth
                 type="number"
@@ -310,14 +380,15 @@ export default function MaterialsPage() {
                   <TableCell width={50}>Preferred</TableCell>
                   <TableCell>Supplier</TableCell>
                   <TableCell>Unit Cost</TableCell>
-                  <TableCell>Shipping Cost</TableCell>
+                  <TableCell>Shipping</TableCell>
+                  <TableCell>{selectedMaterial?.material_type === 'fabric' ? 'Yards' : 'Qty'}</TableCell>
                   <TableCell width={80}>Actions</TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
                 {materialSuppliers.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={5} align="center">
+                    <TableCell colSpan={6} align="center">
                       <Typography color="text.secondary">No suppliers linked to this material</Typography>
                     </TableCell>
                   </TableRow>
@@ -357,6 +428,14 @@ export default function MaterialsPage() {
                           color={ms.is_preferred ? 'primary' : 'inherit'}
                         >
                           ${ms.shipping_cost.toFixed(2)}
+                        </Typography>
+                      </TableCell>
+                      <TableCell>
+                        <Typography 
+                          fontWeight={ms.is_preferred ? 'bold' : 'normal'}
+                          color={ms.is_preferred ? 'primary' : 'inherit'}
+                        >
+                          {ms.quantity_purchased}
                         </Typography>
                       </TableCell>
                       <TableCell>
@@ -412,7 +491,7 @@ export default function MaterialsPage() {
               </Select>
             </FormControl>
             <TextField
-              label="Unit Cost ($ per yard)"
+              label={selectedMaterial?.material_type === 'fabric' ? 'Unit Cost ($ per yard)' : 'Unit Cost ($)'}
               type="number"
               value={newSupplierLink.unit_cost}
               onChange={(e) => setNewSupplierLink({ ...newSupplierLink, unit_cost: parseFloat(e.target.value) || 0 })}
@@ -424,7 +503,17 @@ export default function MaterialsPage() {
               value={newSupplierLink.shipping_cost}
               onChange={(e) => setNewSupplierLink({ ...newSupplierLink, shipping_cost: parseFloat(e.target.value) || 0 })}
               fullWidth
-              helperText="Flat shipping cost - will be divided by yards purchased"
+              helperText={`Flat shipping cost - will be divided by ${selectedMaterial?.material_type === 'fabric' ? 'yards' : 'quantity'} purchased`}
+            />
+            <TextField
+              label={selectedMaterial?.material_type === 'fabric' ? 'Yards Purchased' : 'Quantity Purchased'}
+              type="number"
+              value={newSupplierLink.quantity_purchased}
+              onChange={(e) => setNewSupplierLink({ ...newSupplierLink, quantity_purchased: parseFloat(e.target.value) || 1 })}
+              fullWidth
+              helperText={selectedMaterial?.material_type === 'fabric' 
+                ? 'Number of yards in this purchase (for shipping cost calculation)'
+                : 'Number of units/packages purchased'}
             />
           </Box>
         </DialogContent>

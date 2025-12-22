@@ -23,3 +23,15 @@ class Marketplace(str, enum.Enum):
     AMAZON = "amazon"
     EBAY = "ebay"
     REVERB = "reverb"
+
+class MaterialType(str, enum.Enum):
+    FABRIC = "fabric"
+    HARDWARE = "hardware"
+    PACKAGING = "packaging"
+
+class UnitOfMeasure(str, enum.Enum):
+    YARD = "yard"
+    EACH = "each"
+    PACKAGE = "package"
+    BOX = "box"
+    SET = "set"

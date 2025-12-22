@@ -29,10 +29,13 @@ def create_material(data: MaterialCreate, db: Session = Depends(get_db)):
         material = Material(
             name=data.name,
             base_color=data.base_color,
+            material_type=data.material_type,
             linear_yard_width=data.linear_yard_width,
             cost_per_linear_yard=data.cost_per_linear_yard,
             weight_per_linear_yard=data.weight_per_linear_yard,
-            labor_time_minutes=data.labor_time_minutes
+            labor_time_minutes=data.labor_time_minutes,
+            unit_of_measure=data.unit_of_measure,
+            package_quantity=data.package_quantity
         )
         db.add(material)
         db.commit()
@@ -50,10 +53,13 @@ def update_material(id: int, data: MaterialCreate, db: Session = Depends(get_db)
     try:
         material.name = data.name
         material.base_color = data.base_color
+        material.material_type = data.material_type
         material.linear_yard_width = data.linear_yard_width
         material.cost_per_linear_yard = data.cost_per_linear_yard
         material.weight_per_linear_yard = data.weight_per_linear_yard
         material.labor_time_minutes = data.labor_time_minutes
+        material.unit_of_measure = data.unit_of_measure
+        material.package_quantity = data.package_quantity
         db.commit()
         db.refresh(material)
         return material
@@ -100,12 +106,13 @@ def list_material_suppliers(id: int, db: Session = Depends(get_db)):
     result = []
     for sm in supplier_materials:
         supplier = db.query(Supplier).filter(Supplier.id == sm.supplier_id).first()
-        yards = sm.yards_purchased or 1.0
+        qty = sm.quantity_purchased or 1.0
         shipping = sm.shipping_cost or 0.0
         unit = sm.unit_cost
         
-        cost_per_linear_yard = unit + (shipping / yards) if yards > 0 else unit
-        linear_yard_area = material.linear_yard_width * 36
+        cost_per_linear_yard = unit + (shipping / qty) if qty > 0 else unit
+        linear_yard_width = material.linear_yard_width or 54.0
+        linear_yard_area = linear_yard_width * 36
         cost_per_square_inch = cost_per_linear_yard / linear_yard_area if linear_yard_area > 0 else 0
         
         result.append(SupplierMaterialWithSupplierResponse(
@@ -114,9 +121,10 @@ def list_material_suppliers(id: int, db: Session = Depends(get_db)):
             material_id=sm.material_id,
             unit_cost=unit,
             shipping_cost=shipping,
-            yards_purchased=yards,
+            quantity_purchased=qty,
             is_preferred=sm.is_preferred or False,
             supplier_name=supplier.name if supplier else "Unknown",
+            material_type=material.material_type,
             cost_per_linear_yard=round(cost_per_linear_yard, 4),
             cost_per_square_inch=round(cost_per_square_inch, 6)
         ))

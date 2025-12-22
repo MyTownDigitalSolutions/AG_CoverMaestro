@@ -2,7 +2,7 @@ from sqlalchemy import Column, Integer, String, Float, Boolean, ForeignKey, Date
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from app.database import Base
-from app.models.enums import HandleLocation, AngleType, Carrier, Marketplace
+from app.models.enums import HandleLocation, AngleType, Carrier, Marketplace, MaterialType, UnitOfMeasure
 
 class Manufacturer(Base):
     __tablename__ = "manufacturers"
@@ -64,10 +64,13 @@ class Material(Base):
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, unique=True, nullable=False)
     base_color = Column(String, nullable=False)
-    linear_yard_width = Column(Float, nullable=False)
+    material_type = Column(Enum(MaterialType), default=MaterialType.FABRIC, nullable=False)
+    linear_yard_width = Column(Float, nullable=True)
     cost_per_linear_yard = Column(Float, nullable=False)
-    weight_per_linear_yard = Column(Float, nullable=False)
+    weight_per_linear_yard = Column(Float, nullable=True)
     labor_time_minutes = Column(Float, nullable=False)
+    unit_of_measure = Column(Enum(UnitOfMeasure), default=UnitOfMeasure.YARD, nullable=True)
+    package_quantity = Column(Float, nullable=True)
     
     colour_surcharges = relationship("MaterialColourSurcharge", back_populates="material", cascade="all, delete-orphan")
     supplier_materials = relationship("SupplierMaterial", back_populates="material")
@@ -104,7 +107,7 @@ class SupplierMaterial(Base):
     material_id = Column(Integer, ForeignKey("materials.id"), nullable=False)
     unit_cost = Column(Float, nullable=False)
     shipping_cost = Column(Float, default=0.0)
-    yards_purchased = Column(Float, default=1.0)
+    quantity_purchased = Column(Float, default=1.0)
     is_preferred = Column(Boolean, default=False)
     
     supplier = relationship("Supplier", back_populates="supplier_materials")

@@ -1,7 +1,7 @@
 from pydantic import BaseModel
 from typing import Optional, List
 from datetime import datetime
-from app.models.enums import HandleLocation, AngleType, Carrier, Marketplace
+from app.models.enums import HandleLocation, AngleType, Carrier, Marketplace, MaterialType, UnitOfMeasure
 
 class ManufacturerBase(BaseModel):
     name: str
@@ -66,10 +66,13 @@ class ModelResponse(ModelBase):
 class MaterialBase(BaseModel):
     name: str
     base_color: str
-    linear_yard_width: float
-    cost_per_linear_yard: float
-    weight_per_linear_yard: float
-    labor_time_minutes: float
+    material_type: MaterialType = MaterialType.FABRIC
+    linear_yard_width: Optional[float] = None
+    cost_per_linear_yard: float = 0.0
+    weight_per_linear_yard: Optional[float] = None
+    labor_time_minutes: float = 0.0
+    unit_of_measure: Optional[UnitOfMeasure] = UnitOfMeasure.YARD
+    package_quantity: Optional[float] = None
 
 class MaterialCreate(MaterialBase):
     pass
@@ -116,7 +119,7 @@ class SupplierMaterialBase(BaseModel):
     material_id: int
     unit_cost: float
     shipping_cost: float = 0.0
-    yards_purchased: float = 1.0
+    quantity_purchased: float = 1.0
     is_preferred: bool = False
 
 class SupplierMaterialCreate(SupplierMaterialBase):
@@ -134,9 +137,10 @@ class SupplierMaterialWithSupplierResponse(BaseModel):
     material_id: int
     unit_cost: float
     shipping_cost: float
-    yards_purchased: float
+    quantity_purchased: float
     is_preferred: bool
     supplier_name: str
+    material_type: Optional[MaterialType] = None
     cost_per_linear_yard: float = 0.0
     cost_per_square_inch: float = 0.0
     
@@ -149,10 +153,11 @@ class SupplierMaterialWithMaterialResponse(BaseModel):
     material_id: int
     unit_cost: float
     shipping_cost: float
-    yards_purchased: float
+    quantity_purchased: float
     is_preferred: bool
     material_name: str
-    linear_yard_width: float = 0.0
+    material_type: Optional[MaterialType] = None
+    linear_yard_width: Optional[float] = None
     cost_per_linear_yard: float = 0.0
     cost_per_square_inch: float = 0.0
     
