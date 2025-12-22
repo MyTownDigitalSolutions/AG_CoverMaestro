@@ -69,15 +69,21 @@ export interface SupplierMaterial {
   material_id: number
   unit_cost: number
   shipping_cost: number
+  yards_purchased: number
   is_preferred: boolean
 }
 
 export interface SupplierMaterialWithSupplier extends SupplierMaterial {
   supplier_name: string
+  cost_per_linear_yard: number
+  cost_per_square_inch: number
 }
 
 export interface SupplierMaterialWithMaterial extends SupplierMaterial {
   material_name: string
+  linear_yard_width: number
+  cost_per_linear_yard: number
+  cost_per_square_inch: number
 }
 
 export interface Customer {

@@ -104,6 +104,7 @@ class SupplierMaterial(Base):
     material_id = Column(Integer, ForeignKey("materials.id"), nullable=False)
     unit_cost = Column(Float, nullable=False)
     shipping_cost = Column(Float, default=0.0)
+    yards_purchased = Column(Float, default=1.0)
     is_preferred = Column(Boolean, default=False)
     
     supplier = relationship("Supplier", back_populates="supplier_materials")

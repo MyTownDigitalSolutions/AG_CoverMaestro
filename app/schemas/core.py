@@ -116,6 +116,7 @@ class SupplierMaterialBase(BaseModel):
     material_id: int
     unit_cost: float
     shipping_cost: float = 0.0
+    yards_purchased: float = 1.0
     is_preferred: bool = False
 
 class SupplierMaterialCreate(SupplierMaterialBase):
@@ -133,8 +134,11 @@ class SupplierMaterialWithSupplierResponse(BaseModel):
     material_id: int
     unit_cost: float
     shipping_cost: float
+    yards_purchased: float
     is_preferred: bool
     supplier_name: str
+    cost_per_linear_yard: float = 0.0
+    cost_per_square_inch: float = 0.0
     
     class Config:
         from_attributes = True
@@ -145,8 +149,12 @@ class SupplierMaterialWithMaterialResponse(BaseModel):
     material_id: int
     unit_cost: float
     shipping_cost: float
+    yards_purchased: float
     is_preferred: bool
     material_name: str
+    linear_yard_width: float = 0.0
+    cost_per_linear_yard: float = 0.0
+    cost_per_square_inch: float = 0.0
     
     class Config:
         from_attributes = True
