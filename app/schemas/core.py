@@ -96,6 +96,11 @@ class MaterialColourSurchargeResponse(MaterialColourSurchargeBase):
 
 class SupplierBase(BaseModel):
     name: str
+    contact_name: Optional[str] = None
+    address: Optional[str] = None
+    phone: Optional[str] = None
+    email: Optional[str] = None
+    website: Optional[str] = None
 
 class SupplierCreate(SupplierBase):
     pass
@@ -110,6 +115,7 @@ class SupplierMaterialBase(BaseModel):
     supplier_id: int
     material_id: int
     unit_cost: float
+    is_preferred: bool = False
 
 class SupplierMaterialCreate(SupplierMaterialBase):
     pass
@@ -119,6 +125,20 @@ class SupplierMaterialResponse(SupplierMaterialBase):
     
     class Config:
         from_attributes = True
+
+class SupplierMaterialWithSupplierResponse(BaseModel):
+    id: int
+    supplier_id: int
+    material_id: int
+    unit_cost: float
+    is_preferred: bool
+    supplier_name: str
+    
+    class Config:
+        from_attributes = True
+
+class SetPreferredSupplierRequest(BaseModel):
+    supplier_id: int
 
 class CustomerBase(BaseModel):
     name: str

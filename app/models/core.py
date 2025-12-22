@@ -88,6 +88,11 @@ class Supplier(Base):
     
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, unique=True, nullable=False)
+    contact_name = Column(String, nullable=True)
+    address = Column(String, nullable=True)
+    phone = Column(String, nullable=True)
+    email = Column(String, nullable=True)
+    website = Column(String, nullable=True)
     
     supplier_materials = relationship("SupplierMaterial", back_populates="supplier", cascade="all, delete-orphan")
 
@@ -98,9 +103,12 @@ class SupplierMaterial(Base):
     supplier_id = Column(Integer, ForeignKey("suppliers.id"), nullable=False)
     material_id = Column(Integer, ForeignKey("materials.id"), nullable=False)
     unit_cost = Column(Float, nullable=False)
+    is_preferred = Column(Boolean, default=False)
     
     supplier = relationship("Supplier", back_populates="supplier_materials")
     material = relationship("Material", back_populates="supplier_materials")
+    
+    __table_args__ = (UniqueConstraint('supplier_id', 'material_id', name='uq_supplier_material'),)
 
 class Customer(Base):
     __tablename__ = "customers"

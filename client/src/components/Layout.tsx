@@ -12,6 +12,7 @@ import TextureIcon from '@mui/icons-material/Texture'
 import BuildIcon from '@mui/icons-material/Build'
 import LocalOfferIcon from '@mui/icons-material/LocalOffer'
 import DesignServicesIcon from '@mui/icons-material/DesignServices'
+import LocalShippingIcon from '@mui/icons-material/LocalShipping'
 import PeopleIcon from '@mui/icons-material/People'
 import ShoppingCartIcon from '@mui/icons-material/ShoppingCart'
 import CalculateIcon from '@mui/icons-material/Calculate'
@@ -25,6 +26,7 @@ const menuItems = [
   { text: 'Manufacturers', icon: <BusinessIcon />, path: '/manufacturers' },
   { text: 'Models', icon: <CategoryIcon />, path: '/models' },
   { text: 'Materials', icon: <TextureIcon />, path: '/materials' },
+  { text: 'Suppliers', icon: <LocalShippingIcon />, path: '/suppliers' },
   { text: 'Equipment Types', icon: <BuildIcon />, path: '/equipment-types' },
   { text: 'Pricing Options', icon: <LocalOfferIcon />, path: '/pricing-options' },
   { text: 'Design Options', icon: <DesignServicesIcon />, path: '/design-options' },

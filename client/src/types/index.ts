@@ -56,6 +56,23 @@ export interface MaterialColourSurcharge {
 export interface Supplier {
   id: number
   name: string
+  contact_name?: string
+  address?: string
+  phone?: string
+  email?: string
+  website?: string
+}
+
+export interface SupplierMaterial {
+  id: number
+  supplier_id: number
+  material_id: number
+  unit_cost: number
+  is_preferred: boolean
+}
+
+export interface SupplierMaterialWithSupplier extends SupplierMaterial {
+  supplier_name: string
 }
 
 export interface Customer {

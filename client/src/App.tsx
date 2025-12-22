@@ -5,6 +5,7 @@ import Dashboard from './pages/Dashboard'
 import ManufacturersPage from './pages/ManufacturersPage'
 import ModelsPage from './pages/ModelsPage'
 import MaterialsPage from './pages/MaterialsPage'
+import SuppliersPage from './pages/SuppliersPage'
 import EquipmentTypesPage from './pages/EquipmentTypesPage'
 import PricingOptionsPage from './pages/PricingOptionsPage'
 import DesignOptionsPage from './pages/DesignOptionsPage'
@@ -23,6 +24,7 @@ function App() {
           <Route path="/manufacturers" element={<ManufacturersPage />} />
           <Route path="/models" element={<ModelsPage />} />
           <Route path="/materials" element={<MaterialsPage />} />
+          <Route path="/suppliers" element={<SuppliersPage />} />
           <Route path="/equipment-types" element={<EquipmentTypesPage />} />
           <Route path="/pricing-options" element={<PricingOptionsPage />} />
           <Route path="/design-options" element={<DesignOptionsPage />} />

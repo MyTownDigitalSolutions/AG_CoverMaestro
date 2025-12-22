@@ -1,5 +1,5 @@
 from sqlalchemy.orm import Session
-from app.models.core import Model, Material, MaterialColourSurcharge, PricingOption, ShippingRate
+from app.models.core import Model, Material, MaterialColourSurcharge, PricingOption, ShippingRate, SupplierMaterial
 from app.models.enums import Carrier
 from typing import Optional
 
@@ -18,9 +18,21 @@ class PricingService:
         waste_area = base_area * (1 + WASTE_PERCENTAGE)
         return base_area, waste_area
     
+    def get_material_cost_per_linear_yard(self, material: Material) -> float:
+        """Get material cost from preferred supplier, or fall back to material's base cost."""
+        preferred = self.db.query(SupplierMaterial).filter(
+            SupplierMaterial.material_id == material.id,
+            SupplierMaterial.is_preferred == True
+        ).first()
+        
+        if preferred:
+            return preferred.unit_cost
+        return material.cost_per_linear_yard
+    
     def cost_per_square_inch(self, material: Material) -> float:
         linear_yard_area = material.linear_yard_width * 36
-        return material.cost_per_linear_yard / linear_yard_area
+        cost_per_linear_yard = self.get_material_cost_per_linear_yard(material)
+        return cost_per_linear_yard / linear_yard_area
     
     def calculate_material_cost(self, material: Material, area_with_waste: float) -> float:
         cost_per_sq_inch = self.cost_per_square_inch(material)

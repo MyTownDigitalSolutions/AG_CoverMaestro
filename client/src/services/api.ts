@@ -2,7 +2,8 @@ import axios from 'axios'
 import type {
   Manufacturer, Series, EquipmentType, Model, Material,
   Customer, Order, PricingOption, PricingResult, AmazonProductType,
-  EnumValue, ProductTypeField, ProductTypeFieldValue, DesignOption
+  EnumValue, ProductTypeField, ProductTypeFieldValue, DesignOption,
+  Supplier, SupplierMaterial, SupplierMaterialWithSupplier
 } from '../types'
 
 const api = axios.create({
@@ -57,6 +58,24 @@ export const materialsApi = {
   create: (data: Partial<Material>) => api.post<Material>('/materials', data).then(r => r.data),
   update: (id: number, data: Partial<Material>) => api.put<Material>(`/materials/${id}`, data).then(r => r.data),
   delete: (id: number) => api.delete(`/materials/${id}`),
+  getSuppliers: (id: number) => api.get<SupplierMaterialWithSupplier[]>(`/materials/${id}/suppliers`).then(r => r.data),
+  setPreferredSupplier: (materialId: number, supplierId: number) => 
+    api.patch(`/materials/${materialId}/set-preferred-supplier`, { supplier_id: supplierId }).then(r => r.data),
+  getPreferredSupplier: (id: number) => api.get<{ preferred_supplier: string | null; supplier_id?: number; unit_cost: number | null }>(`/materials/${id}/preferred-supplier`).then(r => r.data),
+}
+
+export const suppliersApi = {
+  list: () => api.get<Supplier[]>('/suppliers').then(r => r.data),
+  get: (id: number) => api.get<Supplier>(`/suppliers/${id}`).then(r => r.data),
+  create: (data: Partial<Supplier>) => api.post<Supplier>('/suppliers', data).then(r => r.data),
+  update: (id: number, data: Partial<Supplier>) => api.put<Supplier>(`/suppliers/${id}`, data).then(r => r.data),
+  delete: (id: number) => api.delete(`/suppliers/${id}`),
+  getMaterials: (id: number) => api.get<SupplierMaterial[]>(`/suppliers/${id}/materials`).then(r => r.data),
+  createMaterialLink: (data: { supplier_id: number; material_id: number; unit_cost: number; is_preferred?: boolean }) => 
+    api.post<SupplierMaterial>('/suppliers/materials', data).then(r => r.data),
+  updateMaterialLink: (id: number, data: { supplier_id: number; material_id: number; unit_cost: number; is_preferred?: boolean }) => 
+    api.put<SupplierMaterial>(`/suppliers/materials/${id}`, data).then(r => r.data),
+  deleteMaterialLink: (id: number) => api.delete(`/suppliers/materials/${id}`),
 }
 
 export const customersApi = {
