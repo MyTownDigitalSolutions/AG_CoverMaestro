@@ -184,21 +184,23 @@ export default function MaterialsPage() {
               <TableCell>Name</TableCell>
               <TableCell>Base Color</TableCell>
               <TableCell>Width (in)</TableCell>
-              <TableCell>Cost/Yard</TableCell>
-              <TableCell>Weight/Yard</TableCell>
-              <TableCell>Labor (min)</TableCell>
+              <TableCell>Weight/Yard (lbs)</TableCell>
+              <TableCell>Weight/Sq In (oz)</TableCell>
               <TableCell>Actions</TableCell>
             </TableRow>
           </TableHead>
           <TableBody>
-            {materials.map((material) => (
+            {materials.map((material) => {
+              const weightPerSqIn = material.linear_yard_width > 0 
+                ? (material.weight_per_linear_yard * 16) / (material.linear_yard_width * 36)
+                : 0
+              return (
               <TableRow key={material.id}>
                 <TableCell>{material.name}</TableCell>
                 <TableCell>{material.base_color}</TableCell>
                 <TableCell>{material.linear_yard_width}</TableCell>
-                <TableCell>${material.cost_per_linear_yard.toFixed(2)}</TableCell>
-                <TableCell>{material.weight_per_linear_yard} lbs</TableCell>
-                <TableCell>{material.labor_time_minutes}</TableCell>
+                <TableCell>{material.weight_per_linear_yard}</TableCell>
+                <TableCell>{weightPerSqIn.toFixed(4)}</TableCell>
                 <TableCell>
                   <IconButton 
                     onClick={() => openSupplierDialog(material)} 
@@ -215,7 +217,8 @@ export default function MaterialsPage() {
                   </IconButton>
                 </TableCell>
               </TableRow>
-            ))}
+              )
+            })}
           </TableBody>
         </Table>
       </TableContainer>
