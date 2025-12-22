@@ -18,24 +18,47 @@ class PricingService:
         waste_area = base_area * (1 + WASTE_PERCENTAGE)
         return base_area, waste_area
     
-    def get_material_cost_per_linear_yard(self, material: Material) -> float:
-        """Get material cost from preferred supplier, or fall back to material's base cost."""
+    def get_preferred_supplier_info(self, material: Material) -> tuple:
+        """Get preferred supplier's unit cost and shipping cost.
+        Returns (unit_cost, shipping_cost) or falls back to (material default, 0)."""
         preferred = self.db.query(SupplierMaterial).filter(
             SupplierMaterial.material_id == material.id,
             SupplierMaterial.is_preferred == True
         ).first()
         
         if preferred:
-            return preferred.unit_cost
-        return material.cost_per_linear_yard
+            return (preferred.unit_cost, preferred.shipping_cost or 0.0)
+        return (material.cost_per_linear_yard, 0.0)
+    
+    def get_material_cost_per_linear_yard(self, material: Material) -> float:
+        """Get material cost from preferred supplier, or fall back to material's base cost."""
+        unit_cost, _ = self.get_preferred_supplier_info(material)
+        return unit_cost
     
     def cost_per_square_inch(self, material: Material) -> float:
         linear_yard_area = material.linear_yard_width * 36
         cost_per_linear_yard = self.get_material_cost_per_linear_yard(material)
         return cost_per_linear_yard / linear_yard_area
     
+    def calculate_required_linear_yards(self, material: Material, area_with_waste: float) -> float:
+        """Calculate how many linear yards are needed for the given area."""
+        linear_yard_area = material.linear_yard_width * 36
+        return area_with_waste / linear_yard_area
+    
     def calculate_material_cost(self, material: Material, area_with_waste: float) -> float:
-        cost_per_sq_inch = self.cost_per_square_inch(material)
+        """Calculate material cost including amortized supplier shipping cost."""
+        unit_cost, shipping_cost = self.get_preferred_supplier_info(material)
+        
+        required_yards = self.calculate_required_linear_yards(material, area_with_waste)
+        
+        if required_yards > 0 and shipping_cost > 0:
+            amortized_shipping_per_yard = shipping_cost / required_yards
+            effective_cost_per_yard = unit_cost + amortized_shipping_per_yard
+        else:
+            effective_cost_per_yard = unit_cost
+        
+        linear_yard_area = material.linear_yard_width * 36
+        cost_per_sq_inch = effective_cost_per_yard / linear_yard_area
         return cost_per_sq_inch * area_with_waste
     
     def calculate_colour_surcharge(self, material_id: int, colour: Optional[str]) -> float:

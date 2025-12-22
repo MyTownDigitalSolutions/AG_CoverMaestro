@@ -105,6 +105,15 @@ This application helps manage:
    - Junction table `equipment_type_design_options` manages many-to-many relationship
    - Default design options: "Handle Options" (for handle location selection), "Angle Options" (for angle/curve type selection)
 
+6. **Supplier Management System**:
+   - Manage suppliers with full contact information (name, contact, address, phone, email, website)
+   - Link suppliers to materials they sell via `supplier_materials` junction table
+   - Each supplier-material link has: `unit_cost` (per yard), `shipping_cost` (flat fee), `is_preferred` flag
+   - Only one supplier can be preferred per material (business rule enforced)
+   - Pricing service uses preferred supplier's unit cost + amortized shipping cost (shipping_cost / yards needed)
+   - Access via Suppliers page (list) and Supplier Detail page (materials table with add/edit/delete)
+   - Also accessible from Materials page via "Manage Suppliers" icon button
+
 ## Development
 
 The application runs on:
