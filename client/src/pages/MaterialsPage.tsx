@@ -24,7 +24,7 @@ export default function MaterialsPage() {
   const [selectedMaterial, setSelectedMaterial] = useState<Material | null>(null)
   const [materialSuppliers, setMaterialSuppliers] = useState<SupplierMaterialWithSupplier[]>([])
   const [addSupplierDialogOpen, setAddSupplierDialogOpen] = useState(false)
-  const [newSupplierLink, setNewSupplierLink] = useState({ supplier_id: 0, unit_cost: 0 })
+  const [newSupplierLink, setNewSupplierLink] = useState({ supplier_id: 0, unit_cost: 0, shipping_cost: 0 })
   
   const [formData, setFormData] = useState({
     name: '',
@@ -126,12 +126,13 @@ export default function MaterialsPage() {
         supplier_id: newSupplierLink.supplier_id,
         material_id: selectedMaterial.id,
         unit_cost: newSupplierLink.unit_cost,
+        shipping_cost: newSupplierLink.shipping_cost,
         is_preferred: false
       })
       const data = await materialsApi.getSuppliers(selectedMaterial.id)
       setMaterialSuppliers(data)
       setAddSupplierDialogOpen(false)
-      setNewSupplierLink({ supplier_id: 0, unit_cost: 0 })
+      setNewSupplierLink({ supplier_id: 0, unit_cost: 0, shipping_cost: 0 })
     } catch (err: any) {
       setError(err.response?.data?.detail || 'Failed to add supplier')
     }
@@ -306,13 +307,14 @@ export default function MaterialsPage() {
                   <TableCell width={50}>Preferred</TableCell>
                   <TableCell>Supplier</TableCell>
                   <TableCell>Unit Cost</TableCell>
+                  <TableCell>Shipping Cost</TableCell>
                   <TableCell width={80}>Actions</TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
                 {materialSuppliers.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={4} align="center">
+                    <TableCell colSpan={5} align="center">
                       <Typography color="text.secondary">No suppliers linked to this material</Typography>
                     </TableCell>
                   </TableRow>
@@ -344,6 +346,14 @@ export default function MaterialsPage() {
                           color={ms.is_preferred ? 'primary' : 'inherit'}
                         >
                           ${ms.unit_cost.toFixed(2)}
+                        </Typography>
+                      </TableCell>
+                      <TableCell>
+                        <Typography 
+                          fontWeight={ms.is_preferred ? 'bold' : 'normal'}
+                          color={ms.is_preferred ? 'primary' : 'inherit'}
+                        >
+                          ${ms.shipping_cost.toFixed(2)}
                         </Typography>
                       </TableCell>
                       <TableCell>
@@ -399,11 +409,19 @@ export default function MaterialsPage() {
               </Select>
             </FormControl>
             <TextField
-              label="Unit Cost ($)"
+              label="Unit Cost ($ per yard)"
               type="number"
               value={newSupplierLink.unit_cost}
               onChange={(e) => setNewSupplierLink({ ...newSupplierLink, unit_cost: parseFloat(e.target.value) || 0 })}
               fullWidth
+            />
+            <TextField
+              label="Shipping Cost ($)"
+              type="number"
+              value={newSupplierLink.shipping_cost}
+              onChange={(e) => setNewSupplierLink({ ...newSupplierLink, shipping_cost: parseFloat(e.target.value) || 0 })}
+              fullWidth
+              helperText="Flat shipping cost - will be divided by yards purchased"
             />
           </Box>
         </DialogContent>
