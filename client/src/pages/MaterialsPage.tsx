@@ -31,9 +31,7 @@ export default function MaterialsPage() {
     base_color: '',
     material_type: 'fabric' as MaterialType,
     linear_yard_width: 54 as number | undefined,
-    cost_per_linear_yard: 0,
     weight_per_linear_yard: 0 as number | undefined,
-    labor_time_minutes: 45,
     unit_of_measure: 'yard' as UnitOfMeasure | undefined,
     package_quantity: undefined as number | undefined
   })
@@ -81,9 +79,7 @@ export default function MaterialsPage() {
       base_color: '',
       material_type: 'fabric' as MaterialType,
       linear_yard_width: 54,
-      cost_per_linear_yard: 0,
       weight_per_linear_yard: 0,
-      labor_time_minutes: 45,
       unit_of_measure: 'yard' as UnitOfMeasure,
       package_quantity: undefined
     })
@@ -97,9 +93,7 @@ export default function MaterialsPage() {
       base_color: material.base_color,
       material_type: material.material_type || 'fabric',
       linear_yard_width: material.linear_yard_width,
-      cost_per_linear_yard: material.cost_per_linear_yard,
       weight_per_linear_yard: material.weight_per_linear_yard,
-      labor_time_minutes: material.labor_time_minutes,
       unit_of_measure: material.unit_of_measure,
       package_quantity: material.package_quantity
     })
@@ -331,25 +325,6 @@ export default function MaterialsPage() {
                 </Grid>
               </>
             )}
-            <Grid item xs={6}>
-              <TextField
-                fullWidth
-                type="number"
-                label="Default Cost ($)"
-                value={formData.cost_per_linear_yard}
-                onChange={(e) => setFormData({ ...formData, cost_per_linear_yard: parseFloat(e.target.value) })}
-                helperText="Fallback cost if no preferred supplier"
-              />
-            </Grid>
-            <Grid item xs={6}>
-              <TextField
-                fullWidth
-                type="number"
-                label="Labor Time (minutes)"
-                value={formData.labor_time_minutes}
-                onChange={(e) => setFormData({ ...formData, labor_time_minutes: parseFloat(e.target.value) })}
-              />
-            </Grid>
           </Grid>
         </DialogContent>
         <DialogActions>
@@ -369,8 +344,9 @@ export default function MaterialsPage() {
         </DialogTitle>
         <DialogContent>
           <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-            The preferred supplier's unit cost will be used for pricing calculations. 
-            If no preferred supplier is set, the material's default cost will be used.
+            {materialSuppliers.length <= 1 
+              ? "This material has one supplier. Their cost will be used automatically for pricing."
+              : "Multiple suppliers exist. Please select a preferred supplier - their cost will be used for pricing calculations."}
           </Typography>
           
           <TableContainer component={Paper} variant="outlined">

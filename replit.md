@@ -6,9 +6,10 @@ A full-stack web application for managing custom fabric covers for musical instr
 
 This application helps manage:
 - Manufacturers, series, and equipment models with dimensions
-- Material types with cost, weight, and labor time properties
+- Material types with weight properties (fabric materials include width)
+- Suppliers with cost tracking (all material costs come from supplier relationships)
 - Customers and orders with line items
-- Pricing calculations (area, material cost, labor, options, shipping)
+- Pricing calculations (area, material cost from suppliers, options, shipping)
 - Amazon template import and management
 
 ## Technology Stack
@@ -74,8 +75,7 @@ This application helps manage:
 
 1. **Pricing Calculator**: Calculates cover costs based on:
    - Surface area: 2*(W×D + W×H + D×H) with 5% waste
-   - Material cost per square inch
-   - Labor cost (material labor time × hourly rate)
+   - Material cost per square inch (from supplier relationships)
    - Option surcharges (handle zipper, two-in-one pocket, music rest)
    - Shipping rates by carrier and zone
 
@@ -119,8 +119,9 @@ This application helps manage:
 7. **Material Type System**:
    - Materials support three types: FABRIC, HARDWARE, PACKAGING (enum: `MaterialType`)
    - Unit of measure enum: YARD, EACH, PACKAGE, BOX, SET (`UnitOfMeasure`)
-   - Fabric materials: width (inches), weight per linear yard (lbs), cost per yard
-   - Hardware/Packaging materials: unit_of_measure, package_quantity, cost per unit
+   - Fabric materials: width (inches), weight per linear yard (lbs)
+   - Hardware/Packaging materials: unit_of_measure, package_quantity
+   - All material costs come exclusively from supplier relationships (no default cost on material)
    - UI displays material type as color-coded chip (blue for fabric, default for others)
    - Conditional form fields: fabric shows width/weight fields; hardware/packaging show unit of measure/quantity
    - Supplier materials table uses dynamic labels: "Yards" for fabric, "Qty" for other types

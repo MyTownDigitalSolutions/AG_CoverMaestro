@@ -68,9 +68,7 @@ class MaterialBase(BaseModel):
     base_color: str
     material_type: MaterialType = MaterialType.FABRIC
     linear_yard_width: Optional[float] = None
-    cost_per_linear_yard: float = 0.0
     weight_per_linear_yard: Optional[float] = None
-    labor_time_minutes: float = 0.0
     unit_of_measure: Optional[UnitOfMeasure] = UnitOfMeasure.YARD
     package_quantity: Optional[float] = None
 
@@ -263,7 +261,6 @@ class PricingCalculateResponse(BaseModel):
     waste_area: float
     material_cost: float
     colour_surcharge: float
-    labour_cost: float
     option_surcharge: float
     weight: float
     shipping_cost: float

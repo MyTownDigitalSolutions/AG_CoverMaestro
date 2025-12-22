@@ -245,9 +245,6 @@ export default function PricingCalculator() {
                   <Grid item xs={8}><Typography>Colour Surcharge:</Typography></Grid>
                   <Grid item xs={4}><Typography align="right">${result.colour_surcharge.toFixed(2)}</Typography></Grid>
                   
-                  <Grid item xs={8}><Typography>Labour Cost:</Typography></Grid>
-                  <Grid item xs={4}><Typography align="right">${result.labour_cost.toFixed(2)}</Typography></Grid>
-                  
                   <Grid item xs={8}><Typography>Option Surcharge:</Typography></Grid>
                   <Grid item xs={4}><Typography align="right">${result.option_surcharge.toFixed(2)}</Typography></Grid>
                   

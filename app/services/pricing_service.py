@@ -3,7 +3,6 @@ from app.models.core import Model, Material, MaterialColourSurcharge, PricingOpt
 from app.models.enums import Carrier
 from typing import Optional
 
-LABOR_RATE_PER_HOUR = 15.0
 WASTE_PERCENTAGE = 0.05
 
 class PricingService:
@@ -19,16 +18,25 @@ class PricingService:
         return base_area, waste_area
     
     def get_preferred_supplier_info(self, material: Material) -> tuple:
-        """Get preferred supplier's unit cost and shipping cost.
-        Returns (unit_cost, shipping_cost) or falls back to (material default, 0)."""
-        preferred = self.db.query(SupplierMaterial).filter(
-            SupplierMaterial.material_id == material.id,
-            SupplierMaterial.is_preferred == True
-        ).first()
+        """Get supplier's unit cost and shipping cost.
+        Returns (unit_cost, shipping_cost) from preferred supplier if multiple exist,
+        or from single supplier if only one exists.
+        Raises ValueError if no supplier or multiple without preferred selection."""
+        suppliers = self.db.query(SupplierMaterial).filter(
+            SupplierMaterial.material_id == material.id
+        ).all()
         
-        if preferred:
-            return (preferred.unit_cost, preferred.shipping_cost or 0.0)
-        return (material.cost_per_linear_yard, 0.0)
+        if not suppliers:
+            raise ValueError(f"No supplier found for material '{material.name}'")
+        
+        if len(suppliers) == 1:
+            return (suppliers[0].unit_cost, suppliers[0].shipping_cost or 0.0)
+        
+        preferred = next((s for s in suppliers if s.is_preferred), None)
+        if not preferred:
+            raise ValueError(f"Multiple suppliers exist for material '{material.name}' but no preferred supplier is selected")
+        
+        return (preferred.unit_cost, preferred.shipping_cost or 0.0)
     
     def get_material_cost_per_linear_yard(self, material: Material) -> float:
         """Get material cost from preferred supplier, or fall back to material's base cost."""
@@ -69,9 +77,6 @@ class PricingService:
             MaterialColourSurcharge.colour == colour
         ).first()
         return surcharge.surcharge if surcharge else 0.0
-    
-    def calculate_labour_cost(self, material: Material) -> float:
-        return (material.labor_time_minutes / 60) * LABOR_RATE_PER_HOUR
     
     def calculate_option_surcharge(
         self, 
@@ -142,12 +147,11 @@ class PricingService:
         area, waste_area = self.calculate_area_with_waste(model.width, model.depth, model.height)
         material_cost = self.calculate_material_cost(material, waste_area)
         colour_surcharge = self.calculate_colour_surcharge(material_id, colour)
-        labour_cost = self.calculate_labour_cost(material)
         option_surcharge = self.calculate_option_surcharge(handle_zipper, two_in_one_pocket, music_rest_zipper)
         weight = self.calculate_weight(material, waste_area)
         shipping_cost = self.lookup_shipping_rate(weight * quantity, carrier, zone)
         
-        unit_total = material_cost + colour_surcharge + labour_cost + option_surcharge
+        unit_total = material_cost + colour_surcharge + option_surcharge
         total = (unit_total * quantity) + shipping_cost
         
         return {
@@ -155,7 +159,6 @@ class PricingService:
             "waste_area": round(waste_area, 2),
             "material_cost": round(material_cost, 2),
             "colour_surcharge": round(colour_surcharge, 2),
-            "labour_cost": round(labour_cost, 2),
             "option_surcharge": round(option_surcharge, 2),
             "weight": round(weight, 2),
             "shipping_cost": round(shipping_cost, 2),

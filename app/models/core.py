@@ -66,9 +66,7 @@ class Material(Base):
     base_color = Column(String, nullable=False)
     material_type = Column(Enum(MaterialType), default=MaterialType.FABRIC, nullable=False)
     linear_yard_width = Column(Float, nullable=True)
-    cost_per_linear_yard = Column(Float, nullable=False)
     weight_per_linear_yard = Column(Float, nullable=True)
-    labor_time_minutes = Column(Float, nullable=False)
     unit_of_measure = Column(Enum(UnitOfMeasure), default=UnitOfMeasure.YARD, nullable=True)
     package_quantity = Column(Float, nullable=True)
     

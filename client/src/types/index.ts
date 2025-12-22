@@ -45,9 +45,7 @@ export interface Material {
   base_color: string
   material_type: MaterialType
   linear_yard_width?: number
-  cost_per_linear_yard: number
   weight_per_linear_yard?: number
-  labor_time_minutes: number
   unit_of_measure?: UnitOfMeasure
   package_quantity?: number
 }
@@ -134,7 +132,6 @@ export interface PricingResult {
   waste_area: number
   material_cost: number
   colour_surcharge: number
-  labour_cost: number
   option_surcharge: number
   weight: number
   shipping_cost: number

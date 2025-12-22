@@ -71,9 +71,9 @@ export const suppliersApi = {
   update: (id: number, data: Partial<Supplier>) => api.put<Supplier>(`/suppliers/${id}`, data).then(r => r.data),
   delete: (id: number) => api.delete(`/suppliers/${id}`),
   getMaterials: (id: number) => api.get<SupplierMaterialWithMaterial[]>(`/suppliers/${id}/materials`).then(r => r.data),
-  createMaterialLink: (data: { supplier_id: number; material_id: number; unit_cost: number; shipping_cost: number; is_preferred?: boolean }) => 
+  createMaterialLink: (data: { supplier_id: number; material_id: number; unit_cost: number; shipping_cost: number; quantity_purchased?: number; is_preferred?: boolean }) => 
     api.post<SupplierMaterial>('/suppliers/materials', data).then(r => r.data),
-  updateMaterialLink: (id: number, data: { supplier_id: number; material_id: number; unit_cost: number; shipping_cost: number; is_preferred?: boolean }) => 
+  updateMaterialLink: (id: number, data: { supplier_id: number; material_id: number; unit_cost: number; shipping_cost: number; quantity_purchased?: number; is_preferred?: boolean }) => 
     api.put<SupplierMaterial>(`/suppliers/materials/${id}`, data).then(r => r.data),
   deleteMaterialLink: (id: number) => api.delete(`/suppliers/materials/${id}`),
 }
