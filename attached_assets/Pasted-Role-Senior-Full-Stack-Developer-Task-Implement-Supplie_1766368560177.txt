@@ -1,0 +1,52 @@
+Role: Senior Full-Stack Developer
+
+Task: Implement Supplier-Material relationship with specific pricing and preferred status.
+
+Database Changes:
+
+Update the SupplierMaterial association table (or create it) to include the following columns:
+
+unit_cost (Float)
+
+shipping_cost (Float)
+
+is_preferred (Boolean, default=False)
+
+Update Material and Supplier models to have a many-to-many relationship through this association table.
+
+Backend Logic (FastAPI):
+
+GET /api/suppliers/{id}/materials: Fetch all materials linked to this supplier including their specific costs and preferred status.
+
+POST /api/suppliers/{id}/materials:
+
+Allow linking a material to a supplier.
+
+If is_preferred is set to True, the logic must automatically find any other suppliers linked to that same material_id and set their is_preferred status to False (ensuring only one preferred supplier per material).
+
+Frontend Implementation (React + MUI):
+
+Supplier Detail Page: Create a view accessible by clicking a supplier from the main list.
+
+Materials List: Display a table of materials this supplier provides. Show columns: Material Name, Unit Cost, Shipping Cost, and a "Preferred" badge.
+
+"Add Material" Modal: * A searchable dropdown to select from the master Materials table.
+
+Fields to input Unit Cost and Shipping Cost.
+
+A Switch/Checkbox for Set as Preferred Supplier.
+
+Edit/Delete: Allow updating the costs or removing a material from a supplier's list.
+
+Business Rules:
+
+One material can be sold by multiple suppliers.
+
+Each supplier has their own unique cost and shipping for that material.
+
+Only one supplier can be the "Preferred" source for a specific material at any given time.
+
+Why this is the best approach:
+Data Integrity: By telling the Agent to handle the is_preferred toggle on the backend, you prevent your data from having two "preferred" suppliers for one fabric, which would break your pricing engine later.
+
+The "Many-to-Many" Trap: Standard agents often try to create a simple join table. By explicitly asking for unit_cost on the relationship table, you ensure the architecture supports your business needs.
