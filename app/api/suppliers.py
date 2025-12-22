@@ -7,7 +7,7 @@ from app.models.core import Supplier, SupplierMaterial, Material
 from app.schemas.core import (
     SupplierCreate, SupplierResponse,
     SupplierMaterialCreate, SupplierMaterialResponse,
-    SupplierMaterialWithSupplierResponse
+    SupplierMaterialWithSupplierResponse, SupplierMaterialWithMaterialResponse
 )
 
 router = APIRouter(prefix="/suppliers", tags=["suppliers"])
@@ -70,9 +70,30 @@ def delete_supplier(id: int, db: Session = Depends(get_db)):
     db.commit()
     return {"message": "Supplier deleted"}
 
-@router.get("/{id}/materials", response_model=List[SupplierMaterialResponse])
+@router.get("/{id}/materials", response_model=List[SupplierMaterialWithMaterialResponse])
 def list_supplier_materials(id: int, db: Session = Depends(get_db)):
-    return db.query(SupplierMaterial).filter(SupplierMaterial.supplier_id == id).all()
+    """Get all materials that this supplier provides with pricing info."""
+    supplier = db.query(Supplier).filter(Supplier.id == id).first()
+    if not supplier:
+        raise HTTPException(status_code=404, detail="Supplier not found")
+    
+    supplier_materials = db.query(SupplierMaterial).filter(
+        SupplierMaterial.supplier_id == id
+    ).all()
+    
+    result = []
+    for sm in supplier_materials:
+        material = db.query(Material).filter(Material.id == sm.material_id).first()
+        result.append(SupplierMaterialWithMaterialResponse(
+            id=sm.id,
+            supplier_id=sm.supplier_id,
+            material_id=sm.material_id,
+            unit_cost=sm.unit_cost,
+            shipping_cost=sm.shipping_cost or 0.0,
+            is_preferred=sm.is_preferred or False,
+            material_name=material.name if material else "Unknown"
+        ))
+    return result
 
 @router.post("/materials", response_model=SupplierMaterialResponse)
 def create_supplier_material(data: SupplierMaterialCreate, db: Session = Depends(get_db)):
@@ -83,10 +104,16 @@ def create_supplier_material(data: SupplierMaterialCreate, db: Session = Depends
     if existing:
         raise HTTPException(status_code=400, detail="This supplier-material link already exists")
     
+    if data.is_preferred:
+        db.query(SupplierMaterial).filter(
+            SupplierMaterial.material_id == data.material_id
+        ).update({"is_preferred": False})
+    
     supplier_material = SupplierMaterial(
         supplier_id=data.supplier_id,
         material_id=data.material_id,
         unit_cost=data.unit_cost,
+        shipping_cost=data.shipping_cost,
         is_preferred=data.is_preferred
     )
     db.add(supplier_material)
@@ -100,7 +127,13 @@ def update_supplier_material(id: int, data: SupplierMaterialCreate, db: Session 
     if not supplier_material:
         raise HTTPException(status_code=404, detail="Supplier material link not found")
     
+    if data.is_preferred and not supplier_material.is_preferred:
+        db.query(SupplierMaterial).filter(
+            SupplierMaterial.material_id == supplier_material.material_id
+        ).update({"is_preferred": False})
+    
     supplier_material.unit_cost = data.unit_cost
+    supplier_material.shipping_cost = data.shipping_cost
     supplier_material.is_preferred = data.is_preferred
     db.commit()
     db.refresh(supplier_material)

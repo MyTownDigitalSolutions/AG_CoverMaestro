@@ -105,6 +105,7 @@ def list_material_suppliers(id: int, db: Session = Depends(get_db)):
             supplier_id=sm.supplier_id,
             material_id=sm.material_id,
             unit_cost=sm.unit_cost,
+            shipping_cost=sm.shipping_cost or 0.0,
             is_preferred=sm.is_preferred or False,
             supplier_name=supplier.name if supplier else "Unknown"
         ))
@@ -148,11 +149,12 @@ def get_preferred_supplier(id: int, db: Session = Depends(get_db)):
     ).first()
     
     if not preferred:
-        return {"preferred_supplier": None, "unit_cost": None}
+        return {"preferred_supplier": None, "unit_cost": None, "shipping_cost": None}
     
     supplier = db.query(Supplier).filter(Supplier.id == preferred.supplier_id).first()
     return {
         "preferred_supplier": supplier.name if supplier else None,
         "supplier_id": preferred.supplier_id,
-        "unit_cost": preferred.unit_cost
+        "unit_cost": preferred.unit_cost,
+        "shipping_cost": preferred.shipping_cost or 0.0
     }

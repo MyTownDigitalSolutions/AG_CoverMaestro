@@ -68,11 +68,16 @@ export interface SupplierMaterial {
   supplier_id: number
   material_id: number
   unit_cost: number
+  shipping_cost: number
   is_preferred: boolean
 }
 
 export interface SupplierMaterialWithSupplier extends SupplierMaterial {
   supplier_name: string
+}
+
+export interface SupplierMaterialWithMaterial extends SupplierMaterial {
+  material_name: string
 }
 
 export interface Customer {
