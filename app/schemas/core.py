@@ -115,6 +115,7 @@ class SupplierMaterialBase(BaseModel):
     supplier_id: int
     material_id: int
     unit_cost: float
+    shipping_cost: float = 0.0
     is_preferred: bool = False
 
 class SupplierMaterialCreate(SupplierMaterialBase):
@@ -131,8 +132,21 @@ class SupplierMaterialWithSupplierResponse(BaseModel):
     supplier_id: int
     material_id: int
     unit_cost: float
+    shipping_cost: float
     is_preferred: bool
     supplier_name: str
+    
+    class Config:
+        from_attributes = True
+
+class SupplierMaterialWithMaterialResponse(BaseModel):
+    id: int
+    supplier_id: int
+    material_id: int
+    unit_cost: float
+    shipping_cost: float
+    is_preferred: bool
+    material_name: str
     
     class Config:
         from_attributes = True
