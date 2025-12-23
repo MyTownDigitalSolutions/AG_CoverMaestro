@@ -4,18 +4,42 @@ import {
   Table, TableBody, TableCell, TableContainer, TableHead, TableRow,
   Alert, CircularProgress, FormControl, InputLabel, Select, MenuItem,
   Chip, IconButton, Dialog, DialogTitle, DialogContent, DialogActions,
-  ToggleButton, ToggleButtonGroup, Tooltip
+  ToggleButton, ToggleButtonGroup, Tooltip,
+  Accordion, AccordionSummary, AccordionDetails
 } from '@mui/material'
 import PreviewIcon from '@mui/icons-material/Preview'
 import CloseIcon from '@mui/icons-material/Close'
 import DownloadIcon from '@mui/icons-material/Download'
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
 import { manufacturersApi, seriesApi, modelsApi, templatesApi, exportApi } from '../services/api'
 import type { Manufacturer, Series, Model, AmazonProductType } from '../types'
+
+interface AuditFieldAction {
+  field_name: string
+  column_index: number
+  rule_explanation: string
+  source?: {
+    marketplace: string
+    variant_key: string
+    entity: string
+    field: string
+  }
+}
+
+interface AuditData {
+  row_mode: string
+  pricing: { matched_price_fields: AuditFieldAction[] }
+  sku: { matched_sku_fields: AuditFieldAction[] }
+  row_samples: { model_id: number; model_name: string; key_values: Record<string, string | null> }[]
+}
 
 interface ExportPreviewData {
   headers: (string | null)[][]
   rows: { model_id: number; model_name: string; data: (string | null)[] }[]
   template_code: string
+  export_signature?: string
+  field_map?: Record<string, number>
+  audit?: AuditData
 }
 
 const rowStyles: Record<number, React.CSSProperties> = {
@@ -32,20 +56,24 @@ export default function ExportPage() {
   const [allSeries, setAllSeries] = useState<Series[]>([])
   const [allModels, setAllModels] = useState<Model[]>([])
   const [templates, setTemplates] = useState<AmazonProductType[]>([])
-  const [equipmentTypeLinks, setEquipmentTypeLinks] = useState<{equipment_type_id: number, product_type_id: number}[]>([])
-  
+  const [equipmentTypeLinks, setEquipmentTypeLinks] = useState<{ equipment_type_id: number, product_type_id: number }[]>([])
+
   const [selectedManufacturer, setSelectedManufacturer] = useState<number | ''>('')
   const [selectedSeries, setSelectedSeries] = useState<number | ''>('')
   const [selectedModels, setSelectedModels] = useState<Set<number>>(new Set())
-  
+
   const [loading, setLoading] = useState(true)
   const [generating, setGenerating] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  
+
   const [previewOpen, setPreviewOpen] = useState(false)
   const [previewData, setPreviewData] = useState<ExportPreviewData | null>(null)
   const [listingType, setListingType] = useState<'individual' | 'parent_child'>('individual')
   const [downloading, setDownloading] = useState<string | null>(null)
+
+  // Phase 12: Export Confidence Verification
+  const [lastDownloadSignature, setLastDownloadSignature] = useState<string | null>(null)
+  const [lastDownloadTemplateCode, setLastDownloadTemplateCode] = useState<string | null>(null)
 
   useEffect(() => {
     loadData()
@@ -74,7 +102,7 @@ export default function ExportPage() {
     }
   }
 
-  const filteredSeries = selectedManufacturer 
+  const filteredSeries = selectedManufacturer
     ? allSeries.filter(s => s.manufacturer_id === selectedManufacturer)
     : allSeries
 
@@ -130,6 +158,10 @@ export default function ExportPage() {
     try {
       setGenerating(true)
       setError(null)
+      // Clear previous download verification state
+      setLastDownloadSignature(null)
+      setLastDownloadTemplateCode(null)
+
       const modelIds = Array.from(selectedModels)
       const preview = await exportApi.generatePreview(modelIds, listingType)
       setPreviewData(preview)
@@ -163,6 +195,12 @@ export default function ExportPage() {
       }
 
       const contentDisposition = response.headers['content-disposition']
+
+      const sig = response.headers['x-export-signature']
+      const tCode = response.headers['x-export-template-code']
+      if (sig) setLastDownloadSignature(sig)
+      if (tCode) setLastDownloadTemplateCode(tCode)
+
       let filename = `Amazon_export.${format}`
       if (contentDisposition) {
         const match = contentDisposition.match(/filename=([^;]+)/)
@@ -273,7 +311,7 @@ export default function ExportPage() {
             </Box>
           </Grid>
         </Grid>
-        
+
         <Box sx={{ mt: 3, pt: 2, borderTop: '1px solid #eee' }}>
           <Typography variant="subtitle2" gutterBottom>
             Listing Type
@@ -296,7 +334,7 @@ export default function ExportPage() {
             </ToggleButton>
           </ToggleButtonGroup>
           <Typography variant="caption" color="text.secondary" sx={{ ml: 2 }}>
-            {listingType === 'individual' 
+            {listingType === 'individual'
               ? 'Each model will use its Parent SKU as the contribution_sku value'
               : 'Parent/Child listing support coming soon'}
           </Typography>
@@ -333,7 +371,7 @@ export default function ExportPage() {
                 filteredModels.map(model => {
                   const templateCode = getTemplateForEquipmentType(model.equipment_type_id)
                   return (
-                    <TableRow 
+                    <TableRow
                       key={model.id}
                       hover
                       selected={selectedModels.has(model.id)}
@@ -365,20 +403,20 @@ export default function ExportPage() {
       </Paper>
 
       {previewOpen && previewData && (
-        <Dialog 
-          open={previewOpen} 
-          onClose={() => setPreviewOpen(false)} 
-          maxWidth={false} 
-          fullWidth 
-          PaperProps={{ 
-            sx: { 
-              maxWidth: '95vw', 
+        <Dialog
+          open={previewOpen}
+          onClose={() => setPreviewOpen(false)}
+          maxWidth={false}
+          fullWidth
+          PaperProps={{
+            sx: {
+              maxWidth: '95vw',
               height: '85vh',
               resize: 'both',
               overflow: 'auto',
               minWidth: 600,
               minHeight: 400
-            } 
+            }
           }}
         >
           <DialogTitle sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -393,7 +431,157 @@ export default function ExportPage() {
             <IconButton onClick={() => setPreviewOpen(false)}><CloseIcon /></IconButton>
           </DialogTitle>
           <DialogContent sx={{ p: 0 }}>
-            <Box sx={{ overflowX: 'auto', overflowY: 'auto', maxHeight: 'calc(85vh - 150px)' }}>
+            <Box sx={{ p: 2, bgcolor: '#f5f5f5', borderBottom: '1px solid #ddd' }}>
+              <Grid container spacing={2} alignItems="center">
+                <Grid item>
+                  <Typography variant="subtitle2">Verification Status:</Typography>
+                </Grid>
+                <Grid item>
+                  {lastDownloadSignature ? (
+                    lastDownloadSignature === previewData.export_signature ? (
+                      <Chip label="✅ Verified: Download matches Preview" color="success" size="small" />
+                    ) : (
+                      <Chip label="❌ Mismatch: Download differs from Preview" color="error" size="small" />
+                    )
+                  ) : (
+                    <Chip label="Waiting for download..." size="small" variant="outlined" />
+                  )}
+                </Grid>
+              </Grid>
+              <Grid container spacing={2} sx={{ mt: 1 }}>
+                <Grid item xs={12} md={6}>
+                  <Typography variant="caption" display="block">Preview Signature:</Typography>
+                  <Typography variant="body2" sx={{ fontFamily: 'monospace', wordBreak: 'break-all' }}>
+                    {previewData.export_signature || "—"}
+                  </Typography>
+                </Grid>
+                <Grid item xs={12} md={6}>
+                  <Typography variant="caption" display="block">Downloaded Signature:</Typography>
+                  <Typography variant="body2" sx={{ fontFamily: 'monospace', wordBreak: 'break-all' }}>
+                    {lastDownloadSignature || "—"}
+                  </Typography>
+                </Grid>
+                <Grid item xs={12} md={6}>
+                  <Typography variant="caption" display="block">Template Code (Preview):</Typography>
+                  <Typography variant="body2" sx={{ fontFamily: 'monospace' }}>
+                    {previewData.template_code}
+                  </Typography>
+                </Grid>
+                <Grid item xs={12} md={6}>
+                  <Typography variant="caption" display="block">Template Code (Download):</Typography>
+                  <Typography variant="body2" sx={{ fontFamily: 'monospace' }}>
+                    {lastDownloadTemplateCode || "—"}
+                  </Typography>
+                </Grid>
+              </Grid>
+
+              {previewData.audit && (
+                <Accordion sx={{ mt: 2, bgcolor: 'white', '&:before': { display: 'none' } }} elevation={1}>
+                  <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                    <Box>
+                      <Typography variant="subtitle2">Why these values?</Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        Explains which template columns were filled and the source rules.
+                      </Typography>
+                    </Box>
+                  </AccordionSummary>
+                  <AccordionDetails>
+                    <Box sx={{ mb: 2 }}>
+                      <Typography variant="caption" display="block" color="text.secondary" gutterBottom>ROW MODE</Typography>
+                      <Chip
+                        label={previewData.audit.row_mode}
+                        size="small"
+                        color="default"
+                        variant="outlined"
+                        sx={{ fontWeight: 'bold' }}
+                      />
+                    </Box>
+
+                    <Box sx={{ mb: 3 }}>
+                      <Typography variant="caption" display="block" color="text.secondary" gutterBottom>PRICING MAPPING</Typography>
+                      {previewData.audit.pricing.matched_price_fields.length > 0 ? (
+                        previewData.audit.pricing.matched_price_fields.map((field) => (
+                          <Box key={field.column_index} sx={{ mb: 1, p: 1, bgcolor: '#f8f9fa', borderRadius: 1 }}>
+                            <Typography variant="body2" sx={{ fontWeight: 500 }}>
+                              Column {field.column_index}: {field.field_name}
+                            </Typography>
+                            <Typography variant="caption" display="block" color="text.secondary" sx={{ mt: 0.5 }}>
+                              {field.rule_explanation}
+                            </Typography>
+                            {field.source && (
+                              <Box sx={{ mt: 0.5, display: 'flex', gap: 0.5 }}>
+                                <Chip label={field.source.marketplace} size="small" sx={{ height: 20, fontSize: '0.625rem' }} />
+                                <Chip label={field.source.variant_key} size="small" sx={{ height: 20, fontSize: '0.625rem' }} />
+                              </Box>
+                            )}
+                          </Box>
+                        ))
+                      ) : (
+                        <Typography variant="body2" color="text.secondary" sx={{ fontStyle: 'italic' }}>
+                          No price fields detected in this template.
+                        </Typography>
+                      )}
+                    </Box>
+
+                    <Box sx={{ mb: 3 }}>
+                      <Typography variant="caption" display="block" color="text.secondary" gutterBottom>SKU MAPPING</Typography>
+                      {previewData.audit.sku.matched_sku_fields.length > 0 ? (
+                        previewData.audit.sku.matched_sku_fields.map((field) => (
+                          <Box key={field.column_index} sx={{ mb: 1, p: 1, bgcolor: '#f8f9fa', borderRadius: 1 }}>
+                            <Typography variant="body2" sx={{ fontWeight: 500 }}>
+                              Column {field.column_index}: {field.field_name}
+                            </Typography>
+                            <Typography variant="caption" display="block" color="text.secondary" sx={{ mt: 0.5 }}>
+                              {field.rule_explanation}
+                            </Typography>
+                          </Box>
+                        ))
+                      ) : (
+                        <Typography variant="body2" color="text.secondary" sx={{ fontStyle: 'italic' }}>
+                          No SKU fields detected in this template.
+                        </Typography>
+                      )}
+                    </Box>
+
+                    <Box>
+                      <Typography variant="caption" display="block" color="text.secondary" gutterBottom>SAMPLE ROWS (AUDITED VALUES)</Typography>
+                      <TableContainer component={Paper} variant="outlined" sx={{ maxHeight: 200 }}>
+                        <Table size="small" stickyHeader>
+                          <TableHead>
+                            <TableRow>
+                              <TableCell sx={{ fontSize: '11px', fontWeight: 'bold' }}>Model ID</TableCell>
+                              <TableCell sx={{ fontSize: '11px', fontWeight: 'bold' }}>Model Name</TableCell>
+                              <TableCell sx={{ fontSize: '11px', fontWeight: 'bold' }}>Audited Values</TableCell>
+                            </TableRow>
+                          </TableHead>
+                          <TableBody>
+                            {previewData.audit.row_samples.map((sample) => (
+                              <TableRow key={sample.model_id}>
+                                <TableCell sx={{ fontSize: '11px' }}>{sample.model_id}</TableCell>
+                                <TableCell sx={{ fontSize: '11px' }}>{sample.model_name}</TableCell>
+                                <TableCell sx={{ fontSize: '11px' }}>
+                                  {Object.entries(sample.key_values).map(([key, val]) => (
+                                    <Box key={key} sx={{ display: 'flex', gap: 1, mb: 0.5 }}>
+                                      <Typography variant="caption" sx={{ fontWeight: 'bold', color: '#555' }}>
+                                        {key}:
+                                      </Typography>
+                                      <Typography variant="caption" sx={{ fontFamily: 'monospace' }}>
+                                        {val}
+                                      </Typography>
+                                    </Box>
+                                  ))}
+                                </TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      </TableContainer>
+                    </Box>
+                  </AccordionDetails>
+                </Accordion>
+              )}
+            </Box>
+            <Box sx={{ overflowX: 'auto', overflowY: 'auto', maxHeight: 'calc(85vh - 350px)' }}>
               <Table size="small" sx={{ minWidth: previewData.headers[0]?.length * 140 || 1000, tableLayout: 'fixed' }}>
                 <TableBody>
                   {previewData.headers.map((row, rowIdx) => (
@@ -449,25 +637,25 @@ export default function ExportPage() {
           <DialogActions sx={{ px: 3, py: 2, gap: 1 }}>
             <Button onClick={() => setPreviewOpen(false)}>Close</Button>
             <Box sx={{ flex: 1 }} />
-            <Button 
-              variant="outlined" 
-              startIcon={<DownloadIcon />} 
+            <Button
+              variant="outlined"
+              startIcon={<DownloadIcon />}
               onClick={() => handleDownload('csv')}
               disabled={downloading !== null}
             >
               {downloading === 'csv' ? 'Downloading...' : 'CSV'}
             </Button>
-            <Button 
-              variant="outlined" 
-              startIcon={<DownloadIcon />} 
+            <Button
+              variant="outlined"
+              startIcon={<DownloadIcon />}
               onClick={() => handleDownload('xlsm')}
               disabled={downloading !== null}
             >
               {downloading === 'xlsm' ? 'Downloading...' : 'XLSM'}
             </Button>
-            <Button 
-              variant="contained" 
-              startIcon={<DownloadIcon />} 
+            <Button
+              variant="contained"
+              startIcon={<DownloadIcon />}
               onClick={() => handleDownload('xlsx')}
               disabled={downloading !== null}
             >

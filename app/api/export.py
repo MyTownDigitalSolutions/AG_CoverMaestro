@@ -1,10 +1,12 @@
 import re
 import io
 import csv
+import json
+import hashlib
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
-from typing import List
+from typing import List, Dict, Any
 from pydantic import BaseModel
 from app.schemas.core import ModelPricingSnapshotResponse
 from openpyxl import Workbook
@@ -47,71 +49,144 @@ class ExportPreviewResponse(BaseModel):
     headers: List[List[str | None]]
     rows: List[ExportRowData]
     template_code: str
+    export_signature: str
+    field_map: Dict[str, int]
+    audit: Dict[str, Any]
+
+def compute_export_signature(template_code: str, header_rows: list, data_rows: list) -> str:
+    """
+    Compute a deterministic SHA256 signature for the export content.
+    Normalization Rules: None -> "", all values to strings, no trimming.
+    """
+    def normalize_row(row):
+        return [str(val) if val is not None else "" for val in row]
+
+    payload = {
+        "template_code": template_code,
+        "headers": [normalize_row(r) for r in header_rows],
+        "rows": [normalize_row(r) for r in data_rows]
+    }
+    
+    # Serialize to JSON with sorted keys to ensure determinism if we expanded payload
+    # For now, keys are fixed. separators=(",", ":") removes whitespace.
+    serialized = json.dumps(payload, separators=(",", ":"), ensure_ascii=False)
+    
+    return hashlib.sha256(serialized.encode('utf-8')).hexdigest()
+
+def is_price_field(field_name: str) -> bool:
+    """Exact logic from get_field_value triggering price population."""
+    field_name_lower = field_name.lower()
+    return "purchasable_offer[marketplace_id=atvpdkikx0der]" in field_name_lower and \
+           "our_price#1.schedule#1.value_with_tax" in field_name_lower
+
+def is_sku_related_field(field_name: str) -> bool:
+    """True if field relates to SKU logic."""
+    lower = field_name.lower()
+    keys = ["item_sku", "contribution_sku", "parent_sku", "parent_child", "relationship_type"]
+    return any(k in lower for k in keys)
+
+def build_audit_columns(ordered_field_names: List[str], ordered_required_flags: List[bool]) -> List[dict]:
+    """Identify which columns correspond to price and sku fields."""
+    audited = []
+    for idx, (name, required) in enumerate(zip(ordered_field_names, ordered_required_flags)):
+        if not required:
+            # Skip audit for fields that are not exported/populated
+            continue
+            
+        if is_price_field(name):
+            audited.append({"field_name": name, "column_index": idx, "type": "PRICE"})
+        elif is_sku_related_field(name):
+            audited.append({"field_name": name, "column_index": idx, "type": "SKU"})
+    return audited
+
+# Example usage:
+# signature = compute_export_signature(code, headers, rows)
 
 @router.post("/preview", response_model=ExportPreviewResponse)
 def generate_export_preview(request: ExportPreviewRequest, db: Session = Depends(get_db)):
-    if not request.model_ids:
-        raise HTTPException(status_code=400, detail="No models selected")
+    header_rows, data_rows, filename_base, template_code, models, ordered_field_names, ordered_required_flags = build_export_data(request, db)
     
-    models = db.query(Model).filter(Model.id.in_(request.model_ids)).all()
-    if not models:
-        raise HTTPException(status_code=404, detail="No models found")
+    signature = compute_export_signature(template_code, header_rows, data_rows)
+    field_map = {name: idx for idx, name in enumerate(ordered_field_names)}
     
-    equipment_type_ids = set(m.equipment_type_id for m in models)
-    if len(equipment_type_ids) > 1:
-        raise HTTPException(
-            status_code=400, 
-            detail="All selected models must have the same equipment type for export"
-        )
+    # Audit Construction
+    audit_columns = build_audit_columns(ordered_field_names, ordered_required_flags)
+    matched_price_fields = []
+    matched_sku_fields = []
     
-    equipment_type_id = list(equipment_type_ids)[0]
-    
-    link = db.query(EquipmentTypeProductType).filter(
-        EquipmentTypeProductType.equipment_type_id == equipment_type_id
-    ).first()
-    
-    if not link:
-        equipment_type = db.query(EquipmentType).filter(EquipmentType.id == equipment_type_id).first()
-        raise HTTPException(
-            status_code=400, 
-            detail=f"No Amazon template linked to equipment type: {equipment_type.name if equipment_type else 'Unknown'}"
-        )
-    
-    product_type = db.query(AmazonProductType).filter(
-        AmazonProductType.id == link.product_type_id
-    ).first()
-    
-    if not product_type:
-        raise HTTPException(status_code=404, detail="Template not found")
-    
-    fields = db.query(ProductTypeField).filter(
-        ProductTypeField.product_type_id == product_type.id
-    ).order_by(ProductTypeField.order_index).all()
-    
-    header_rows = product_type.header_rows or []
-    
-    equipment_type = db.query(EquipmentType).filter(EquipmentType.id == equipment_type_id).first()
+    for col in audit_columns:
+        if col["type"] == "PRICE":
+            matched_price_fields.append({
+                "field_name": col["field_name"],
+                "column_index": col["column_index"],
+                "rule_explanation": (
+                    "Price is populated from the Amazon US baseline pricing snapshot "
+                    "(variant: choice_no_padding). Export fails if snapshot is missing."
+                ),
+                "source": {
+                    "marketplace": "amazon",
+                    "variant_key": "choice_no_padding",
+                    "entity": "ModelPricingSnapshot",
+                    "field": "retail_price_cents"
+                }
+            })
+        elif col["type"] == "SKU":
+             explanation = "Value is derived from the model base SKU."
+             if "contribution_sku" in col["field_name"].lower() and request.listing_type == "individual":
+                 explanation += " In individual listings, contribution_sku uses the base/parent SKU."
+                 
+             matched_sku_fields.append({
+                "field_name": col["field_name"],
+                "column_index": col["column_index"],
+                "rule_explanation": explanation
+            })
+
+    row_samples = []
+    for i in range(min(5, len(data_rows))):
+        row = data_rows[i]
+        model = models[i]
+        
+        key_values = {}
+        for col in audit_columns:
+            # Safely get value if index is within bounds, though it should be
+            idx = col["column_index"]
+            if idx < len(row):
+                key_values[col["field_name"]] = row[idx]
+        
+        row_samples.append({
+            "model_id": model.id,
+            "model_name": model.name,
+            "key_values": key_values
+        })
+
+    audit = {
+        "row_mode": "BASE",
+        "pricing": {
+            "matched_price_fields": matched_price_fields
+        },
+        "sku": {
+            "matched_sku_fields": matched_sku_fields
+        },
+        "row_samples": row_samples
+    }
     
     rows = []
-    for model in models:
-        series = db.query(Series).filter(Series.id == model.series_id).first()
-        manufacturer = db.query(Manufacturer).filter(Manufacturer.id == series.manufacturer_id).first() if series else None
-        
-        row_data: List[str | None] = []
-        for field in fields:
-            value = get_field_value(field, model, series, manufacturer, equipment_type, request.listing_type, db)
-            row_data.append(value)
-        
+    # Reconstruct ExportRowData objects from the raw data and model objects
+    # We rely on the order of 'models' and 'data_rows' matching, which they do in build_export_data
+    for i, row_data in enumerate(data_rows):
         rows.append(ExportRowData(
-            model_id=model.id,
-            model_name=model.name,
+            model_id=models[i].id,
+            model_name=models[i].name,
             data=row_data
         ))
     
     return ExportPreviewResponse(
         headers=header_rows,
         rows=rows,
-        template_code=product_type.code
+        template_code=template_code,
+        export_signature=signature,
+        field_map=field_map,
+        audit=audit
     )
 
 
@@ -177,18 +252,26 @@ def build_export_data(request: ExportPreviewRequest, db: Session):
         
         row_data = []
         for field in fields:
+            if not field.required:
+                row_data.append("")
+                continue
+
             value = get_field_value(field, model, series, manufacturer, equipment_type, request.listing_type, db)
             row_data.append(value if value else '')
         
         data_rows.append(row_data)
     
-    return header_rows, data_rows, filename_base
+    ordered_field_names = [f.field_name for f in fields]
+    ordered_required_flags = [f.required for f in fields]
+    return header_rows, data_rows, filename_base, product_type.code, models, ordered_field_names, ordered_required_flags
 
 
 @router.post("/download/xlsx")
 def download_xlsx(request: ExportPreviewRequest, db: Session = Depends(get_db)):
     """Download export as XLSX file."""
-    header_rows, data_rows, filename_base = build_export_data(request, db)
+    header_rows, data_rows, filename_base, template_code, _, _, _ = build_export_data(request, db)
+    
+    sig = compute_export_signature(template_code, header_rows, data_rows)
     
     wb = Workbook()
     ws = wb.active
@@ -235,17 +318,22 @@ def download_xlsx(request: ExportPreviewRequest, db: Session = Depends(get_db)):
     output.seek(0)
     
     filename = f"{filename_base}.xlsx"
-    return StreamingResponse(
+    response = StreamingResponse(
         output,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": f"attachment; filename={filename}"}
     )
+    response.headers["X-Export-Signature"] = sig
+    response.headers["X-Export-Template-Code"] = template_code
+    return response
 
 
 @router.post("/download/xlsm")
 def download_xlsm(request: ExportPreviewRequest, db: Session = Depends(get_db)):
     """Download export as XLSM file (macro-enabled workbook)."""
-    header_rows, data_rows, filename_base = build_export_data(request, db)
+    header_rows, data_rows, filename_base, template_code, _, _, _ = build_export_data(request, db)
+
+    sig = compute_export_signature(template_code, header_rows, data_rows)
     
     wb = Workbook()
     ws = wb.active
@@ -292,17 +380,22 @@ def download_xlsm(request: ExportPreviewRequest, db: Session = Depends(get_db)):
     output.seek(0)
     
     filename = f"{filename_base}.xlsm"
-    return StreamingResponse(
+    response = StreamingResponse(
         output,
         media_type="application/vnd.ms-excel.sheet.macroEnabled.12",
         headers={"Content-Disposition": f"attachment; filename={filename}"}
     )
+    response.headers["X-Export-Signature"] = sig
+    response.headers["X-Export-Template-Code"] = template_code
+    return response
 
 
 @router.post("/download/csv")
 def download_csv(request: ExportPreviewRequest, db: Session = Depends(get_db)):
     """Download export as CSV file."""
-    header_rows, data_rows, filename_base = build_export_data(request, db)
+    header_rows, data_rows, filename_base, template_code, _, _, _ = build_export_data(request, db)
+    
+    sig = compute_export_signature(template_code, header_rows, data_rows)
     
     output = io.StringIO()
     writer = csv.writer(output)
@@ -316,11 +409,14 @@ def download_csv(request: ExportPreviewRequest, db: Session = Depends(get_db)):
     content = output.getvalue().encode('utf-8')
     
     filename = f"{filename_base}.csv"
-    return StreamingResponse(
+    response = StreamingResponse(
         iter([content]),
         media_type="text/csv",
         headers={"Content-Disposition": f"attachment; filename={filename}"}
     )
+    response.headers["X-Export-Signature"] = sig
+    response.headers["X-Export-Template-Code"] = template_code
+    return response
 
 
 IMAGE_FIELD_TO_NUMBER = {

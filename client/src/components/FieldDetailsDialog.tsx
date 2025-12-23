@@ -33,23 +33,31 @@ export default function FieldDetailsDialog({ field, onClose, onUpdate }: FieldDe
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [hasChanges, setHasChanges] = useState(false)
-  
-  const filteredValues = validValues.filter(v => 
+
+  const filteredValues = validValues.filter(v =>
     v.value.toLowerCase().includes(searchQuery.toLowerCase())
   )
 
   const handleAddValue = async () => {
     if (!newValue.trim()) return
-    
+
     setSaving(true)
     setError(null)
     try {
       const addedValue = await templatesApi.addFieldValue(field.id, newValue.trim())
       const newValidValues = [...validValues, addedValue]
       setValidValues(newValidValues)
+
+      // UX Improvement: Backend auto-selects if it's the only value, update UI state
+      let newSelectedValue = selectedValue
+      if (newValidValues.length === 1) {
+        newSelectedValue = addedValue.value
+        setSelectedValue(newSelectedValue)
+      }
+
       setNewValue('')
       setHasChanges(true)
-      onUpdate({ ...field, valid_values: newValidValues })
+      onUpdate({ ...field, valid_values: newValidValues, selected_value: newSelectedValue })
     } catch (err: any) {
       if (err.response?.data?.detail === 'Value already exists') {
         setError('This value already exists')
@@ -70,13 +78,23 @@ export default function FieldDetailsDialog({ field, onClose, onUpdate }: FieldDe
       const newValidValues = validValues.filter(v => v.id !== valueId)
       setValidValues(newValidValues)
       setHasChanges(true)
-      
+
       let newSelectedValue = selectedValue
       if (deletedValue && selectedValue === deletedValue.value) {
         newSelectedValue = undefined
-        setSelectedValue(undefined)
-        await templatesApi.updateField(field.id, { selected_value: '' })
       }
+
+      // UX Improvement: Backend auto-selects if exactly one remains
+      if (newValidValues.length === 1) {
+        newSelectedValue = newValidValues[0].value
+      } else if (newValidValues.length === 0) {
+        newSelectedValue = undefined
+      }
+
+      if (newSelectedValue !== selectedValue) {
+        setSelectedValue(newSelectedValue)
+      }
+
       onUpdate({ ...field, valid_values: newValidValues, selected_value: newSelectedValue })
     } catch (err) {
       setError('Failed to delete value')
@@ -109,10 +127,10 @@ export default function FieldDetailsDialog({ field, onClose, onUpdate }: FieldDe
   }
 
   return (
-    <Dialog 
-      open 
-      onClose={onClose} 
-      maxWidth="lg" 
+    <Dialog
+      open
+      onClose={onClose}
+      maxWidth="lg"
       fullWidth
       PaperProps={{
         sx: {
@@ -161,8 +179,8 @@ export default function FieldDetailsDialog({ field, onClose, onUpdate }: FieldDe
             Valid Values ({validValues.length})
           </Typography>
           <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-            {validValues.length > 0 
-              ? 'Click a value to select it as the default. The selected value will be shown in the main grid.'
+            {validValues.length > 0
+              ? 'Click a value to set it as the default. If only one value exists, it’s selected automatically.'
               : 'This field accepts any value (no restrictions). Add values to create a dropdown list.'}
           </Typography>
 
@@ -201,9 +219,9 @@ export default function FieldDetailsDialog({ field, onClose, onUpdate }: FieldDe
                   Showing {filteredValues.length} of {validValues.length} values
                 </Typography>
               )}
-              <Box sx={{ 
-                maxHeight: 300, 
-                overflowY: 'auto', 
+              <Box sx={{
+                maxHeight: 300,
+                overflowY: 'auto',
                 border: '1px solid',
                 borderColor: 'divider',
                 borderRadius: 1,

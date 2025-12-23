@@ -160,6 +160,18 @@ def add_field_value(field_id: int, value: ProductTypeFieldValueCreate, db: Sessi
     db.add(new_value)
     db.commit()
     db.refresh(new_value)
+    
+    # UX Improvement: If this is the only value, auto-select it
+    count = db.query(ProductTypeFieldValue).filter(
+        ProductTypeFieldValue.product_type_field_id == field_id
+    ).count()
+    
+    if count == 1:
+        field.selected_value = new_value.value
+        db.add(field)
+        db.commit()
+        db.refresh(field)
+        
     return new_value
 
 @router.delete("/fields/{field_id}/values/{value_id}")
@@ -170,6 +182,28 @@ def delete_field_value(field_id: int, value_id: int, db: Session = Depends(get_d
     ).first()
     if not value:
         raise HTTPException(status_code=404, detail="Value not found")
+        
+    deleted_val_str = value.value
     db.delete(value)
     db.commit()
+    
+    # UX Improvement: Handle default selection
+    field = db.query(ProductTypeField).filter(ProductTypeField.id == field_id).first()
+    if field:
+        # If deleted value was the selected default, clear it
+        if field.selected_value == deleted_val_str:
+            field.selected_value = None
+            db.add(field) # Stage for check below
+            
+        remaining_values = db.query(ProductTypeFieldValue).filter(
+            ProductTypeFieldValue.product_type_field_id == field_id
+        ).all()
+        
+        # If exactly one remains, auto-select it
+        if len(remaining_values) == 1:
+            field.selected_value = remaining_values[0].value
+            db.add(field)
+            
+        db.commit()
+        
     return {"message": "Value deleted"}
