@@ -4,7 +4,10 @@ from sqlalchemy.exc import IntegrityError
 from typing import List, Optional
 from app.database import get_db
 from app.models.core import Model, Series, Manufacturer
-from app.schemas.core import ModelCreate, ModelResponse
+from app.schemas.core import ModelCreate, ModelResponse, ModelPricingSnapshotResponse
+
+from app.services.pricing_calculator import PricingCalculator
+from app.models.core import ModelPricingSnapshot
 
 router = APIRouter(prefix="/models", tags=["models"])
 
@@ -107,12 +110,21 @@ def create_model(data: ModelCreate, db: Session = Depends(get_db)):
             surface_area_sq_in=surface_area
         )
         db.add(model)
-        db.commit()
-        db.refresh(model)
+        db.flush() # Get ID for pricing
+
+        # Auto-recalculate pricing (Atomic Transaction)
+        try:
+            PricingCalculator(db).calculate_model_prices(model.id, marketplace="DEFAULT")
+            db.commit() # Commit both model and pricing
+            db.refresh(model)
+        except Exception as e:
+            db.rollback()
+            raise HTTPException(status_code=400, detail=f"Pricing Calculation Failed: {str(e)}")
+
         return model
-    except IntegrityError:
+    except IntegrityError as e:
         db.rollback()
-        raise HTTPException(status_code=400, detail="Model with this name already exists in this series")
+        raise HTTPException(status_code=400, detail=f"Database Integrity Error: {str(e)}")
 
 @router.put("/{id}", response_model=ModelResponse)
 def update_model(id: int, data: ModelCreate, db: Session = Depends(get_db)):
@@ -147,12 +159,65 @@ def update_model(id: int, data: ModelCreate, db: Session = Depends(get_db)):
         model.image_url = data.image_url
         model.parent_sku = parent_sku
         model.surface_area_sq_in = surface_area
-        db.commit()
-        db.refresh(model)
+        
+        db.flush() # Flush changes for pricing
+
+        # Auto-recalculate pricing (Atomic Transaction)
+        try:
+            PricingCalculator(db).calculate_model_prices(model.id, marketplace="DEFAULT")
+            db.commit()
+            db.refresh(model)
+        except Exception as e:
+            db.rollback()
+            raise HTTPException(status_code=400, detail=f"Pricing Calculation Failed: {str(e)}")
+
         return model
     except IntegrityError:
         db.rollback()
         raise HTTPException(status_code=400, detail="Model with this name already exists in this series")
+
+@router.get("/{id}/pricing", response_model=List[ModelPricingSnapshotResponse])
+def get_model_pricing(id: int, marketplace: str = "DEFAULT", db: Session = Depends(get_db)):
+    """Get pricing snapshots for a model."""
+    snapshots = db.query(ModelPricingSnapshot).filter(
+        ModelPricingSnapshot.model_id == id,
+        ModelPricingSnapshot.marketplace == marketplace
+    ).all()
+@router.post("/{id}/pricing/recalculate", response_model=List[ModelPricingSnapshotResponse])
+def recalculate_model_pricing(id: int, marketplace: str = "DEFAULT", db: Session = Depends(get_db)):
+    """Manually trigger pricing recalculation for a model."""
+    try:
+        PricingCalculator(db).calculate_model_prices(id, marketplace=marketplace)
+        db.commit()
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    
+    # Return updated snapshots
+    return db.query(ModelPricingSnapshot).filter(
+        ModelPricingSnapshot.model_id == id,
+        ModelPricingSnapshot.marketplace == marketplace
+    ).all()
+
+@router.post("/pricing/recalculate-all")
+def recalculate_all_models(marketplace: str = "DEFAULT", db: Session = Depends(get_db)):
+    """Admin endpoint to recalculate pricing for ALL models."""
+    models = db.query(Model).all()
+    success_count = 0
+    errors = []
+    
+    for model in models:
+        try:
+            PricingCalculator(db).calculate_model_prices(model.id, marketplace=marketplace)
+            success_count += 1
+        except Exception as e:
+             errors.append(f"Model {model.id}: {str(e)}")
+    
+    db.commit() # Commit all successful ones
+    
+    return {
+        "message": f"Recalculated {success_count}/{len(models)} models",
+        "errors": errors
+    }
 
 @router.delete("/{id}")
 def delete_model(id: int, db: Session = Depends(get_db)):

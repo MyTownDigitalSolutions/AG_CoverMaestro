@@ -3,7 +3,9 @@ import type {
   Manufacturer, Series, EquipmentType, Model, Material,
   Customer, Order, PricingOption, PricingResult, AmazonProductType,
   EnumValue, ProductTypeField, ProductTypeFieldValue, DesignOption,
-  Supplier, SupplierMaterial, SupplierMaterialWithSupplier, SupplierMaterialWithMaterial
+  Supplier, SupplierMaterial, SupplierMaterialWithSupplier, SupplierMaterialWithMaterial,
+  MaterialRoleAssignment, ShippingRateCard, ShippingRateTier, ShippingZoneRate,
+  MarketplaceShippingProfile, LaborSetting, MarketplaceFeeRate, VariantProfitSetting, ModelPricingSnapshot
 } from '../types'
 
 const api = axios.create({
@@ -50,6 +52,8 @@ export const modelsApi = {
   create: (data: Partial<Model>) => api.post<Model>('/models', data).then(r => r.data),
   update: (id: number, data: Partial<Model>) => api.put<Model>(`/models/${id}`, data).then(r => r.data),
   delete: (id: number) => api.delete(`/models/${id}`),
+  getPricing: (id: number, marketplace: string = "DEFAULT") => api.get<ModelPricingSnapshot[]>(`/models/${id}/pricing`, { params: { marketplace } }).then(r => r.data),
+  recalculatePricing: (id: number, marketplace: string = "DEFAULT") => api.post<ModelPricingSnapshot[]>(`/models/${id}/pricing/recalculate`, null, { params: { marketplace } }).then(r => r.data),
 }
 
 export const materialsApi = {
@@ -59,7 +63,7 @@ export const materialsApi = {
   update: (id: number, data: Partial<Material>) => api.put<Material>(`/materials/${id}`, data).then(r => r.data),
   delete: (id: number) => api.delete(`/materials/${id}`),
   getSuppliers: (id: number) => api.get<SupplierMaterialWithSupplier[]>(`/materials/${id}/suppliers`).then(r => r.data),
-  setPreferredSupplier: (materialId: number, supplierId: number) => 
+  setPreferredSupplier: (materialId: number, supplierId: number) =>
     api.patch(`/materials/${materialId}/set-preferred-supplier`, { supplier_id: supplierId }).then(r => r.data),
   getPreferredSupplier: (id: number) => api.get<{ preferred_supplier: string | null; supplier_id?: number; unit_cost: number | null }>(`/materials/${id}/preferred-supplier`).then(r => r.data),
 }
@@ -71,9 +75,9 @@ export const suppliersApi = {
   update: (id: number, data: Partial<Supplier>) => api.put<Supplier>(`/suppliers/${id}`, data).then(r => r.data),
   delete: (id: number) => api.delete(`/suppliers/${id}`),
   getMaterials: (id: number) => api.get<SupplierMaterialWithMaterial[]>(`/suppliers/${id}/materials`).then(r => r.data),
-  createMaterialLink: (data: { supplier_id: number; material_id: number; unit_cost: number; shipping_cost: number; quantity_purchased?: number; is_preferred?: boolean }) => 
+  createMaterialLink: (data: { supplier_id: number; material_id: number; unit_cost: number; shipping_cost: number; quantity_purchased?: number; is_preferred?: boolean }) =>
     api.post<SupplierMaterial>('/suppliers/materials', data).then(r => r.data),
-  updateMaterialLink: (id: number, data: { supplier_id: number; material_id: number; unit_cost: number; shipping_cost: number; quantity_purchased?: number; is_preferred?: boolean }) => 
+  updateMaterialLink: (id: number, data: { supplier_id: number; material_id: number; unit_cost: number; shipping_cost: number; quantity_purchased?: number; is_preferred?: boolean }) =>
     api.put<SupplierMaterial>(`/suppliers/materials/${id}`, data).then(r => r.data),
   deleteMaterialLink: (id: number) => api.delete(`/suppliers/materials/${id}`),
 }
@@ -130,14 +134,14 @@ export const templatesApi = {
   },
   delete: (code: string) => api.delete(`/templates/${code}`),
   listEquipmentTypeLinks: () => api.get<EquipmentTypeProductTypeLink[]>('/templates/equipment-type-links').then(r => r.data),
-  createEquipmentTypeLink: (equipmentTypeId: number, productTypeId: number) => 
+  createEquipmentTypeLink: (equipmentTypeId: number, productTypeId: number) =>
     api.post<EquipmentTypeProductTypeLink>('/templates/equipment-type-links', { equipment_type_id: equipmentTypeId, product_type_id: productTypeId }).then(r => r.data),
   deleteEquipmentTypeLink: (linkId: number) => api.delete(`/templates/equipment-type-links/${linkId}`),
-  updateField: (fieldId: number, data: { required?: boolean; selected_value?: string }) => 
+  updateField: (fieldId: number, data: { required?: boolean; selected_value?: string }) =>
     api.patch<ProductTypeField>(`/templates/fields/${fieldId}`, data).then(r => r.data),
-  addFieldValue: (fieldId: number, value: string) => 
+  addFieldValue: (fieldId: number, value: string) =>
     api.post<ProductTypeFieldValue>(`/templates/fields/${fieldId}/values`, { value }).then(r => r.data),
-  deleteFieldValue: (fieldId: number, valueId: number) => 
+  deleteFieldValue: (fieldId: number, valueId: number) =>
     api.delete(`/templates/fields/${fieldId}/values/${valueId}`),
 }
 
@@ -146,6 +150,35 @@ export const enumsApi = {
   angleTypes: () => api.get<EnumValue[]>('/enums/angle-types').then(r => r.data),
   carriers: () => api.get<EnumValue[]>('/enums/carriers').then(r => r.data),
   marketplaces: () => api.get<EnumValue[]>('/enums/marketplaces').then(r => r.data),
+}
+
+export const settingsApi = {
+  // Material Roles
+  listMaterialRoles: (includeHistory = false) => api.get<MaterialRoleAssignment[]>('/settings/material-roles', { params: { include_history: includeHistory } }).then(r => r.data),
+  assignMaterialRole: (data: { role: string; material_id: number; effective_date?: string }) => api.post<MaterialRoleAssignment>('/settings/material-roles/assign', data).then(r => r.data),
+
+  // Shipping
+  listRateCards: () => api.get<ShippingRateCard[]>('/settings/shipping/rate-cards').then(r => r.data),
+  createRateCard: (data: Partial<ShippingRateCard>) => api.post<ShippingRateCard>('/settings/shipping/rate-cards', data).then(r => r.data),
+
+  listTiers: (cardId: number) => api.get<ShippingRateTier[]>(`/settings/shipping/rate-cards/${cardId}/tiers`).then(r => r.data),
+  createTier: (data: Partial<ShippingRateTier>) => api.post<ShippingRateTier>('/settings/shipping/tiers', data).then(r => r.data),
+
+  listZoneRates: (tierId: number) => api.get<ShippingZoneRate[]>(`/settings/shipping/tiers/${tierId}/zone-rates`).then(r => r.data),
+  createZoneRate: (data: Partial<ShippingZoneRate>) => api.post<ShippingZoneRate>('/settings/shipping/zone-rates', data).then(r => r.data),
+
+  listProfiles: (includeHistory = false) => api.get<MarketplaceShippingProfile[]>('/settings/shipping/marketplace-profiles', { params: { include_history: includeHistory } }).then(r => r.data),
+  assignProfile: (data: { marketplace: string; rate_card_id: number; pricing_zone: number; effective_date?: string }) => api.post<MarketplaceShippingProfile>('/settings/shipping/marketplace-profiles/assign', data).then(r => r.data),
+
+  // Configs
+  getLabor: () => api.get<LaborSetting>('/settings/labor').then(r => r.data),
+  updateLabor: (data: LaborSetting) => api.put<LaborSetting>('/settings/labor', data).then(r => r.data),
+
+  listFees: () => api.get<MarketplaceFeeRate[]>('/settings/marketplace-fees').then(r => r.data),
+  updateFee: (data: MarketplaceFeeRate) => api.put<MarketplaceFeeRate>('/settings/marketplace-fees', data).then(r => r.data),
+
+  listProfits: () => api.get<VariantProfitSetting[]>('/settings/profits').then(r => r.data),
+  updateProfit: (data: VariantProfitSetting) => api.put<VariantProfitSetting>('/settings/profits', data).then(r => r.data),
 }
 
 export interface ExportRowData {
@@ -161,7 +194,7 @@ export interface ExportPreviewResponse {
 }
 
 export const exportApi = {
-  generatePreview: (modelIds: number[], listingType: 'individual' | 'parent_child' = 'individual') => 
+  generatePreview: (modelIds: number[], listingType: 'individual' | 'parent_child' = 'individual') =>
     api.post<ExportPreviewResponse>('/export/preview', { model_ids: modelIds, listing_type: listingType }).then(r => r.data),
   downloadXlsx: async (modelIds: number[], listingType: 'individual' | 'parent_child' = 'individual') => {
     const response = await api.post('/export/download/xlsx', { model_ids: modelIds, listing_type: listingType }, { responseType: 'blob' })

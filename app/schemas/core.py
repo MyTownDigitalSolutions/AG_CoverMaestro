@@ -280,3 +280,110 @@ class DesignOptionResponse(DesignOptionBase):
     
     class Config:
         from_attributes = True
+
+# Settings Schemas
+
+class MaterialRoleAssignmentCreate(BaseModel):
+    role: str
+    material_id: int
+    effective_date: Optional[datetime] = None
+
+class MaterialRoleAssignmentResponse(MaterialRoleAssignmentCreate):
+    id: int
+    end_date: Optional[datetime] = None
+    created_at: datetime
+    
+    class Config:
+         from_attributes = True
+
+class ShippingRateCardCreate(BaseModel):
+    carrier: str
+    name: str
+    effective_date: Optional[datetime] = None
+
+class ShippingRateCardResponse(ShippingRateCardCreate):
+    id: int
+    end_date: Optional[datetime] = None
+    
+    class Config:
+        from_attributes = True
+
+class ShippingRateTierCreate(BaseModel):
+    rate_card_id: int
+    min_oz: float
+    max_oz: float
+    label: Optional[str] = None
+
+class ShippingRateTierResponse(ShippingRateTierCreate):
+    id: int
+    class Config:
+        from_attributes = True
+
+class ShippingZoneRateCreate(BaseModel):
+    rate_card_id: int
+    tier_id: int
+    zone: int
+    rate_cents: int
+
+class ShippingZoneRateResponse(ShippingZoneRateCreate):
+    id: int
+    class Config:
+        from_attributes = True
+
+class MarketplaceShippingProfileCreate(BaseModel):
+    marketplace: str
+    rate_card_id: int
+    pricing_zone: int
+    effective_date: Optional[datetime] = None
+
+class MarketplaceShippingProfileResponse(MarketplaceShippingProfileCreate):
+    id: int
+    end_date: Optional[datetime] = None
+    
+    class Config:
+        from_attributes = True
+
+class LaborSettingCreate(BaseModel):
+    hourly_rate_cents: int
+    minutes_no_padding: int
+    minutes_with_padding: int
+
+class LaborSettingResponse(LaborSettingCreate):
+    id: int
+    class Config:
+        from_attributes = True
+
+class MarketplaceFeeRateCreate(BaseModel):
+    marketplace: str
+    fee_rate: float
+
+class MarketplaceFeeRateResponse(MarketplaceFeeRateCreate):
+    class Config:
+        from_attributes = True
+
+class VariantProfitSettingCreate(BaseModel):
+    variant_key: str
+    profit_cents: int
+
+class VariantProfitSettingResponse(VariantProfitSettingCreate):
+    class Config:
+        from_attributes = True
+
+class ModelPricingSnapshotResponse(BaseModel):
+    id: int
+    model_id: int
+    marketplace: str
+    variant_key: str
+    raw_cost_cents: int
+    base_cost_cents: int
+    retail_price_cents: int
+    marketplace_fee_cents: int
+    profit_cents: int
+    material_cost_cents: int
+    shipping_cost_cents: int
+    labor_cost_cents: int
+    weight_oz: float
+    calculated_at: datetime
+    
+    class Config:
+        from_attributes = True

@@ -14,6 +14,7 @@ import OrdersPage from './pages/OrdersPage'
 import PricingCalculator from './pages/PricingCalculator'
 import TemplatesPage from './pages/TemplatesPage'
 import ExportPage from './pages/ExportPage'
+import SettingsPage from './pages/SettingsPage'
 
 function App() {
   return (
@@ -33,6 +34,7 @@ function App() {
           <Route path="/pricing" element={<PricingCalculator />} />
           <Route path="/templates" element={<TemplatesPage />} />
           <Route path="/export" element={<ExportPage />} />
+          <Route path="/settings" element={<SettingsPage />} />
         </Routes>
       </Layout>
     </Box>

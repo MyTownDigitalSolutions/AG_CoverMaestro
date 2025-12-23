@@ -172,3 +172,79 @@ export interface EnumValue {
   value: string
   name: string
 }
+
+// Settings Types
+export interface MaterialRoleAssignment {
+  id: number
+  role: string
+  material_id: number
+  effective_date: string
+  end_date?: string
+  created_at: string
+}
+
+export interface ShippingRateCard {
+  id: number
+  carrier: string
+  name: string
+  effective_date: string
+  end_date?: string
+}
+
+export interface ShippingRateTier {
+  id: number
+  rate_card_id: number
+  min_oz: number
+  max_oz: number
+  label?: string
+}
+
+export interface ShippingZoneRate {
+  id: number
+  tier_id: number
+  zone: number
+  rate_cents: number
+}
+
+export interface MarketplaceShippingProfile {
+  id: number
+  marketplace: string
+  rate_card_id: number
+  pricing_zone: number
+  effective_date: string
+  end_date?: string
+}
+
+export interface LaborSetting {
+  id: number
+  hourly_rate_cents: number
+  minutes_no_padding: number
+  minutes_with_padding: number
+}
+
+export interface MarketplaceFeeRate {
+  marketplace: string
+  fee_rate: number
+}
+
+export interface VariantProfitSetting {
+  variant_key: string
+  profit_cents: number
+}
+
+export interface ModelPricingSnapshot {
+  id: number
+  model_id: number
+  marketplace: string
+  variant_key: string
+  raw_cost_cents: number
+  base_cost_cents: number
+  retail_price_cents: number
+  marketplace_fee_cents: number
+  profit_cents: number
+  material_cost_cents: number
+  shipping_cost_cents: number
+  labor_cost_cents: number
+  weight_oz: number
+  calculated_at: string
+}

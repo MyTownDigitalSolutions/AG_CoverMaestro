@@ -70,6 +70,7 @@ class Material(Base):
     weight_per_linear_yard = Column(Float, nullable=True)
     unit_of_measure = Column(Enum(UnitOfMeasure), default=UnitOfMeasure.YARD, nullable=True)
     package_quantity = Column(Float, nullable=True)
+    weight_per_sq_in_oz = Column(Float, nullable=True)
     
     colour_surcharges = relationship("MaterialColourSurcharge", back_populates="material", cascade="all, delete-orphan")
     supplier_materials = relationship("SupplierMaterial", back_populates="material", cascade="all, delete-orphan")
@@ -206,3 +207,117 @@ class EquipmentTypeDesignOption(Base):
     design_option = relationship("DesignOption", back_populates="equipment_types")
     
     __table_args__ = (UniqueConstraint('equipment_type_id', 'design_option_id', name='uq_equip_type_design_option'),)
+
+class MaterialRoleAssignment(Base):
+    __tablename__ = "material_role_assignments"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    role = Column(String, nullable=False)
+    material_id = Column(Integer, ForeignKey("materials.id"), nullable=False)
+    effective_date = Column(DateTime, nullable=False, default=datetime.utcnow)
+    end_date = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    
+    material = relationship("Material")
+    
+    __table_args__ = (
+        # Index for fast lookup of active roles
+        # In SQLite/others, we often just index the columns. 
+        # For effective dating, (role, end_date) is useful.
+        # We'll rely on simple indexing for now.
+    )
+
+class ShippingRateCard(Base):
+    __tablename__ = "shipping_rate_cards"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    carrier = Column(Enum(Carrier), nullable=False)
+    name = Column(String, nullable=False)
+    effective_date = Column(DateTime, default=datetime.utcnow)
+    end_date = Column(DateTime, nullable=True)
+    
+    tiers = relationship("ShippingRateTier", back_populates="rate_card", cascade="all, delete-orphan")
+    zone_rates = relationship("ShippingZoneRate", back_populates="rate_card", cascade="all, delete-orphan")
+
+class ShippingRateTier(Base):
+    __tablename__ = "shipping_rate_tiers"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    rate_card_id = Column(Integer, ForeignKey("shipping_rate_cards.id"), nullable=False)
+    min_oz = Column(Float, nullable=False) # DECIMAL(10,4) handled as Float in SQLite for simplicity/compat
+    max_oz = Column(Float, nullable=False)
+    label = Column(String, nullable=True)
+    
+    rate_card = relationship("ShippingRateCard", back_populates="tiers")
+    zone_rates = relationship("ShippingZoneRate", back_populates="tier", cascade="all, delete-orphan")
+
+class ShippingZoneRate(Base):
+    __tablename__ = "shipping_zone_rates"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    rate_card_id = Column(Integer, ForeignKey("shipping_rate_cards.id"), nullable=False)
+    tier_id = Column(Integer, ForeignKey("shipping_rate_tiers.id"), nullable=False)
+    zone = Column(Integer, nullable=False)
+    rate_cents = Column(Integer, nullable=False)
+    
+    rate_card = relationship("ShippingRateCard", back_populates="zone_rates")
+    tier = relationship("ShippingRateTier", back_populates="zone_rates")
+    
+    __table_args__ = (UniqueConstraint('tier_id', 'zone', name='uq_tier_zone'),)
+
+class MarketplaceShippingProfile(Base):
+    __tablename__ = "marketplace_shipping_profiles"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    marketplace = Column(String, nullable=False, default="DEFAULT")
+    rate_card_id = Column(Integer, ForeignKey("shipping_rate_cards.id"), nullable=False)
+    pricing_zone = Column(Integer, nullable=False)
+    effective_date = Column(DateTime, default=datetime.utcnow)
+    end_date = Column(DateTime, nullable=True)
+    
+    rate_card = relationship("ShippingRateCard")
+
+class LaborSetting(Base):
+    __tablename__ = "labor_settings"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    hourly_rate_cents = Column(Integer, default=1700)
+    minutes_no_padding = Column(Integer, default=35)
+    minutes_with_padding = Column(Integer, default=60)
+
+class VariantProfitSetting(Base):
+    __tablename__ = "variant_profit_settings"
+    
+    variant_key = Column(String, primary_key=True)
+    profit_cents = Column(Integer, nullable=False)
+
+class MarketplaceFeeRate(Base):
+    __tablename__ = "marketplace_fee_rates"
+    
+    marketplace = Column(String, primary_key=True)
+    fee_rate = Column(Float, nullable=False) # DECIMAL(6,5)
+
+class ModelPricingSnapshot(Base):
+    __tablename__ = "model_pricing_snapshots"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    model_id = Column(Integer, ForeignKey("models.id"), nullable=False)
+    marketplace = Column(String, nullable=False, default="DEFAULT")
+    variant_key = Column(String, nullable=False)
+    
+    raw_cost_cents = Column(Integer, nullable=False)
+    base_cost_cents = Column(Integer, nullable=False)
+    retail_price_cents = Column(Integer, nullable=False)
+    marketplace_fee_cents = Column(Integer, nullable=False)
+    profit_cents = Column(Integer, nullable=False)
+    
+    material_cost_cents = Column(Integer, nullable=False)
+    shipping_cost_cents = Column(Integer, nullable=False)
+    labor_cost_cents = Column(Integer, nullable=False)
+    weight_oz = Column(Float, nullable=False)
+    
+    calculated_at = Column(DateTime, default=datetime.utcnow)
+    
+    model = relationship("Model")
+    
+    __table_args__ = (UniqueConstraint('model_id', 'marketplace', 'variant_key', name='uq_model_mp_variant'),)

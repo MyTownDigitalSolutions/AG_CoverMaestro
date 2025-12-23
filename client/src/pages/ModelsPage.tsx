@@ -9,7 +9,122 @@ import DeleteIcon from '@mui/icons-material/Delete'
 import EditIcon from '@mui/icons-material/Edit'
 import AddIcon from '@mui/icons-material/Add'
 import { modelsApi, seriesApi, equipmentTypesApi, enumsApi, manufacturersApi } from '../services/api'
-import type { Model, Series, EquipmentType, EnumValue, Manufacturer } from '../types'
+import type { Model, Series, EquipmentType, EnumValue, Manufacturer, ModelPricingSnapshot } from '../types'
+import MonetizationOnIcon from '@mui/icons-material/MonetizationOn';
+import RefreshIcon from '@mui/icons-material/Refresh';
+
+function PricingDialog({ model, open, onClose }: { model: Model | null, open: boolean, onClose: () => void }) {
+  const [snapshots, setSnapshots] = useState<ModelPricingSnapshot[]>([])
+  const [marketplace, setMarketplace] = useState("DEFAULT")
+  const [loading, setLoading] = useState(false)
+  const [marketplaces, setMarketplaces] = useState<EnumValue[]>([])
+
+  const variantLabels: Record<string, string> = {
+    "choice_no_padding": "Choice – No Padding",
+    "choice_with_padding": "Choice – With Padding",
+    "premium_no_padding": "Premium – No Padding",
+    "premium_with_padding": "Premium – With Padding"
+  };
+
+  useEffect(() => {
+    if (open && model) {
+      loadPricing()
+      loadMarketplaces()
+    }
+  }, [open, model, marketplace])
+
+  const loadPricing = async () => {
+    if (!model) return
+    try {
+      setLoading(true)
+      const data = await modelsApi.getPricing(model.id, marketplace)
+      setSnapshots(data)
+    } catch (e) {
+      console.error(e)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const loadMarketplaces = async () => {
+    const mps = await enumsApi.marketplaces()
+    setMarketplaces([{ value: "DEFAULT", name: "Default" }, ...mps])
+  }
+
+  const handleRecalculate = async () => {
+    if (!model) return
+    try {
+      setLoading(true)
+      const data = await modelsApi.recalculatePricing(model.id, marketplace)
+      setSnapshots(data)
+    } catch (e) {
+      alert("Recalculation failed: " + e)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  if (!model) return null
+
+  return (
+    <Dialog open={open} onClose={onClose} maxWidth="lg" fullWidth>
+      <DialogTitle sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        Pricing: {model.name}
+        <Box>
+          <Select size="small" value={marketplace} onChange={e => setMarketplace(e.target.value)} sx={{ mr: 2 }}>
+            {marketplaces.map(m => <MenuItem key={m.value} value={m.value}>{m.name}</MenuItem>)}
+          </Select>
+          <Button startIcon={<RefreshIcon />} variant="outlined" onClick={handleRecalculate} disabled={loading}>
+            {loading ? 'Calculating...' : 'Recalculate'}
+          </Button>
+        </Box>
+      </DialogTitle>
+      <DialogContent>
+        <TableContainer component={Paper}>
+          <Table size="small">
+            <TableHead>
+              <TableRow>
+                <TableCell>Variant</TableCell>
+                <TableCell align="right">Retail Price</TableCell>
+                <TableCell align="right">Base Cost</TableCell>
+                <TableCell align="right">Profit</TableCell>
+                <TableCell align="right">Mkt Fee</TableCell>
+                <TableCell align="right">Raw Cost</TableCell>
+                <TableCell align="right">Material</TableCell>
+                <TableCell align="right">Labor</TableCell>
+                <TableCell align="right">Shipping</TableCell>
+                <TableCell align="right">Weight (oz)</TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {snapshots.length === 0 ? (
+                <TableRow><TableCell colSpan={10} align="center">No pricing data found. Click Recalculate.</TableCell></TableRow>
+              ) : (
+                snapshots.map(s => (
+                  <TableRow key={s.variant_key}>
+                    <TableCell>{variantLabels[s.variant_key] || s.variant_key.replace(/_/g, ' ')}</TableCell>
+                    <TableCell align="right" sx={{ fontWeight: 'bold' }}>${(s.retail_price_cents / 100).toFixed(2)}</TableCell>
+                    <TableCell align="right">${(s.base_cost_cents / 100).toFixed(2)}</TableCell>
+                    <TableCell align="right" sx={{ color: 'green' }}>${(s.profit_cents / 100).toFixed(2)}</TableCell>
+                    <TableCell align="right" sx={{ color: 'red' }}>${(s.marketplace_fee_cents / 100).toFixed(2)}</TableCell>
+                    <TableCell align="right">${(s.raw_cost_cents / 100).toFixed(2)}</TableCell>
+                    <TableCell align="right">${(s.material_cost_cents / 100).toFixed(2)}</TableCell>
+                    <TableCell align="right">${(s.labor_cost_cents / 100).toFixed(2)}</TableCell>
+                    <TableCell align="right">${(s.shipping_cost_cents / 100).toFixed(2)}</TableCell>
+                    <TableCell align="right">{s.weight_oz.toFixed(1)}oz</TableCell>
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+          </Table>
+        </TableContainer>
+      </DialogContent>
+      <DialogActions>
+        <Button onClick={onClose}>Close</Button>
+      </DialogActions>
+    </Dialog>
+  )
+}
 
 export default function ModelsPage() {
   const [models, setModels] = useState<Model[]>([])
@@ -25,6 +140,9 @@ export default function ModelsPage() {
   // Delete confirmation state
   const [deleteConfirmationOpen, setDeleteConfirmationOpen] = useState(false)
   const [modelToDelete, setModelToDelete] = useState<number | null>(null)
+
+  // Pricing Dialog
+  const [pricingModel, setPricingModel] = useState<Model | null>(null)
 
   const [formData, setFormData] = useState({
     name: '',
@@ -194,6 +312,7 @@ export default function ModelsPage() {
                 <TableCell>{model.handle_location}</TableCell>
                 <TableCell>{model.angle_type}</TableCell>
                 <TableCell>
+                  <IconButton onClick={() => setPricingModel(model)} title="Pricing"><MonetizationOnIcon /></IconButton>
                   <IconButton onClick={() => openEdit(model)}><EditIcon /></IconButton>
                   <IconButton onClick={() => handleDeleteClick(model.id)}><DeleteIcon /></IconButton>
                 </TableCell>
@@ -361,6 +480,12 @@ export default function ModelsPage() {
           </Button>
         </DialogActions>
       </Dialog>
+
+      <PricingDialog
+        open={!!pricingModel}
+        model={pricingModel}
+        onClose={() => setPricingModel(null)}
+      />
     </Box>
   )
 }
