@@ -248,3 +248,58 @@ export interface ModelPricingSnapshot {
   weight_oz: number
   calculated_at: string
 }
+
+export interface ModelPricingHistory {
+  id: number
+  model_id: number
+  marketplace: string
+  variant_key: string
+  raw_cost_cents: number
+  base_cost_cents: number
+  retail_price_cents: number
+  marketplace_fee_cents: number
+  profit_cents: number
+  material_cost_cents: number
+  shipping_cost_cents: number
+  labor_cost_cents: number
+  weight_oz: number
+  calculated_at: string
+  reason?: string
+}
+
+export interface PricingDiffResponse {
+  old_version_date: string
+  new_version_date: string
+  diffs: {
+    field_name: string
+    old_value: any
+    new_value: any
+    delta: any
+    direction: 'increase' | 'decrease' | 'change' | 'none'
+  }[]
+}
+
+export interface PricingRecalculateBulkRequest {
+  marketplaces?: string[]
+  scope: 'manufacturer' | 'series' | 'models'
+  manufacturer_id?: number
+  series_id?: number
+  model_ids?: number[]
+  variant_set?: string
+  dry_run?: boolean
+}
+
+export interface PricingRecalculateResult {
+  model_id: number
+  error?: string
+}
+
+export interface PricingRecalculateBulkResponse {
+  marketplaces: string[]
+  scope: string
+  resolved_model_count: number
+  results: Record<string, {
+    succeeded: number[]
+    failed: PricingRecalculateResult[]
+  }>
+}

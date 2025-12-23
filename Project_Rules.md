@@ -85,6 +85,8 @@ The system manages:
 
 ## 6) Pricing Architecture (High-Level)
 
+Pricing History Rule: Only Baseline4 variants are permitted in pricing history and snapshots. Add-on and design variants must never be persisted without an explicit feature flag and schema review.
+
 Pricing is computed:
 
 - Per model

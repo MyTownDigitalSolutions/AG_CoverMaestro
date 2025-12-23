@@ -3,11 +3,12 @@ from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 from typing import List, Optional
 from app.database import get_db
-from app.models.core import Model, Series, Manufacturer
-from app.schemas.core import ModelCreate, ModelResponse, ModelPricingSnapshotResponse
+from app.models.core import Model, Series, Manufacturer, ModelPricingSnapshot, ModelPricingHistory
+from app.schemas.core import ModelCreate, ModelResponse, ModelPricingSnapshotResponse, ModelPricingHistoryResponse
+from app.schemas.pricing_diff import PricingDiffResponse
 
 from app.services.pricing_calculator import PricingCalculator
-from app.models.core import ModelPricingSnapshot
+from app.services.pricing_diff_service import PricingDiffService
 
 router = APIRouter(prefix="/models", tags=["models"])
 
@@ -197,6 +198,38 @@ def recalculate_model_pricing(id: int, marketplace: str = "DEFAULT", db: Session
         ModelPricingSnapshot.model_id == id,
         ModelPricingSnapshot.marketplace == marketplace
     ).all()
+
+@router.get("/{id}/pricing/history", response_model=List[ModelPricingHistoryResponse])
+def get_model_pricing_history(
+    id: int, 
+    marketplace: Optional[str] = None, 
+    variant_key: Optional[str] = None,
+    limit: int = 200, 
+    db: Session = Depends(get_db)
+):
+    """Get pricing history for a model."""
+    query = db.query(ModelPricingHistory).filter(ModelPricingHistory.model_id == id)
+    
+    if marketplace:
+        query = query.filter(ModelPricingHistory.marketplace == marketplace)
+    
+    if variant_key:
+        query = query.filter(ModelPricingHistory.variant_key == variant_key)
+        
+    return query.order_by(ModelPricingHistory.calculated_at.desc()).limit(limit).all()
+
+@router.get("/{id}/pricing/diff", response_model=Optional[PricingDiffResponse])
+def get_model_pricing_diff(
+    id: int,
+    variant_key: str,
+    marketplace: str = "DEFAULT",
+    db: Session = Depends(get_db)
+):
+    """
+    Get the difference between the two most recent pricing history entries.
+    Returns null if insufficient history exists (fewer than 2 rows).
+    """
+    return PricingDiffService(db).diff_latest(id, marketplace, variant_key)
 
 @router.post("/pricing/recalculate-all")
 def recalculate_all_models(marketplace: str = "DEFAULT", db: Session = Depends(get_db)):

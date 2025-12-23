@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from typing import Optional, List
+from typing import Optional, List, Dict, Union
 from datetime import datetime
 from app.models.enums import HandleLocation, AngleType, Carrier, Marketplace, MaterialType, UnitOfMeasure
 
@@ -387,3 +387,46 @@ class ModelPricingSnapshotResponse(BaseModel):
     
     class Config:
         from_attributes = True
+
+class ModelPricingHistoryResponse(BaseModel):
+    id: int
+    model_id: int
+    marketplace: str
+    variant_key: str
+    
+    raw_cost_cents: int
+    base_cost_cents: int
+    retail_price_cents: int
+    marketplace_fee_cents: int
+    profit_cents: int
+    material_cost_cents: int
+    shipping_cost_cents: int
+    labor_cost_cents: int
+    weight_oz: float
+    
+    calculated_at: datetime
+    pricing_context_hash: Optional[str] = None
+    reason: Optional[str] = None
+    
+    class Config:
+        from_attributes = True
+
+class PricingRecalculateBulkRequest(BaseModel):
+    marketplaces: List[str] = ["amazon"]
+    scope: str  # "manufacturer" | "series" | "models"
+    manufacturer_id: Optional[int] = None
+    series_id: Optional[int] = None
+    model_ids: Optional[List[int]] = None
+    variant_set: str = "baseline4"
+    dry_run: bool = False
+
+class PricingRecalculateResult(BaseModel):
+    model_id: int
+    error: Optional[str] = None
+
+class PricingRecalculateBulkResponse(BaseModel):
+    marketplaces: List[str]
+    scope: str
+    resolved_model_count: int
+    results: Dict[str, Dict[str, List[Union[int, PricingRecalculateResult]]]] 
+    # structure: { "amazon": { "succeeded": [1, 2], "failed": [{ "model_id": 3, "error": "msg" }] } }

@@ -3,121 +3,293 @@ import {
   Box, Typography, Paper, Button, TextField, Dialog, DialogTitle,
   DialogContent, DialogActions, FormControl, InputLabel, Select,
   MenuItem, Grid, IconButton, Table, TableBody, TableCell,
-  TableContainer, TableHead, TableRow
+  TableContainer, TableHead, TableRow, Tabs, Tab, CircularProgress, Chip, Stack,
+  Snackbar, Alert
 } from '@mui/material'
 import DeleteIcon from '@mui/icons-material/Delete'
 import EditIcon from '@mui/icons-material/Edit'
 import AddIcon from '@mui/icons-material/Add'
 import { modelsApi, seriesApi, equipmentTypesApi, enumsApi, manufacturersApi } from '../services/api'
-import type { Model, Series, EquipmentType, EnumValue, Manufacturer, ModelPricingSnapshot } from '../types'
+import type { Model, Series, EquipmentType, EnumValue, Manufacturer, ModelPricingSnapshot, ModelPricingHistory, PricingDiffResponse } from '../types'
 import MonetizationOnIcon from '@mui/icons-material/MonetizationOn';
 import RefreshIcon from '@mui/icons-material/Refresh';
+import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward'
+import ArrowDownwardIcon from '@mui/icons-material/ArrowDownward'
+import RemoveIcon from '@mui/icons-material/Remove'
+import PricingAdminPanel from '../components/PricingAdminPanel'
+import { pricingApi } from '../services/api'
+
+interface TabPanelProps {
+  children?: React.ReactNode;
+  index: number;
+  value: number;
+}
+
+function CustomTabPanel(props: TabPanelProps) {
+  const { children, value, index, ...other } = props;
+
+  return (
+    <div
+      role="tabpanel"
+      hidden={value !== index}
+      id={`simple-tabpanel-${index}`}
+      aria-labelledby={`simple-tab-${index}`}
+      {...other}
+    >
+      {value === index && (
+        <Box sx={{ p: 3 }}>
+          {children}
+        </Box>
+      )}
+    </div>
+  );
+}
 
 function PricingDialog({ model, open, onClose }: { model: Model | null, open: boolean, onClose: () => void }) {
-  const [snapshots, setSnapshots] = useState<ModelPricingSnapshot[]>([])
-  const [marketplace, setMarketplace] = useState("DEFAULT")
+  const [tabIndex, setTabIndex] = useState(0)
+  const [currentSnapshot, setCurrentSnapshot] = useState<ModelPricingSnapshot | null>(null)
+  const [history, setHistory] = useState<ModelPricingHistory[]>([])
+  const [diff, setDiff] = useState<PricingDiffResponse | null>(null)
   const [loading, setLoading] = useState(false)
-  const [marketplaces, setMarketplaces] = useState<EnumValue[]>([])
+  const [error, setError] = useState<string | null>(null)
 
-  const variantLabels: Record<string, string> = {
-    "choice_no_padding": "Choice – No Padding",
-    "choice_with_padding": "Choice – With Padding",
-    "premium_no_padding": "Premium – No Padding",
-    "premium_with_padding": "Premium – With Padding"
-  };
+  // Notification state
+  const [snackbarOpen, setSnackbarOpen] = useState(false)
+  const [snackbarMessage, setSnackbarMessage] = useState('')
+  const [snackbarSeverity, setSnackbarSeverity] = useState<'success' | 'error'>('success')
+
+  // Only relevant for history/diff
+  const marketplace = "amazon"
+  const variantKey = "choice_no_padding"
 
   useEffect(() => {
     if (open && model) {
-      loadPricing()
-      loadMarketplaces()
+      loadData()
     }
-  }, [open, model, marketplace])
+  }, [open, model, tabIndex])
 
-  const loadPricing = async () => {
+  const loadData = async () => {
     if (!model) return
+    setLoading(true)
+    setError(null)
     try {
-      setLoading(true)
-      const data = await modelsApi.getPricing(model.id, marketplace)
-      setSnapshots(data)
-    } catch (e) {
+      if (tabIndex === 0) {
+        const data = await modelsApi.getDebugPrice(model.id)
+        setCurrentSnapshot(data)
+      } else if (tabIndex === 1) {
+        const data = await modelsApi.getPricingHistory(model.id, marketplace, variantKey)
+        setHistory(data)
+      } else if (tabIndex === 2) {
+        const data = await modelsApi.getPricingDiff(model.id, marketplace, variantKey)
+        setDiff(data)
+      }
+    } catch (e: any) {
       console.error(e)
+      setError(e.response?.data?.detail || "Failed to load data")
+      setCurrentSnapshot(null)
     } finally {
       setLoading(false)
     }
-  }
-
-  const loadMarketplaces = async () => {
-    const mps = await enumsApi.marketplaces()
-    setMarketplaces([{ value: "DEFAULT", name: "Default" }, ...mps])
   }
 
   const handleRecalculate = async () => {
-    if (!model) return
+    if (!model) return;
+    setLoading(true);
     try {
-      setLoading(true)
-      const data = await modelsApi.recalculatePricing(model.id, marketplace)
-      setSnapshots(data)
-    } catch (e) {
-      alert("Recalculation failed: " + e)
-    } finally {
-      setLoading(false)
+      await modelsApi.recalculatePricing(model.id, marketplace);
+      await loadData(); // Refresh data
+      setSnackbarMessage("Baseline pricing recalculated");
+      setSnackbarSeverity("success");
+      setSnackbarOpen(true);
+    } catch (e: any) {
+      console.error(e);
+      const msg = e.response?.data?.detail || "Recalculation failed";
+      // Don't set main error state, use snackbar for action feedback
+      // setError(msg); 
+      setSnackbarMessage(msg);
+      setSnackbarSeverity("error");
+      setSnackbarOpen(true);
+      setLoading(false); // Ensure loading is off if loadData wasn't called
     }
-  }
+  };
 
   if (!model) return null
+
+  const formatMoney = (cents: number) => `$${(cents / 100).toFixed(2)}`
 
   return (
     <Dialog open={open} onClose={onClose} maxWidth="lg" fullWidth>
       <DialogTitle sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        Pricing: {model.name}
-        <Box>
-          <Select size="small" value={marketplace} onChange={e => setMarketplace(e.target.value)} sx={{ mr: 2 }}>
-            {marketplaces.map(m => <MenuItem key={m.value} value={m.value}>{m.name}</MenuItem>)}
-          </Select>
-          <Button startIcon={<RefreshIcon />} variant="outlined" onClick={handleRecalculate} disabled={loading}>
-            {loading ? 'Calculating...' : 'Recalculate'}
-          </Button>
-        </Box>
+        <span>Pricing: {model.name}</span>
+        <Button
+          variant="contained"
+          onClick={handleRecalculate}
+          disabled={loading}
+          startIcon={loading ? <CircularProgress size={20} color="inherit" /> : <RefreshIcon />}
+        >
+          {loading ? 'Calculating...' : 'Recalculate Baseline (Amazon)'}
+        </Button>
       </DialogTitle>
       <DialogContent>
-        <TableContainer component={Paper}>
-          <Table size="small">
-            <TableHead>
-              <TableRow>
-                <TableCell>Variant</TableCell>
-                <TableCell align="right">Retail Price</TableCell>
-                <TableCell align="right">Base Cost</TableCell>
-                <TableCell align="right">Profit</TableCell>
-                <TableCell align="right">Mkt Fee</TableCell>
-                <TableCell align="right">Raw Cost</TableCell>
-                <TableCell align="right">Material</TableCell>
-                <TableCell align="right">Labor</TableCell>
-                <TableCell align="right">Shipping</TableCell>
-                <TableCell align="right">Weight (oz)</TableCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {snapshots.length === 0 ? (
-                <TableRow><TableCell colSpan={10} align="center">No pricing data found. Click Recalculate.</TableCell></TableRow>
+        <Box sx={{ borderBottom: 1, borderColor: 'divider' }}>
+          <Tabs value={tabIndex} onChange={(_, v) => setTabIndex(v)} aria-label="pricing tabs">
+            <Tab label="Current (Amazon Baseline)" />
+            <Tab label="History" />
+            <Tab label="Diff (Latest)" />
+          </Tabs>
+        </Box>
+
+        {loading && <Box sx={{ display: 'flex', justifyContent: 'center', p: 4 }}><CircularProgress /></Box>}
+
+        {error && !loading && (
+          <Box sx={{ p: 2, color: 'error.main' }}>
+            <Typography>{error}</Typography>
+            {/* Fallback help text */}
+            <Typography variant="caption" color="text.secondary">
+              (Tip: If "Baseline snapshot missing", click Recalculate above or run <code>python scripts/seed_pricing_history_demo.py</code>)
+            </Typography>
+          </Box>
+        )}
+
+        <Snackbar
+          open={snackbarOpen}
+          autoHideDuration={6000}
+          onClose={() => setSnackbarOpen(false)}
+          anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+        >
+          <Alert onClose={() => setSnackbarOpen(false)} severity={snackbarSeverity} sx={{ width: '100%' }}>
+            {snackbarMessage}
+          </Alert>
+        </Snackbar>
+
+        {!loading && !error && (
+          <>
+            {/* CURRENT TAB */}
+            <CustomTabPanel value={tabIndex} index={0}>
+              {currentSnapshot ? (
+                <Grid container spacing={3}>
+                  <Grid item xs={12}>
+                    <Typography variant="h3" color="primary" align="center" sx={{ mb: 1 }}>
+                      {formatMoney(currentSnapshot.retail_price_cents)}
+                    </Typography>
+                    <Typography variant="subtitle1" align="center" color="text.secondary">
+                      Retail Price (Amazon / Choice No Padding)
+                    </Typography>
+                    <Typography variant="caption" display="block" align="center" sx={{ mb: 3 }}>
+                      Calculated: {new Date(currentSnapshot.calculated_at).toLocaleString()}
+                    </Typography>
+                  </Grid>
+
+                  <Grid item xs={4}>
+                    <Paper sx={{ p: 2, textAlign: 'center' }}>
+                      <Typography variant="h6">{formatMoney(currentSnapshot.base_cost_cents)}</Typography>
+                      <Typography variant="caption">Base Cost</Typography>
+                    </Paper>
+                  </Grid>
+                  <Grid item xs={4}>
+                    <Paper sx={{ p: 2, textAlign: 'center' }}>
+                      <Typography variant="h6" color="error.main">{formatMoney(currentSnapshot.marketplace_fee_cents)}</Typography>
+                      <Typography variant="caption">Marketplace Fee</Typography>
+                    </Paper>
+                  </Grid>
+                  <Grid item xs={4}>
+                    <Paper sx={{ p: 2, textAlign: 'center' }}>
+                      <Typography variant="h6" color="success.main">{formatMoney(currentSnapshot.profit_cents)}</Typography>
+                      <Typography variant="caption">Profit</Typography>
+                    </Paper>
+                  </Grid>
+
+                  <Grid item xs={12}>
+                    <Box sx={{ mt: 2 }}>
+                      <Typography variant="body2" gutterBottom><b>Components:</b></Typography>
+                      <Stack direction="row" spacing={2}>
+                        <Chip label={`Material: ${formatMoney(currentSnapshot.material_cost_cents)}`} variant="outlined" />
+                        <Chip label={`Labor: ${formatMoney(currentSnapshot.labor_cost_cents)}`} variant="outlined" />
+                        <Chip label={`Shipping: ${formatMoney(currentSnapshot.shipping_cost_cents)}`} variant="outlined" />
+                        <Chip label={`Weight: ${currentSnapshot.weight_oz.toFixed(1)} oz`} variant="outlined" />
+                      </Stack>
+                    </Box>
+                  </Grid>
+                </Grid>
+              ) : <Typography>No data.</Typography>}
+            </CustomTabPanel>
+
+            {/* HISTORY TAB */}
+            <CustomTabPanel value={tabIndex} index={1}>
+              <TableContainer component={Paper} elevation={0} variant="outlined">
+                <Table size="small">
+                  <TableHead>
+                    <TableRow>
+                      <TableCell>Date</TableCell>
+                      <TableCell align="right">Retail Price</TableCell>
+                      <TableCell align="right">Base Cost</TableCell>
+                      <TableCell align="right">Profit</TableCell>
+                      <TableCell align="right">Fee</TableCell>
+                      <TableCell align="right">Weight</TableCell>
+                      <TableCell>Reason</TableCell>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {history.map((row) => (
+                      <TableRow key={row.id}>
+                        <TableCell>{new Date(row.calculated_at).toLocaleString()}</TableCell>
+                        <TableCell align="right"><b>{formatMoney(row.retail_price_cents)}</b></TableCell>
+                        <TableCell align="right">{formatMoney(row.base_cost_cents)}</TableCell>
+                        <TableCell align="right" sx={{ color: 'success.main' }}>{formatMoney(row.profit_cents)}</TableCell>
+                        <TableCell align="right" sx={{ color: 'error.main' }}>{formatMoney(row.marketplace_fee_cents)}</TableCell>
+                        <TableCell align="right">{row.weight_oz.toFixed(1)} oz</TableCell>
+                        <TableCell sx={{ fontStyle: 'italic', fontSize: '0.8rem', color: 'text.secondary' }}>{row.reason}</TableCell>
+                      </TableRow>
+                    ))}
+                    {history.length === 0 && <TableRow><TableCell colSpan={7} align="center">No history found.</TableCell></TableRow>}
+                  </TableBody>
+                </Table>
+              </TableContainer>
+            </CustomTabPanel>
+
+            {/* DIFF TAB */}
+            <CustomTabPanel value={tabIndex} index={2}>
+              {diff && diff.diffs.length > 0 ? (
+                <>
+                  <Typography variant="subtitle2" gutterBottom>
+                    Comparing {new Date(diff.old_version_date).toLocaleString()} vs {new Date(diff.new_version_date).toLocaleString()}
+                  </Typography>
+                  <TableContainer component={Paper} elevation={0} variant="outlined">
+                    <Table size="small">
+                      <TableHead>
+                        <TableRow>
+                          <TableCell>Field</TableCell>
+                          <TableCell align="right">Old Value</TableCell>
+                          <TableCell align="right">New Value</TableCell>
+                          <TableCell align="right">Delta</TableCell>
+                          <TableCell align="center">Change</TableCell>
+                        </TableRow>
+                      </TableHead>
+                      <TableBody>
+                        {diff.diffs.map((d, i) => (
+                          <TableRow key={i}>
+                            <TableCell sx={{ textTransform: 'capitalize' }}>{d.field_name.replace(/_/g, ' ')}</TableCell>
+                            <TableCell align="right">{d.old_value}</TableCell>
+                            <TableCell align="right">{d.new_value}</TableCell>
+                            <TableCell align="right" sx={{ fontWeight: 'bold' }}>{d.delta}</TableCell>
+                            <TableCell align="center">
+                              {d.direction === 'increase' && <Chip icon={<ArrowUpwardIcon />} label="Increase" color="error" size="small" variant="outlined" />}
+                              {d.direction === 'decrease' && <Chip icon={<ArrowDownwardIcon />} label="Decrease" color="success" size="small" variant="outlined" />}
+                              {d.direction === 'change' && <Chip icon={<RemoveIcon />} label="Change" size="small" variant="outlined" />}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </TableContainer>
+                </>
               ) : (
-                snapshots.map(s => (
-                  <TableRow key={s.variant_key}>
-                    <TableCell>{variantLabels[s.variant_key] || s.variant_key.replace(/_/g, ' ')}</TableCell>
-                    <TableCell align="right" sx={{ fontWeight: 'bold' }}>${(s.retail_price_cents / 100).toFixed(2)}</TableCell>
-                    <TableCell align="right">${(s.base_cost_cents / 100).toFixed(2)}</TableCell>
-                    <TableCell align="right" sx={{ color: 'green' }}>${(s.profit_cents / 100).toFixed(2)}</TableCell>
-                    <TableCell align="right" sx={{ color: 'red' }}>${(s.marketplace_fee_cents / 100).toFixed(2)}</TableCell>
-                    <TableCell align="right">${(s.raw_cost_cents / 100).toFixed(2)}</TableCell>
-                    <TableCell align="right">${(s.material_cost_cents / 100).toFixed(2)}</TableCell>
-                    <TableCell align="right">${(s.labor_cost_cents / 100).toFixed(2)}</TableCell>
-                    <TableCell align="right">${(s.shipping_cost_cents / 100).toFixed(2)}</TableCell>
-                    <TableCell align="right">{s.weight_oz.toFixed(1)}oz</TableCell>
-                  </TableRow>
-                ))
+                <Typography>No significant differences found between the last two versions.</Typography>
               )}
-            </TableBody>
-          </Table>
-        </TableContainer>
+            </CustomTabPanel>
+          </>
+        )}
+
       </DialogContent>
       <DialogActions>
         <Button onClick={onClose}>Close</Button>
@@ -143,6 +315,9 @@ export default function ModelsPage() {
 
   // Pricing Dialog
   const [pricingModel, setPricingModel] = useState<Model | null>(null)
+
+  // Pricing Admin
+  const [pricingAdminOpen, setPricingAdminOpen] = useState(false)
 
   const [formData, setFormData] = useState({
     name: '',
@@ -257,16 +432,25 @@ export default function ModelsPage() {
     <Box>
       <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 3 }}>
         <Typography variant="h4">Models</Typography>
-        <Button
-          variant="contained"
-          startIcon={<AddIcon />}
-          onClick={() => {
-            resetForm()
-            setDialogOpen(true)
-          }}
-        >
-          Add Model
-        </Button>
+        <Stack direction="row" spacing={2}>
+          <Button
+            variant="outlined"
+            startIcon={<MonetizationOnIcon />}
+            onClick={() => setPricingAdminOpen(true)}
+          >
+            Pricing Admin
+          </Button>
+          <Button
+            variant="contained"
+            startIcon={<AddIcon />}
+            onClick={() => {
+              resetForm()
+              setDialogOpen(true)
+            }}
+          >
+            Add Model
+          </Button>
+        </Stack>
       </Box>
 
       <Paper sx={{ p: 2, mb: 3 }}>
@@ -485,6 +669,14 @@ export default function ModelsPage() {
         open={!!pricingModel}
         model={pricingModel}
         onClose={() => setPricingModel(null)}
+      />
+
+      <PricingAdminPanel
+        open={pricingAdminOpen}
+        onClose={() => setPricingAdminOpen(false)}
+        manufacturers={manufacturers}
+        series={series}
+        models={models}
       />
     </Box>
   )

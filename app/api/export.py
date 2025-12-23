@@ -6,13 +6,33 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from typing import List
 from pydantic import BaseModel
+from app.schemas.core import ModelPricingSnapshotResponse
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment
 from app.database import get_db
-from app.models.core import Model, Series, Manufacturer, EquipmentType
+from app.models.core import Model, Series, Manufacturer, EquipmentType, ModelPricingSnapshot
 from app.models.templates import AmazonProductType, ProductTypeField, EquipmentTypeProductType
 
+from app.schemas.core import ModelPricingSnapshotResponse
+
 router = APIRouter(prefix="/export", tags=["export"])
+
+@router.get("/debug-price/{model_id}", response_model=ModelPricingSnapshotResponse)
+def get_debug_price(model_id: int, db: Session = Depends(get_db)):
+    """
+    Get the baseline pricing snapshot for this model (Amazon / Choice No Padding).
+    Used for UI debugging and validation.
+    """
+    snap = db.query(ModelPricingSnapshot).filter(
+        ModelPricingSnapshot.model_id == model_id,
+        ModelPricingSnapshot.marketplace == "amazon",
+        ModelPricingSnapshot.variant_key == "choice_no_padding"
+    ).first()
+    
+    if not snap:
+        raise HTTPException(status_code=404, detail="Baseline snapshot not found. Please recalculate pricing or run seed.")
+        
+    return snap
 
 class ExportPreviewRequest(BaseModel):
     model_ids: List[int]
@@ -79,7 +99,7 @@ def generate_export_preview(request: ExportPreviewRequest, db: Session = Depends
         
         row_data: List[str | None] = []
         for field in fields:
-            value = get_field_value(field, model, series, manufacturer, equipment_type, request.listing_type)
+            value = get_field_value(field, model, series, manufacturer, equipment_type, request.listing_type, db)
             row_data.append(value)
         
         rows.append(ExportRowData(
@@ -157,7 +177,7 @@ def build_export_data(request: ExportPreviewRequest, db: Session):
         
         row_data = []
         for field in fields:
-            value = get_field_value(field, model, series, manufacturer, equipment_type, request.listing_type)
+            value = get_field_value(field, model, series, manufacturer, equipment_type, request.listing_type, db)
             row_data.append(value if value else '')
         
         data_rows.append(row_data)
@@ -370,9 +390,41 @@ def is_image_url_field(field_name: str) -> bool:
     """Check if a field is a product image URL field that needs special processing."""
     return get_image_field_key(field_name) is not None
 
-def get_field_value(field: ProductTypeField, model: Model, series, manufacturer, equipment_type=None, listing_type: str = "individual") -> str | None:
+def get_amazon_us_baseline_price_str(db: Session, model_id: int) -> str:
+    """
+    Fetch the baseline retail price (Choice Waterproof No Padding) for Amazon US.
+    Format: "249.95" (2 decimals)
+    Strict Rule: Fail if snapshot is missing.
+    """
+    snapshot = db.query(ModelPricingSnapshot).filter(
+        ModelPricingSnapshot.model_id == model_id,
+        ModelPricingSnapshot.marketplace == "amazon",
+        ModelPricingSnapshot.variant_key == "choice_no_padding"
+    ).first()
+
+    if not snapshot:
+        # Prompt: "If baseline snapshot row is missing, fail the export for that model with a clear message"
+        # Since this is deep in the call stack for a specific field, raising HTTPException here
+        # will abort the entire request, which is desired.
+        raise HTTPException(
+            status_code=400, 
+            detail=f"Missing baseline pricing snapshot for Choice Waterproof (no padding). Run pricing recalculation for model {model_id} on 'amazon' marketplace before exporting."
+        )
+    
+    return f"{snapshot.retail_price_cents / 100:.2f}"
+
+def get_field_value(field: ProductTypeField, model: Model, series, manufacturer, equipment_type=None, listing_type: str = "individual", db: Session = None) -> str | None:
     field_name_lower = field.field_name.lower()
     is_image_field = is_image_url_field(field.field_name)
+    
+    # Phase 9: Amazon Baseline Price Logic
+    # check specific field key parts
+    if "purchasable_offer[marketplace_id=atvpdkikx0der]" in field_name_lower and "our_price#1.schedule#1.value_with_tax" in field_name_lower:
+        if db:
+            return get_amazon_us_baseline_price_str(db, model.id)
+        # If db is somehow missing (shouldn't happen with updated callers), strict rules say NO FALLBACK.
+        # But for now, if db is missing, we can't query.
+        raise HTTPException(status_code=500, detail="Database session missing in export logic.")
     
     if 'contribution_sku' in field_name_lower and listing_type == 'individual':
         return model.parent_sku if model.parent_sku else None

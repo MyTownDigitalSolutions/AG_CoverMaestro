@@ -1,4 +1,8 @@
-from sqlalchemy import Column, Integer, String, Float, Boolean, ForeignKey, DateTime, Enum, UniqueConstraint
+
+from sqlalchemy import (
+    Boolean, Column, ForeignKey, Integer, String, Float, DateTime, Enum,
+    Table, UniqueConstraint, event, Index
+)
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from app.database import Base
@@ -32,8 +36,7 @@ class EquipmentType(Base):
     
     models = relationship("Model", back_populates="equipment_type")
     product_types = relationship("EquipmentTypeProductType", back_populates="equipment_type")
-    pricing_options = relationship("EquipmentTypePricingOption", back_populates="equipment_type", cascade="all, delete-orphan")
-    design_options = relationship("EquipmentTypeDesignOption", back_populates="equipment_type", cascade="all, delete-orphan")
+    # Relationships defined at end of file to resolve forward references
 
 class Model(Base):
     __tablename__ = "models"
@@ -321,3 +324,36 @@ class ModelPricingSnapshot(Base):
     model = relationship("Model")
     
     __table_args__ = (UniqueConstraint('model_id', 'marketplace', 'variant_key', name='uq_model_mp_variant'),)
+
+class ModelPricingHistory(Base):
+    __tablename__ = "model_pricing_history"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    model_id = Column(Integer, ForeignKey("models.id"), nullable=False)
+    marketplace = Column(String, nullable=False)
+    variant_key = Column(String, nullable=False)
+    
+    raw_cost_cents = Column(Integer, nullable=False)
+    base_cost_cents = Column(Integer, nullable=False)
+    retail_price_cents = Column(Integer, nullable=False)
+    marketplace_fee_cents = Column(Integer, nullable=False)
+    profit_cents = Column(Integer, nullable=False)
+    
+    material_cost_cents = Column(Integer, nullable=False)
+    shipping_cost_cents = Column(Integer, nullable=False)
+    labor_cost_cents = Column(Integer, nullable=False)
+    weight_oz = Column(Float, nullable=False)
+    
+    calculated_at = Column(DateTime, default=datetime.utcnow)
+    pricing_context_hash = Column(String, nullable=True)
+    reason = Column(String, nullable=True)
+    
+    model = relationship("Model")
+    
+    __table_args__ = (
+        Index('ix_model_pricing_history_lookup', 'model_id', 'marketplace', 'variant_key', 'calculated_at'),
+    )
+
+# Post-class relationship definitions to handle forward references
+EquipmentType.pricing_options = relationship("EquipmentTypePricingOption", back_populates="equipment_type", cascade="all, delete-orphan")
+EquipmentType.design_options = relationship("EquipmentTypeDesignOption", back_populates="equipment_type", cascade="all, delete-orphan")

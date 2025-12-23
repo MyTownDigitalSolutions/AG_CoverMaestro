@@ -4,7 +4,7 @@ from typing import Optional, List, Dict
 from app.models.core import (
     Model, Material, MaterialRoleAssignment, MarketplaceShippingProfile,
     ShippingRateCard, ShippingRateTier, ShippingZoneRate, LaborSetting,
-    VariantProfitSetting, MarketplaceFeeRate, ModelPricingSnapshot
+    VariantProfitSetting, MarketplaceFeeRate, ModelPricingSnapshot, ModelPricingHistory
 )
 from app.models.enums import Marketplace
 
@@ -45,19 +45,18 @@ class PricingCalculator:
         
         # 3. Calculate Area
         # ----------------------------------------------------
-        # Use stored surface area if available, else calc on fly (but model should have it now)
-        if model.surface_area_sq_in:
-             area_sq_in = model.surface_area_sq_in
-        else:
-             # Fallback calculation (should be rare with new logic)
-             base = 2 * (model.width * model.depth + model.width * model.height + model.depth * model.height)
-             area_sq_in = base * (1 + WASTE_PERCENTAGE)
+        # Strict Rule: Pricing logic must NOT recompute surface area.
+        # It must exist on the model.
+        if not model.surface_area_sq_in or model.surface_area_sq_in <= 0:
+             raise ValueError("Pricing cannot be calculated: model.surface_area_sq_in is missing or invalid.")
+             
+        area_sq_in = model.surface_area_sq_in
 
         # 4. Iterate Variants and Calculate
         # ----------------------------------------------------
         variants = [
-            "choice_no_padding", "choice_with_padding",
-            "premium_no_padding", "premium_with_padding"
+            "choice_no_padding", "choice_padded",
+            "premium_no_padding", "premium_padded"
         ]
         
         for variant_key in variants:
@@ -74,7 +73,7 @@ class PricingCalculator:
         # A. Determine Components based on variant key
         # ------------------------------------------------
         is_premium = "premium" in variant_key
-        has_padding = "padding" in variant_key and "no_padding" not in variant_key # careful with naming
+        has_padding = "padded" in variant_key or ("padding" in variant_key and "no_padding" not in variant_key)
 
         main_fabric_role = "PREMIUM_SYNTHETIC_LEATHER" if is_premium else "CHOICE_WATERPROOF_FABRIC"
         main_material = materials_map.get(main_fabric_role)
@@ -262,18 +261,38 @@ class PricingCalculator:
             ModelPricingSnapshot.marketplace == marketplace,
             ModelPricingSnapshot.variant_key == variant_key
         ).first()
+
+        should_insert_history = False
         
         if existing:
-            existing.raw_cost_cents = raw
-            existing.base_cost_cents = base
-            existing.retail_price_cents = retail
-            existing.marketplace_fee_cents = mp_fee
-            existing.profit_cents = profit
-            existing.material_cost_cents = mat
-            existing.shipping_cost_cents = ship
-            existing.labor_cost_cents = labor
-            existing.weight_oz = weight
-            existing.calculated_at = datetime.utcnow()
+            # Check for changes
+            # We compare all pricing fields
+            has_changed = (
+                existing.raw_cost_cents != raw or
+                existing.base_cost_cents != base or
+                existing.retail_price_cents != retail or
+                existing.marketplace_fee_cents != mp_fee or
+                existing.profit_cents != profit or
+                existing.material_cost_cents != mat or
+                existing.shipping_cost_cents != ship or
+                existing.labor_cost_cents != labor or
+                abs(existing.weight_oz - weight) > 0.0001
+            )
+            
+            if has_changed:
+                # Update Snapshot
+                existing.raw_cost_cents = raw
+                existing.base_cost_cents = base
+                existing.retail_price_cents = retail
+                existing.marketplace_fee_cents = mp_fee
+                existing.profit_cents = profit
+                existing.material_cost_cents = mat
+                existing.shipping_cost_cents = ship
+                existing.labor_cost_cents = labor
+                existing.weight_oz = weight
+                existing.calculated_at = datetime.utcnow()
+                should_insert_history = True
+            # Else: No changes, do nothing to history, snapshot is technically same.
         else:
             new_snap = ModelPricingSnapshot(
                 model_id=model_id,
@@ -287,8 +306,31 @@ class PricingCalculator:
                 material_cost_cents=mat,
                 shipping_cost_cents=ship,
                 labor_cost_cents=labor,
-                weight_oz=weight
+                weight_oz=weight,
+                calculated_at=datetime.utcnow()
             )
             self.db.add(new_snap)
+            should_insert_history = True
+            
+        if should_insert_history:
+            history_row = ModelPricingHistory(
+                model_id=model_id,
+                marketplace=marketplace,
+                variant_key=variant_key,
+                raw_cost_cents=raw,
+                base_cost_cents=base,
+                retail_price_cents=retail,
+                marketplace_fee_cents=mp_fee,
+                profit_cents=profit,
+                material_cost_cents=mat,
+                shipping_cost_cents=ship,
+                labor_cost_cents=labor,
+                weight_oz=weight,
+                calculated_at=datetime.utcnow(),
+                reason="recalculate"
+            )
+            self.db.add(history_row)
+            
+        # self.db.flush() is called by caller or transaction commit
         
         self.db.flush() # Flush to detect errors but commit happens at top level
