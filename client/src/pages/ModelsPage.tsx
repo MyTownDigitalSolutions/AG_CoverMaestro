@@ -175,37 +175,50 @@ function PricingDialog({ model, open, onClose }: { model: Model | null, open: bo
                     <Typography variant="subtitle1" align="center" color="text.secondary">
                       Retail Price (Amazon / Choice No Padding)
                     </Typography>
-                    <Typography variant="caption" display="block" align="center" sx={{ mb: 3 }}>
+                    <Typography variant="caption" display="block" align="center" sx={{ mb: 1 }}>
                       Calculated: {new Date(currentSnapshot.calculated_at).toLocaleString()}
+                    </Typography>
+                    <Typography variant="caption" display="block" align="center" color="text.secondary" sx={{ mb: 3 }}>
+                      (Baseline recalculation updates all 4 baseline variants: Choice/Premium × Padded/No Padding)
                     </Typography>
                   </Grid>
 
+                  {/* Big Cards: Total Cost | Profit | Margin */}
                   <Grid item xs={4}>
                     <Paper sx={{ p: 2, textAlign: 'center' }}>
-                      <Typography variant="h6">{formatMoney(currentSnapshot.base_cost_cents)}</Typography>
-                      <Typography variant="caption">Base Cost</Typography>
+                      <Typography variant="h6">
+                        {formatMoney(currentSnapshot.base_cost_cents + currentSnapshot.marketplace_fee_cents)}
+                      </Typography>
+                      <Typography variant="caption">Total Cost</Typography>
                     </Paper>
                   </Grid>
                   <Grid item xs={4}>
                     <Paper sx={{ p: 2, textAlign: 'center' }}>
-                      <Typography variant="h6" color="error.main">{formatMoney(currentSnapshot.marketplace_fee_cents)}</Typography>
-                      <Typography variant="caption">Marketplace Fee</Typography>
-                    </Paper>
-                  </Grid>
-                  <Grid item xs={4}>
-                    <Paper sx={{ p: 2, textAlign: 'center' }}>
-                      <Typography variant="h6" color="success.main">{formatMoney(currentSnapshot.profit_cents)}</Typography>
+                      <Typography variant="h6" color="success.main">
+                        {formatMoney(currentSnapshot.profit_cents)}
+                      </Typography>
                       <Typography variant="caption">Profit</Typography>
+                    </Paper>
+                  </Grid>
+                  <Grid item xs={4}>
+                    <Paper sx={{ p: 2, textAlign: 'center' }}>
+                      <Typography variant="h6" color="primary">
+                        {currentSnapshot.retail_price_cents > 0
+                          ? `${((currentSnapshot.profit_cents / currentSnapshot.retail_price_cents) * 100).toFixed(1)}%`
+                          : '0.0%'}
+                      </Typography>
+                      <Typography variant="caption">Profit Margin</Typography>
                     </Paper>
                   </Grid>
 
                   <Grid item xs={12}>
                     <Box sx={{ mt: 2 }}>
-                      <Typography variant="body2" gutterBottom><b>Components:</b></Typography>
-                      <Stack direction="row" spacing={2}>
+                      <Typography variant="body2" gutterBottom><b>Cost Breakdown:</b></Typography>
+                      <Stack direction="row" spacing={2} flexWrap="wrap" useFlexGap>
                         <Chip label={`Material: ${formatMoney(currentSnapshot.material_cost_cents)}`} variant="outlined" />
                         <Chip label={`Labor: ${formatMoney(currentSnapshot.labor_cost_cents)}`} variant="outlined" />
                         <Chip label={`Shipping: ${formatMoney(currentSnapshot.shipping_cost_cents)}`} variant="outlined" />
+                        <Chip label={`Marketplace Fee: ${formatMoney(currentSnapshot.marketplace_fee_cents)}`} variant="outlined" />
                         <Chip label={`Weight: ${currentSnapshot.weight_oz.toFixed(1)} oz`} variant="outlined" />
                       </Stack>
                     </Box>
