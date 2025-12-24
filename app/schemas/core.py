@@ -296,14 +296,33 @@ class MaterialRoleAssignmentResponse(MaterialRoleAssignmentCreate):
     class Config:
          from_attributes = True
 
-class ShippingRateCardCreate(BaseModel):
-    carrier: str
+class ShippingZoneResponse(BaseModel):
+    id: int
+    code: str
     name: str
+    sort_order: Optional[int] = 0
+    active: bool
+    
+    class Config:
+        from_attributes = True
+
+class ShippingRateCardCreate(BaseModel):
+    name: str # Only allow name. Carrier is defaulted by backend.
     effective_date: Optional[datetime] = None
+    active: bool = True
+
+    class Config:
+        extra = "forbid"
+
+
+class ShippingRateCardUpdate(BaseModel):
+    name: Optional[str] = None
+    active: Optional[bool] = None
 
 class ShippingRateCardResponse(ShippingRateCardCreate):
     id: int
     end_date: Optional[datetime] = None
+    active: bool
     
     class Config:
         from_attributes = True
@@ -313,9 +332,20 @@ class ShippingRateTierCreate(BaseModel):
     min_oz: float
     max_oz: float
     label: Optional[str] = None
+    active: bool = True
+
+class ShippingRateTierUpdate(BaseModel):
+    label: Optional[str] = None
+    max_weight_oz: Optional[float] = None
+    active: Optional[bool] = None
+
+class TierCreateRequest(BaseModel):
+    label: Optional[str] = None
+    max_weight_oz: float
 
 class ShippingRateTierResponse(ShippingRateTierCreate):
     id: int
+    active: bool
     class Config:
         from_attributes = True
 
@@ -330,6 +360,16 @@ class ShippingZoneRateResponse(ShippingZoneRateCreate):
     class Config:
         from_attributes = True
 
+class ShippingZoneRateNormalizedResponse(BaseModel):
+    zone_id: int
+    zone_code: str
+    zone_name: str
+    rate_cents: Optional[int]
+    zone_rate_id: Optional[int]
+
+class ShippingZoneRateUpsertRequest(BaseModel):
+    rate_cents: Optional[int]
+
 class MarketplaceShippingProfileCreate(BaseModel):
     marketplace: str
     rate_card_id: int
@@ -339,6 +379,22 @@ class MarketplaceShippingProfileCreate(BaseModel):
 class MarketplaceShippingProfileResponse(MarketplaceShippingProfileCreate):
     id: int
     end_date: Optional[datetime] = None
+    
+    class Config:
+        from_attributes = True
+
+class ShippingDefaultSettingCreate(BaseModel):
+    shipping_mode: str = "calculated" # "flat", "calculated", "fixed_cell"
+    flat_shipping_cents: int = 0
+    default_rate_card_id: Optional[int] = None
+    default_zone_code: Optional[str] = None
+    assumed_rate_card_id: Optional[int] = None
+    assumed_tier_id: Optional[int] = None
+    assumed_zone_code: Optional[str] = None
+
+class ShippingDefaultSettingResponse(ShippingDefaultSettingCreate):
+    id: int
+    shipping_settings_version: int
     
     class Config:
         from_attributes = True
@@ -383,6 +439,14 @@ class ModelPricingSnapshotResponse(BaseModel):
     shipping_cost_cents: int
     labor_cost_cents: int
     weight_oz: float
+    
+    # New Tooltip Metadata
+    surface_area_sq_in: Optional[float] = None
+    material_cost_per_sq_in_cents: Optional[int] = None
+    labor_minutes: Optional[int] = None
+    labor_rate_cents_per_hour: Optional[int] = None
+    marketplace_fee_rate: Optional[float] = None
+    
     calculated_at: datetime
     
     class Config:
@@ -403,6 +467,13 @@ class ModelPricingHistoryResponse(BaseModel):
     shipping_cost_cents: int
     labor_cost_cents: int
     weight_oz: float
+    
+    # New Tooltip Metadata
+    surface_area_sq_in: Optional[float] = None
+    material_cost_per_sq_in_cents: Optional[int] = None
+    labor_minutes: Optional[int] = None
+    labor_rate_cents_per_hour: Optional[int] = None
+    marketplace_fee_rate: Optional[float] = None
     
     calculated_at: datetime
     pricing_context_hash: Optional[str] = None

@@ -16,8 +16,43 @@ from app.models.core import Model, Series, Manufacturer, EquipmentType, ModelPri
 from app.models.templates import AmazonProductType, ProductTypeField, EquipmentTypeProductType
 
 from app.schemas.core import ModelPricingSnapshotResponse
+from app.api.pricing import recalculate_targeted, PricingRecalculateRequest
+from app.services.pricing_calculator import PricingConfigError
 
 router = APIRouter(prefix="/export", tags=["export"])
+
+# --------------------------------------------------------------------------
+# Staleness Check Helper
+# --------------------------------------------------------------------------
+def ensure_models_fresh_for_export(request: ExportPreviewRequest, db: Session) -> tuple[bool, int]:
+    """
+    Check if any selected model has stale pricing (or missing baseline snapshots).
+    If so, trigger a targeted recalculation before export proceeds.
+    Returns (recalc_performed: bool, recalc_model_count: int).
+    """
+    if not request.model_ids:
+        return False, 0
+        
+    recalc_req = PricingRecalculateRequest(
+        model_ids=request.model_ids,
+        only_if_stale=True
+    )
+    
+    # Direct service logic reuse via the API function, 
+    # but we must ensure we don't double-wrap or mis-handle dependencies.
+    # calling the route function directly is acceptable in FastAPI if deps match.
+    # alternatively, extract the logic. 
+    # For chunks, calling the route function is safest "minimal change" 
+    # as long as we pass 'db'.
+    
+    try:
+        resp = recalculate_targeted(recalc_req, db)
+    except PricingConfigError as e:
+        # If the underlying recalc fails due to config (e.g. fixed cell missing),
+        # we must abort export and tell the user.
+        raise HTTPException(status_code=400, detail=f"Export failed during pricing check: {str(e)}")
+    
+    return (resp.recalculated_models > 0), resp.recalculated_models
 
 @router.get("/debug-price/{model_id}", response_model=ModelPricingSnapshotResponse)
 def get_debug_price(model_id: int, db: Session = Depends(get_db)):
@@ -52,6 +87,8 @@ class ExportPreviewResponse(BaseModel):
     export_signature: str
     field_map: Dict[str, int]
     audit: Dict[str, Any]
+    recalc_performed: bool = False
+    recalc_model_count: int = 0
 
 def compute_export_signature(template_code: str, header_rows: list, data_rows: list) -> str:
     """
@@ -104,6 +141,8 @@ def build_audit_columns(ordered_field_names: List[str], ordered_required_flags: 
 
 @router.post("/preview", response_model=ExportPreviewResponse)
 def generate_export_preview(request: ExportPreviewRequest, db: Session = Depends(get_db)):
+    recalc_performed, recalc_count = ensure_models_fresh_for_export(request, db)
+
     header_rows, data_rows, filename_base, template_code, models, ordered_field_names, ordered_required_flags = build_export_data(request, db)
     
     signature = compute_export_signature(template_code, header_rows, data_rows)
@@ -186,7 +225,9 @@ def generate_export_preview(request: ExportPreviewRequest, db: Session = Depends
         template_code=template_code,
         export_signature=signature,
         field_map=field_map,
-        audit=audit
+        audit=audit,
+        recalc_performed=recalc_performed,
+        recalc_model_count=recalc_count
     )
 
 
@@ -269,6 +310,7 @@ def build_export_data(request: ExportPreviewRequest, db: Session):
 @router.post("/download/xlsx")
 def download_xlsx(request: ExportPreviewRequest, db: Session = Depends(get_db)):
     """Download export as XLSX file."""
+    ensure_models_fresh_for_export(request, db)
     header_rows, data_rows, filename_base, template_code, _, _, _ = build_export_data(request, db)
     
     sig = compute_export_signature(template_code, header_rows, data_rows)
@@ -331,6 +373,7 @@ def download_xlsx(request: ExportPreviewRequest, db: Session = Depends(get_db)):
 @router.post("/download/xlsm")
 def download_xlsm(request: ExportPreviewRequest, db: Session = Depends(get_db)):
     """Download export as XLSM file (macro-enabled workbook)."""
+    ensure_models_fresh_for_export(request, db)
     header_rows, data_rows, filename_base, template_code, _, _, _ = build_export_data(request, db)
 
     sig = compute_export_signature(template_code, header_rows, data_rows)
@@ -393,6 +436,7 @@ def download_xlsm(request: ExportPreviewRequest, db: Session = Depends(get_db)):
 @router.post("/download/csv")
 def download_csv(request: ExportPreviewRequest, db: Session = Depends(get_db)):
     """Download export as CSV file."""
+    ensure_models_fresh_for_export(request, db)
     header_rows, data_rows, filename_base, template_code, _, _, _ = build_export_data(request, db)
     
     sig = compute_export_signature(template_code, header_rows, data_rows)

@@ -11,7 +11,8 @@ import PreviewIcon from '@mui/icons-material/Preview'
 import CloseIcon from '@mui/icons-material/Close'
 import DownloadIcon from '@mui/icons-material/Download'
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
-import { manufacturersApi, seriesApi, modelsApi, templatesApi, exportApi } from '../services/api'
+import RefreshIcon from '@mui/icons-material/Refresh'
+import { manufacturersApi, seriesApi, modelsApi, templatesApi, exportApi, pricingApi } from '../services/api'
 import type { Manufacturer, Series, Model, AmazonProductType } from '../types'
 
 interface AuditFieldAction {
@@ -64,6 +65,7 @@ export default function ExportPage() {
 
   const [loading, setLoading] = useState(true)
   const [generating, setGenerating] = useState(false)
+  const [recalculating, setRecalculating] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   const [previewOpen, setPreviewOpen] = useState(false)
@@ -147,6 +149,25 @@ export default function ExportPage() {
       newSelected.delete(modelId)
     }
     setSelectedModels(newSelected)
+  }
+
+  const handleRecalculateSelected = async () => {
+    if (selectedModels.size === 0) return
+    try {
+      setRecalculating(true)
+      setError(null)
+      const modelIds = Array.from(selectedModels)
+      await pricingApi.recalculateBaselines({
+        model_ids: modelIds,
+        only_if_stale: true
+      })
+      alert('Recalculation complete for selected models.')
+    } catch (err: any) {
+      setError(err.response?.data?.detail || 'Failed to recalculate')
+      console.error(err)
+    } finally {
+      setRecalculating(false)
+    }
   }
 
   const handleGeneratePreview = async () => {
@@ -300,6 +321,16 @@ export default function ExportPage() {
               <Typography variant="body2" color="text.secondary">
                 {selectedModels.size} model{selectedModels.size !== 1 ? 's' : ''} selected
               </Typography>
+              <Button
+                variant="outlined"
+                color="secondary"
+                size="small"
+                startIcon={<RefreshIcon />}
+                onClick={handleRecalculateSelected}
+                disabled={selectedModels.size === 0 || recalculating}
+              >
+                {recalculating ? 'Recalculating...' : 'Recalc Prices'}
+              </Button>
               <Button
                 variant="contained"
                 startIcon={<PreviewIcon />}

@@ -35,7 +35,7 @@ class EquipmentType(Base):
     name = Column(String, unique=True, nullable=False)
     
     models = relationship("Model", back_populates="equipment_type")
-    product_types = relationship("EquipmentTypeProductType", back_populates="equipment_type")
+    # product_types = relationship("EquipmentTypeProductType", back_populates="equipment_type")
     # Relationships defined at end of file to resolve forward references
 
 class Model(Base):
@@ -179,6 +179,15 @@ class EquipmentTypePricingOption(Base):
     
     __table_args__ = (UniqueConstraint('equipment_type_id', 'pricing_option_id', name='uq_equip_type_pricing_option'),)
 
+class ShippingZone(Base):
+    __tablename__ = "shipping_zones"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    code = Column(String, unique=True, nullable=False)
+    name = Column(String, nullable=False)
+    sort_order = Column(Integer, default=0)
+    active = Column(Boolean, default=True)
+    
 class ShippingRate(Base):
     __tablename__ = "shipping_rates"
     
@@ -238,6 +247,7 @@ class ShippingRateCard(Base):
     name = Column(String, nullable=False)
     effective_date = Column(DateTime, default=datetime.utcnow)
     end_date = Column(DateTime, nullable=True)
+    active = Column(Boolean, default=True)
     
     tiers = relationship("ShippingRateTier", back_populates="rate_card", cascade="all, delete-orphan")
     zone_rates = relationship("ShippingZoneRate", back_populates="rate_card", cascade="all, delete-orphan")
@@ -250,6 +260,7 @@ class ShippingRateTier(Base):
     min_oz = Column(Float, nullable=False) # DECIMAL(10,4) handled as Float in SQLite for simplicity/compat
     max_oz = Column(Float, nullable=False)
     label = Column(String, nullable=True)
+    active = Column(Boolean, default=True)
     
     rate_card = relationship("ShippingRateCard", back_populates="tiers")
     zone_rates = relationship("ShippingZoneRate", back_populates="tier", cascade="all, delete-orphan")
@@ -279,6 +290,25 @@ class MarketplaceShippingProfile(Base):
     end_date = Column(DateTime, nullable=True)
     
     rate_card = relationship("ShippingRateCard")
+
+# Force reload
+class ShippingDefaultSetting(Base):
+    __tablename__ = "shipping_default_settings"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    shipping_mode = Column(String, default="calculated", nullable=False) # 'calculated' | 'flat'
+    flat_shipping_cents = Column(Integer, default=0)
+    default_rate_card_id = Column(Integer, ForeignKey("shipping_rate_cards.id"), nullable=True)
+    default_zone_code = Column(String, nullable=True) # "1"-"5"
+    
+    assumed_rate_card_id = Column(Integer, ForeignKey("shipping_rate_cards.id"), nullable=True)
+    assumed_tier_id = Column(Integer, ForeignKey("shipping_rate_tiers.id"), nullable=True)
+    assumed_zone_code = Column(String, nullable=True)
+
+    shipping_settings_version = Column(Integer, default=1)
+    
+    default_rate_card = relationship("ShippingRateCard", foreign_keys=[default_rate_card_id])
+    assumed_rate_card = relationship("ShippingRateCard", foreign_keys=[assumed_rate_card_id])
 
 class LaborSetting(Base):
     __tablename__ = "labor_settings"
@@ -319,6 +349,15 @@ class ModelPricingSnapshot(Base):
     labor_cost_cents = Column(Integer, nullable=False)
     weight_oz = Column(Float, nullable=False)
     
+    shipping_settings_version_used = Column(Integer, nullable=True)
+    
+    # Tooltip / Reconciliation Metadata (Nullable)
+    surface_area_sq_in = Column(Float, nullable=True)
+    material_cost_per_sq_in_cents = Column(Integer, nullable=True)
+    labor_minutes = Column(Integer, nullable=True)
+    labor_rate_cents_per_hour = Column(Integer, nullable=True)
+    marketplace_fee_rate = Column(Float, nullable=True)
+    
     calculated_at = Column(DateTime, default=datetime.utcnow)
     
     model = relationship("Model")
@@ -343,6 +382,13 @@ class ModelPricingHistory(Base):
     shipping_cost_cents = Column(Integer, nullable=False)
     labor_cost_cents = Column(Integer, nullable=False)
     weight_oz = Column(Float, nullable=False)
+    
+    # Tooltip / Reconciliation Metadata (Nullable)
+    surface_area_sq_in = Column(Float, nullable=True)
+    material_cost_per_sq_in_cents = Column(Integer, nullable=True)
+    labor_minutes = Column(Integer, nullable=True)
+    labor_rate_cents_per_hour = Column(Integer, nullable=True)
+    marketplace_fee_rate = Column(Float, nullable=True)
     
     calculated_at = Column(DateTime, default=datetime.utcnow)
     pricing_context_hash = Column(String, nullable=True)

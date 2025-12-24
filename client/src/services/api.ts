@@ -6,7 +6,8 @@ import type {
   Supplier, SupplierMaterial, SupplierMaterialWithSupplier, SupplierMaterialWithMaterial,
   MaterialRoleAssignment, ShippingRateCard, ShippingRateTier, ShippingZoneRate,
   MarketplaceShippingProfile, LaborSetting, MarketplaceFeeRate, VariantProfitSetting, ModelPricingSnapshot,
-  ModelCreate, ProductType, ModelPricingHistory, PricingDiffResponse
+  ModelCreate, ProductType, ModelPricingHistory, PricingDiffResponse, ShippingZone, ShippingZoneRateNormalized,
+  ShippingDefaultSettingResponse
 } from '../types'
 
 export interface PricingRecalculateBulkRequest {
@@ -98,6 +99,9 @@ export const modelsApi = {
   getDebugPrice: (id: number) =>
     api.get<ModelPricingSnapshot>(`/export/debug-price/${id}`).then(r => r.data),
 
+  getBaselineSnapshots: (id: number, marketplace: string = "amazon") =>
+    api.get<ModelPricingSnapshot[]>(`/models/${id}/pricing/snapshots`, { params: { marketplace } }).then(r => r.data),
+
   getPricingHistory: (id: number, marketplace: string, variant_key: string) =>
     api.get<ModelPricingHistory[]>(`/models/${id}/pricing/history`, { params: { marketplace, variant_key } }).then(r => r.data),
 
@@ -147,6 +151,20 @@ export const ordersApi = {
   delete: (id: number) => api.delete(`/orders/${id}`),
 }
 
+export interface RecalcRequest {
+  all?: boolean
+  manufacturer_id?: number
+  series_id?: number
+  model_ids?: number[]
+  only_if_stale?: boolean
+}
+
+export interface RecalcResponse {
+  evaluated_models: number
+  recalculated_models: number
+  skipped_not_stale: number
+}
+
 export const pricingApi = {
   calculate: (data: {
     model_id: number
@@ -168,6 +186,8 @@ export const pricingApi = {
     api.get<PricingOption[]>(`/pricing/options/by-equipment-type/${equipmentTypeId}`).then(r => r.data),
   recalculateBulk: (data: PricingRecalculateBulkRequest) =>
     api.post<PricingRecalculateBulkResponse>('/pricing/recalculate/bulk', data).then(r => r.data),
+  recalculateBaselines: (data: RecalcRequest) =>
+    api.post<RecalcResponse>('/pricing/recalculate', data).then(r => r.data),
 }
 
 export interface EquipmentTypeProductTypeLink {
@@ -213,19 +233,31 @@ export const settingsApi = {
     api.post<MaterialRoleAssignment>('/settings/material-roles/assign', data).then(r => r.data),
 
   // Shipping
-  listRateCards: () => api.get<ShippingRateCard[]>('/settings/shipping/rate-cards').then(r => r.data),
-  createRateCard: (data: Partial<ShippingRateCard>) => api.post<ShippingRateCard>('/settings/shipping/rate-cards', data).then(r => r.data),
+  listZones: () => api.get<ShippingZone[]>('/settings/shipping/zones').then(r => r.data),
+  listRateCards: (includeInactive = false) => api.get<ShippingRateCard[]>('/settings/shipping/rate-cards', { params: { include_inactive: includeInactive } }).then(r => r.data),
+  createRateCard: (data: { name: string }) => api.post<ShippingRateCard>('/settings/shipping/rate-cards', data).then(r => r.data),
+  updateRateCard: (id: number, data: { name?: string; active?: boolean }) => api.put<ShippingRateCard>(`/settings/shipping/rate-cards/${id}`, data).then(r => r.data),
+  deleteRateCard: (id: number) => api.delete(`/settings/shipping/rate-cards/${id}`),
 
-  listTiers: (cardId: number) => api.get<ShippingRateTier[]>(`/settings/shipping/rate-cards/${cardId}/tiers`).then(r => r.data),
-  createTier: (data: Partial<ShippingRateTier>) => api.post<ShippingRateTier>('/settings/shipping/tiers', data).then(r => r.data),
+  listTiers: (cardId: number, includeInactive = false) => api.get<ShippingRateTier[]>(`/settings/shipping/rate-cards/${cardId}/tiers`, { params: { include_inactive: includeInactive } }).then(r => r.data),
+  createTier: (cardId: number, data: { label?: string; max_weight_oz: number }) => api.post<ShippingRateTier>(`/settings/shipping/rate-cards/${cardId}/tiers`, data).then(r => r.data),
+  updateTier: (tierId: number, data: { label?: string; max_weight_oz?: number; active?: boolean }) => api.put<ShippingRateTier>(`/settings/shipping/tiers/${tierId}`, data).then(r => r.data),
+  deleteTier: (tierId: number) => api.delete(`/settings/shipping/tiers/${tierId}`),
 
-  listZoneRates: (tierId: number) => api.get<ShippingZoneRate[]>(`/settings/shipping/tiers/${tierId}/zone-rates`).then(r => r.data),
+  listZoneRates: (tierId: number) => api.get<ShippingZoneRateNormalized[]>(`/settings/shipping/tiers/${tierId}/zone-rates`).then(r => r.data),
   createZoneRate: (data: Partial<ShippingZoneRate>) => api.post<ShippingZoneRate>('/settings/shipping/zone-rates', data).then(r => r.data),
+
+  upsertTierZoneRate: (tierId: number, zoneId: number, rateCents: number | null) =>
+    api.put<ShippingZoneRateNormalized>(`/settings/shipping/tiers/${tierId}/zone-rates/${zoneId}`, { rate_cents: rateCents }).then(r => r.data),
 
   listProfiles: (includeHistory = false) =>
     api.get<MarketplaceShippingProfile[]>('/settings/shipping/marketplace-profiles', { params: { include_history: includeHistory } }).then(r => r.data),
   assignProfile: (data: { marketplace: string; rate_card_id: number; pricing_zone: number; effective_date?: string }) =>
     api.post<MarketplaceShippingProfile>('/settings/shipping/marketplace-profiles/assign', data).then(r => r.data),
+
+  getShippingDefaults: () => api.get<ShippingDefaultSettingResponse>('/settings/shipping/defaults').then(r => r.data),
+  updateShippingDefaults: (data: Partial<ShippingDefaultSettingResponse>) =>
+    api.put<ShippingDefaultSettingResponse>('/settings/shipping/defaults', data).then(r => r.data),
 
   // Configs
   getLabor: () => api.get<LaborSetting>('/settings/labor').then(r => r.data),

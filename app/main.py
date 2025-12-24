@@ -9,6 +9,8 @@ from app.api import (
 
 Base.metadata.create_all(bind=engine)
 
+
+# verify reload
 app = FastAPI(
     title="Cover Making Application",
     description="API for managing custom fabric covers for musical instruments",

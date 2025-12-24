@@ -23,7 +23,7 @@ class EquipmentTypeProductType(Base):
     equipment_type_id = Column(Integer, ForeignKey("equipment_types.id"), nullable=False)
     product_type_id = Column(Integer, ForeignKey("amazon_product_types.id"), nullable=False)
     
-    equipment_type = relationship("EquipmentType", back_populates="product_types")
+    equipment_type = relationship("EquipmentType")
     product_type = relationship("AmazonProductType", back_populates="equipment_types")
 
 class ProductTypeKeyword(Base):

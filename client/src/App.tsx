@@ -15,6 +15,8 @@ import PricingCalculator from './pages/PricingCalculator'
 import TemplatesPage from './pages/TemplatesPage'
 import ExportPage from './pages/ExportPage'
 import SettingsPage from './pages/SettingsPage'
+import ShippingRatesPage from './pages/ShippingRatesPage'
+import ShippingDefaultsPage from './pages/ShippingDefaultsPage'
 
 function App() {
   return (
@@ -35,6 +37,8 @@ function App() {
           <Route path="/templates" element={<TemplatesPage />} />
           <Route path="/export" element={<ExportPage />} />
           <Route path="/settings" element={<SettingsPage />} />
+          <Route path="/settings/shipping-rates" element={<ShippingRatesPage />} />
+          <Route path="/settings/shipping-defaults" element={<ShippingDefaultsPage />} />
         </Routes>
       </Layout>
     </Box>

@@ -184,8 +184,38 @@ def get_model_pricing(id: int, marketplace: str = "DEFAULT", db: Session = Depen
         ModelPricingSnapshot.model_id == id,
         ModelPricingSnapshot.marketplace == marketplace
     ).all()
+
+@router.get("/{id}/pricing/snapshots", response_model=List[ModelPricingSnapshotResponse])
+def get_model_baseline_snapshots(
+    id: int, 
+    marketplace: str = Query("amazon"), 
+    db: Session = Depends(get_db)
+):
+    """
+    Get the 4 baseline pricing snapshots (Choice/Premium x Padded/NoPadding).
+    Sorted in stable order: Choice NoPad, Choice Pad, Premium NoPad, Premium Pad.
+    """
+    BASELINE_KEYS = [
+        "choice_no_padding", 
+        "choice_padded", 
+        "premium_no_padding", 
+        "premium_padded"
+    ]
+    
+    rows = db.query(ModelPricingSnapshot).filter(
+        ModelPricingSnapshot.model_id == id,
+        ModelPricingSnapshot.marketplace == marketplace,
+        ModelPricingSnapshot.variant_key.in_(BASELINE_KEYS)
+    ).all()
+    
+    # Sort in Python to ensure stable order
+    sort_map = {key: i for i, key in enumerate(BASELINE_KEYS)}
+    sorted_rows = sorted(rows, key=lambda x: sort_map.get(x.variant_key, 999))
+    
+    return sorted_rows
+
 @router.post("/{id}/pricing/recalculate", response_model=List[ModelPricingSnapshotResponse])
-def recalculate_model_pricing(id: int, marketplace: str = "DEFAULT", db: Session = Depends(get_db)):
+def recalculate_model_pricing(id: int, marketplace: str = Query("amazon"), db: Session = Depends(get_db)):
     """Manually trigger pricing recalculation for a model."""
     try:
         PricingCalculator(db).calculate_model_prices(id, marketplace=marketplace)

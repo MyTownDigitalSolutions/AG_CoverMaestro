@@ -13,8 +13,23 @@ from app.schemas.core import (
     PricingRecalculateBulkRequest, PricingRecalculateBulkResponse, PricingRecalculateResult
 )
 from app.services.pricing_service import PricingService
-from app.services.pricing_calculator import PricingCalculator
-from app.models.core import Model, Series
+from app.services.pricing_calculator import PricingCalculator, PricingConfigError
+from app.models.core import Model, Series, ModelPricingSnapshot, ShippingDefaultSetting
+from pydantic import BaseModel
+from typing import Optional, List
+
+# New Schemas for Targeted Recalc
+class PricingRecalculateRequest(BaseModel):
+    all: bool = False
+    manufacturer_id: Optional[int] = None
+    series_id: Optional[int] = None
+    model_ids: Optional[List[int]] = None
+    only_if_stale: bool = True
+
+class PricingRecalculateResponse(BaseModel):
+    evaluated_models: int
+    recalculated_models: int
+    skipped_not_stale: int
 
 router = APIRouter(prefix="/pricing", tags=["pricing"])
 
@@ -36,6 +51,106 @@ def calculate_pricing(data: PricingCalculateRequest, db: Session = Depends(get_d
         return result
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+    except PricingConfigError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@router.post("/recalculate", response_model=PricingRecalculateResponse)
+def recalculate_targeted(data: PricingRecalculateRequest, db: Session = Depends(get_db)):
+    # 1. Validate Target Mode
+    modes = [
+        data.all,
+        data.manufacturer_id is not None,
+        data.series_id is not None,
+        data.model_ids is not None
+    ]
+    if sum(modes) != 1:
+        raise HTTPException(status_code=400, detail="Must provide exactly ONE targeting mode: all, manufacturer_id, series_id, or model_ids")
+        
+    # 2. Resolve Model IDs
+    target_ids = []
+    
+    if data.all:
+        target_ids = [m.id for m in db.query(Model.id).all()]
+    elif data.manufacturer_id:
+        target_ids = [m.id for m in db.query(Model.id).join(Series).filter(Series.manufacturer_id == data.manufacturer_id).all()]
+    elif data.series_id:
+        target_ids = [m.id for m in db.query(Model.id).filter(Model.series_id == data.series_id).all()]
+    elif data.model_ids:
+        target_ids = data.model_ids
+
+    if not target_ids:
+        return PricingRecalculateResponse(evaluated_models=0, recalculated_models=0, skipped_not_stale=0)
+        
+    # 3. Filter if Stale
+    ids_to_process = []
+    
+    if data.only_if_stale:
+        # Get current version
+        defaults = db.query(ShippingDefaultSetting).first()
+        current_ver = defaults.shipping_settings_version if defaults else 1
+        
+        # We need to find models where ANY variant snapshot is stale.
+        # Stale = snapshot missing OR snapshot.version != current_ver
+        
+        # Strategy:
+        # A. Get all snapshots for these models
+        # B. Check logic in python (easier than complex SQL for "any variant stale" grouping)
+        
+        # Optimize: Query models that HAVE a stale snapshot.
+        # But we also need models that have NO snapshot.
+        
+        # Let's verify existing snapshots
+        # select distinct model_id from snapshots where version != current or version is null
+        stale_snapshots_q = db.query(ModelPricingSnapshot.model_id).filter(
+            ModelPricingSnapshot.model_id.in_(target_ids),
+            (ModelPricingSnapshot.shipping_settings_version_used == None) | 
+            (ModelPricingSnapshot.shipping_settings_version_used != current_ver)
+        ).distinct()
+        stale_model_ids = {r[0] for r in stale_snapshots_q.all()}
+        
+        # For models with NO snapshots, they won't appear above.
+        # But they are "stale" (never calculated).
+        # Find who has snapshots?
+        existing_snapshot_owners_q = db.query(ModelPricingSnapshot.model_id).filter(
+            ModelPricingSnapshot.model_id.in_(target_ids)
+        ).distinct()
+        existing_owners = {r[0] for r in existing_snapshot_owners_q.all()}
+        
+        models_without_snapshots = set(target_ids) - existing_owners
+        
+        ids_to_process = list(stale_model_ids.union(models_without_snapshots))
+        
+    else:
+        ids_to_process = target_ids
+
+    # 4. Calculate
+    recalculated_count = 0
+    
+    for mid in ids_to_process:
+        try:
+             # Transaction per model
+             with db.begin_nested():
+                 # We default to 'amazon' as the primary marketplace for baseline recalc
+                 PricingCalculator(db).calculate_model_prices(mid, marketplace="amazon")
+                 
+             # Commit per model success
+             db.commit()
+             recalculated_count += 1
+        except PricingConfigError as e:
+            # Fatal config error (e.g. fixed cell missing), fail the model explicitly
+            print(f"Failed to recalc model {mid} (Config Error): {e}")
+            pass
+        except Exception as e:
+            print(f"Failed to recalc model {mid}: {e}")
+            # db.rollback() automatically handled if commit fails above?
+            # We catch exception, so loop continues.
+            pass
+
+    return PricingRecalculateResponse(
+        evaluated_models=len(target_ids),
+        recalculated_models=recalculated_count,
+        skipped_not_stale=len(target_ids) - len(ids_to_process)
+    )
 
 @router.get("/options", response_model=List[PricingOptionResponse])
 def list_pricing_options(db: Session = Depends(get_db)):
@@ -209,6 +324,10 @@ def recalculate_bulk(data: PricingRecalculateBulkRequest, db: Session = Depends(
                 
                 results_map[mp]["succeeded"].append(model.id)
                 
+            except PricingConfigError as e:
+                 results_map[mp]["failed"].append(
+                    PricingRecalculateResult(model_id=model.id, error=str(e))
+                )
             except Exception as e:
                 # Capture error
                 results_map[mp]["failed"].append(

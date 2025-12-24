@@ -183,12 +183,21 @@ export interface MaterialRoleAssignment {
   created_at: string
 }
 
+export interface ShippingZone {
+  id: number
+  code: string
+  name: string
+  sort_order?: number
+  active: boolean
+}
+
 export interface ShippingRateCard {
   id: number
   carrier: string
   name: string
   effective_date: string
   end_date?: string
+  active: boolean
 }
 
 export interface ShippingRateTier {
@@ -197,6 +206,7 @@ export interface ShippingRateTier {
   min_oz: number
   max_oz: number
   label?: string
+  active: boolean
 }
 
 export interface ShippingZoneRate {
@@ -206,6 +216,14 @@ export interface ShippingZoneRate {
   rate_cents: number
 }
 
+export interface ShippingZoneRateNormalized {
+  zone_id: number
+  zone_code: string
+  zone_name: string
+  rate_cents: number | null
+  zone_rate_id: number | null
+}
+
 export interface MarketplaceShippingProfile {
   id: number
   marketplace: string
@@ -213,6 +231,18 @@ export interface MarketplaceShippingProfile {
   pricing_zone: number
   effective_date: string
   end_date?: string
+}
+
+export interface ShippingDefaultSettingResponse {
+  id: number
+  shipping_mode: 'calculated' | 'flat' | 'fixed_cell'
+  flat_shipping_cents: number
+  default_rate_card_id: number | null
+  default_zone_code: string | null
+  assumed_rate_card_id: number | null
+  assumed_tier_id: number | null
+  assumed_zone_code: string | null
+  shipping_settings_version: number
 }
 
 export interface LaborSetting {
@@ -247,6 +277,13 @@ export interface ModelPricingSnapshot {
   labor_cost_cents: number
   weight_oz: number
   calculated_at: string
+
+  // Metadata
+  surface_area_sq_in?: number
+  material_cost_per_sq_in_cents?: number
+  labor_minutes?: number
+  labor_rate_cents_per_hour?: number
+  marketplace_fee_rate?: number
 }
 
 export interface ModelPricingHistory {
@@ -265,6 +302,13 @@ export interface ModelPricingHistory {
   weight_oz: number
   calculated_at: string
   reason?: string
+
+  // Metadata
+  surface_area_sq_in?: number
+  material_cost_per_sq_in_cents?: number
+  labor_minutes?: number
+  labor_rate_cents_per_hour?: number
+  marketplace_fee_rate?: number
 }
 
 export interface PricingDiffResponse {

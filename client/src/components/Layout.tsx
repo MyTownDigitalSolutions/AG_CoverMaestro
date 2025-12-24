@@ -18,6 +18,8 @@ import ShoppingCartIcon from '@mui/icons-material/ShoppingCart'
 import CalculateIcon from '@mui/icons-material/Calculate'
 import DescriptionIcon from '@mui/icons-material/Description'
 import FileDownloadIcon from '@mui/icons-material/FileDownload'
+import SettingsIcon from '@mui/icons-material/Settings'
+import AttachMoneyIcon from '@mui/icons-material/AttachMoney'
 
 const drawerWidth = 240
 
@@ -35,6 +37,9 @@ const menuItems = [
   { text: 'Pricing Calculator', icon: <CalculateIcon />, path: '/pricing' },
   { text: 'Templates', icon: <DescriptionIcon />, path: '/templates' },
   { text: 'Export', icon: <FileDownloadIcon />, path: '/export' },
+  { text: 'Shipping Rates', icon: <AttachMoneyIcon />, path: '/settings/shipping-rates' },
+  { text: 'Shipping Defaults', icon: <LocalShippingIcon />, path: '/settings/shipping-defaults' },
+  { text: 'Settings', icon: <SettingsIcon />, path: '/settings' },
 ]
 
 interface LayoutProps {
