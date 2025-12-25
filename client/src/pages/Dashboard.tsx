@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
-import { Grid, Paper, Typography, Box } from '@mui/material'
+import { useNavigate } from 'react-router-dom'
+import { Grid, Paper, Typography, Box, Button } from '@mui/material'
 import BusinessIcon from '@mui/icons-material/Business'
 import CategoryIcon from '@mui/icons-material/Category'
 import TextureIcon from '@mui/icons-material/Texture'
@@ -28,6 +29,7 @@ function StatCard({ title, value, icon, color }: StatCardProps) {
 }
 
 export default function Dashboard() {
+  const navigate = useNavigate()
   const [stats, setStats] = useState({
     manufacturers: 0,
     models: 0,
@@ -100,11 +102,17 @@ export default function Dashboard() {
         <Typography variant="h6" gutterBottom>
           Welcome to Cover Making Application
         </Typography>
-        <Typography color="text.secondary">
-          Manage custom fabric covers for musical instruments, calculate prices, 
-          and generate marketplace listing templates. Use the navigation menu to 
+        <Typography color="text.secondary" paragraph>
+          Manage custom fabric covers for musical instruments, calculate prices,
+          and generate marketplace listing templates. Use the navigation menu to
           access different sections of the application.
         </Typography>
+        <Button
+          variant="contained"
+          onClick={() => navigate('/product-catalog')}
+        >
+          Go to Product Catalog Creation
+        </Button>
       </Paper>
     </Box>
   )

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Container, Typography, Box, Tabs, Tab, Paper, Grid, TextField, Button, Alert } from '@mui/material';
+import { useSearchParams } from 'react-router-dom';
+import { Container, Typography, Box, Tabs, Tab, Paper, Grid, TextField, Button } from '@mui/material';
 import { settingsApi } from '../services/api';
 import { LaborSetting, MarketplaceFeeRate, VariantProfitSetting } from '../types';
 import { MaterialRoleSettings } from '../components/settings/MaterialRoleSettings';
@@ -124,8 +125,32 @@ const GeneralSettings: React.FC<GeneralSettingsProps> = ({ labor, fees, profits,
 // const MaterialRoleSettings = () => <Typography>Material Roles Management (Coming Soon)</Typography>;
 // const ShippingSettings = () => <Typography>Shipping Configuration (Coming Soon)</Typography>;
 
+// Tab Key Mapping
+const TAB_MAPPING: Record<string, number> = {
+    'general': 0,
+    'material-roles': 1,
+    'shipping': 2
+};
+
 const SettingsPage = () => {
+    const [searchParams, setSearchParams] = useSearchParams();
     const [tabIndex, setTabIndex] = useState(0);
+
+    useEffect(() => {
+        const tab = searchParams.get('tab');
+        if (tab && TAB_MAPPING[tab] !== undefined) {
+            setTabIndex(TAB_MAPPING[tab]);
+        }
+    }, [searchParams]);
+
+    const handleTabChange = (_: React.SyntheticEvent, newValue: number) => {
+        setTabIndex(newValue);
+        const newKey = Object.keys(TAB_MAPPING).find(key => TAB_MAPPING[key] === newValue);
+        if (newKey) {
+            setSearchParams({ tab: newKey }, { replace: true });
+        }
+    };
+
     const [labor, setLabor] = useState<LaborSetting | null>(null);
     const [fees, setFees] = useState<MarketplaceFeeRate[]>([]);
     const [profits, setProfits] = useState<VariantProfitSetting[]>([]);
@@ -153,7 +178,7 @@ const SettingsPage = () => {
         <Container maxWidth="lg" sx={{ mt: 4, mb: 4 }}>
             <Typography variant="h4" gutterBottom>Global Settings</Typography>
             <Paper sx={{ width: '100%', mb: 2 }}>
-                <Tabs value={tabIndex} onChange={(_, v) => setTabIndex(v)}>
+                <Tabs value={tabIndex} onChange={handleTabChange}>
                     <Tab label="General (Labor/Fees/Profit)" />
                     <Tab label="Material Roles" />
                     <Tab label="Shipping Config" />

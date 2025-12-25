@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import {
-    Box, Typography, Table, TableBody, TableCell, TableContainer,
+    Box, Table, TableBody, TableCell, TableContainer,
     TableHead, TableRow, Paper, Button, FormControl, InputLabel,
-    Select, MenuItem, TextField, Tabs, Tab, Grid, Card, CardContent
+    Select, MenuItem, TextField, Tabs, Tab, Grid
 } from '@mui/material';
 import { settingsApi, enumsApi } from '../../services/api';
-import { ShippingRateCard, ShippingRateTier, ShippingZoneRate, MarketplaceShippingProfile, EnumValue } from '../../types';
+import { ShippingRateCard, ShippingRateTier, MarketplaceShippingProfile, EnumValue, ShippingZoneRateNormalized } from '../../types';
 
 export const ShippingSettings: React.FC = () => {
     const [tab, setTab] = useState(0);
@@ -83,7 +83,7 @@ const TiersTab = () => {
 
     const create = async () => {
         if (!selectedCard) return;
-        await settingsApi.createTier({ rate_card_id: Number(selectedCard), min_oz: parseFloat(min), max_oz: parseFloat(max) });
+        await settingsApi.createTier(Number(selectedCard), { min_oz: parseFloat(min), max_weight_oz: parseFloat(max) });
         settingsApi.listTiers(Number(selectedCard)).then(setTiers);
     };
 
@@ -122,7 +122,7 @@ const ZoneRatesTab = () => {
     const [tiers, setTiers] = useState<ShippingRateTier[]>([]);
     const [selectedCard, setSelectedCard] = useState<number | ''>('');
     const [selectedTier, setSelectedTier] = useState<number | ''>('');
-    const [rates, setRates] = useState<ShippingZoneRate[]>([]);
+    const [rates, setRates] = useState<ShippingZoneRateNormalized[]>([]);
 
     // Quick Add
     const [zone, setZone] = useState("");
@@ -135,7 +135,6 @@ const ZoneRatesTab = () => {
     const saveRate = async () => {
         if (!selectedCard || !selectedTier) return;
         await settingsApi.createZoneRate({
-            rate_card_id: Number(selectedCard),
             tier_id: Number(selectedTier),
             zone: parseInt(zone),
             rate_cents: parseInt(rate) // Assuming input is cents for simplicity, or dollars * 100
@@ -171,7 +170,7 @@ const ZoneRatesTab = () => {
                         <Table size="small">
                             <TableHead><TableRow><TableCell>Zone</TableCell><TableCell>Rate (Cents)</TableCell></TableRow></TableHead>
                             <TableBody>
-                                {rates.sort((a, b) => a.zone - b.zone).map(r => <TableRow key={r.id}><TableCell>{r.zone}</TableCell><TableCell>{r.rate_cents}</TableCell></TableRow>)}
+                                {rates.sort((a, b) => a.zone_id - b.zone_id).map(r => <TableRow key={r.zone_id}><TableCell>{r.zone_code}</TableCell><TableCell>{r.rate_cents ?? '-'}</TableCell></TableRow>)}
                             </TableBody>
                         </Table>
                     </TableContainer>

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useLocation } from 'react-router-dom'
 import {
   Box, Typography, Paper, Button, TextField, Dialog, DialogTitle,
   DialogContent, DialogActions, Grid, IconButton, Table, TableBody,
@@ -12,8 +13,41 @@ import LocalShippingIcon from '@mui/icons-material/LocalShipping'
 import StarIcon from '@mui/icons-material/Star'
 import { materialsApi, suppliersApi } from '../services/api'
 import type { Material, Supplier, SupplierMaterialWithSupplier, MaterialType, UnitOfMeasure } from '../types'
+import { MaterialRoleSettings } from '../components/settings/MaterialRoleSettings'
+import { Divider } from '@mui/material'
+
+/*
+ * UI WORK LOG - 2025-12-24
+ * -------------------------
+ * - Implemented Sidebar Navigation Restructuring:
+ *   - Created "Pricing / Calculation Settings" collapsible group.
+ *   - Created "Suppliers / Materials" collapsible group.
+ *   - Removed root-level items for cleanup.
+ * - Implemented Hub Pages:
+ *   - Created PricingCalculationSettingsPage (Hub for Pricing).
+ *   - Created SuppliersMaterialsPage (Hub for Suppliers/Materials).
+ * - Implemented Deep Linking:
+ *   - Added "Material Role Assignments" section to Materials Page (embedding existing Settings UI).
+ *   - Added deep-link anchor (#material-roles) with auto-scroll.
+ *   - Updated Hub Page to link directly to this anchor.
+ *
+ * This comment serves as the authoritative record of changes due to task numbering drift.
+ */
 
 export default function MaterialsPage() {
+  const { hash } = useLocation()
+
+  useEffect(() => {
+    if (hash) {
+      const element = document.getElementById(hash.replace('#', ''))
+      if (element) {
+        setTimeout(() => {
+          element.scrollIntoView({ behavior: 'smooth' })
+        }, 100)
+      }
+    }
+  }, [hash])
+
   const [materials, setMaterials] = useState<Material[]>([])
   const [suppliers, setSuppliers] = useState<Supplier[]>([])
   const [dialogOpen, setDialogOpen] = useState(false)
@@ -260,6 +294,12 @@ export default function MaterialsPage() {
           </TableBody>
         </Table>
       </TableContainer>
+
+      <Box sx={{ mt: 5 }} id="material-roles">
+        <Typography variant="h5" gutterBottom>Material Role Assignments</Typography>
+        <Divider sx={{ mb: 3 }} />
+        <MaterialRoleSettings />
+      </Box>
 
       <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)} maxWidth="sm" fullWidth>
         <DialogTitle>{editingMaterial ? 'Edit Material' : 'Add Material'}</DialogTitle>

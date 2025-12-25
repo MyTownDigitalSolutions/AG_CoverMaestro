@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useEffect, useState, useMemo } from 'react'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
   Box, Typography, Paper, Button, TextField, Dialog, DialogTitle,
   DialogContent, DialogActions, FormControl, InputLabel, Select,
@@ -15,6 +15,7 @@ import WarningAmberIcon from '@mui/icons-material/WarningAmber'
 import { modelsApi, seriesApi, equipmentTypesApi, enumsApi, manufacturersApi, settingsApi } from '../services/api'
 import type { Model, Series, EquipmentType, EnumValue, Manufacturer, ModelPricingSnapshot, ModelPricingHistory, PricingDiffResponse } from '../types'
 import MonetizationOnIcon from '@mui/icons-material/MonetizationOn';
+import ArrowBackIcon from '@mui/icons-material/ArrowBack'
 import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward'
 import ArrowDownwardIcon from '@mui/icons-material/ArrowDownward'
 import RemoveIcon from '@mui/icons-material/Remove'
@@ -289,7 +290,7 @@ function PricingDialog({ model, open, onClose }: { model: Model | null, open: bo
 
   // PHASE PRICING FIX – CHUNK 2A (Fix debug math ONLY)
   useEffect(() => {
-    if (currentSnapshot && import.meta.env.DEV) {
+    if (currentSnapshot && (import.meta as any).env.DEV) {
       const material_cents = currentSnapshot.material_cost_cents
       const labor_cents = currentSnapshot.labor_cost_cents
       const shipping_cents = currentSnapshot.shipping_cost_cents
@@ -733,6 +734,8 @@ function PricingDialog({ model, open, onClose }: { model: Model | null, open: bo
 }
 
 export default function ModelsPage() {
+  const [searchParams] = useSearchParams()
+  const navigate = useNavigate()
   const [models, setModels] = useState<Model[]>([])
   const [series, setSeries] = useState<Series[]>([])
   const [manufacturers, setManufacturers] = useState<Manufacturer[]>([])
@@ -740,6 +743,7 @@ export default function ModelsPage() {
   const [handleLocations, setHandleLocations] = useState<EnumValue[]>([])
   const [angleTypes, setAngleTypes] = useState<EnumValue[]>([])
   const [filterSeries, setFilterSeries] = useState<number | ''>('')
+  const [filterManufacturer, setFilterManufacturer] = useState<number | ''>('')
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editingModel, setEditingModel] = useState<Model | null>(null)
 
@@ -785,8 +789,25 @@ export default function ModelsPage() {
   }
 
   useEffect(() => {
+    const mid = searchParams.get('manufacturerId')
+    const sid = searchParams.get('seriesId')
+    if (mid) setFilterManufacturer(Number(mid))
+    // Only set series if it's new, to avoid loops if needed, though react state handles strictly equal primitives nicely
+    if (sid) setFilterSeries(Number(sid))
+  }, [searchParams])
+
+  useEffect(() => {
     loadData()
   }, [filterSeries])
+
+  const filteredModels = useMemo(() => {
+    let result = models
+    if (filterManufacturer) {
+      const manufacturerSeriesIds = series.filter(s => s.manufacturer_id === filterManufacturer).map(s => s.id)
+      result = result.filter(m => manufacturerSeriesIds.includes(m.series_id))
+    }
+    return result
+  }, [models, filterManufacturer, series])
 
   const getSeriesWithManufacturer = (seriesId: number) => {
     const s = series.find(x => x.id === seriesId)
@@ -865,44 +886,87 @@ export default function ModelsPage() {
   return (
     <Box>
       <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 3 }}>
-        <Typography variant="h4">Models</Typography>
-        <Stack direction="row" spacing={2}>
+        <Box>
+          {filterManufacturer && (
+            <Button
+              startIcon={<ArrowBackIcon />}
+              sx={{ mb: 1, pl: 0, justifyContent: 'flex-start' }}
+              onClick={() => navigate(`/manufacturers?manufacturerId=${filterManufacturer}&seriesId=${filterSeries || ''}`)}
+            >
+              Back to Manufacturers & Series
+            </Button>
+          )}
+          <Typography variant="h4">Models</Typography>
+          {/* Context Text */}
+          <Box sx={{ mt: 1 }}>
+            {filterManufacturer && (
+              <Typography variant="subtitle1" color="primary" sx={{ lineHeight: 1.2 }}>
+                Viewing Manufacturer: <strong>{manufacturers.find(m => m.id === filterManufacturer)?.name}</strong>
+              </Typography>
+            )}
+            {filterSeries && (
+              <Typography variant="subtitle1" color="primary" sx={{ lineHeight: 1.2 }}>
+                Viewing Series: <strong>{series.find(s => s.id === filterSeries)?.name}</strong>
+              </Typography>
+            )}
+          </Box>
+        </Box>
+        <Box>
           <Button
             variant="outlined"
             startIcon={<MonetizationOnIcon />}
             onClick={() => setPricingAdminOpen(true)}
+            sx={{ mr: 2 }}
           >
             Pricing Admin
           </Button>
-          <Button
-            variant="contained"
-            startIcon={<AddIcon />}
-            onClick={() => {
-              resetForm()
-              setDialogOpen(true)
-            }}
-          >
+          <Button variant="contained" startIcon={<AddIcon />} onClick={() => {
+            resetForm()
+            setDialogOpen(true)
+          }}>
             Add Model
           </Button>
-        </Stack>
+        </Box>
       </Box>
 
       <Paper sx={{ p: 2, mb: 3 }}>
-        <FormControl sx={{ minWidth: 200 }}>
-          <InputLabel>Filter by Series</InputLabel>
-          <Select
-            value={filterSeries}
-            label="Filter by Series"
-            onChange={(e) => setFilterSeries(e.target.value as number | '')}
-          >
-            <MenuItem value="">All Series</MenuItem>
-            {series.map((s) => (
-              <MenuItem key={s.id} value={s.id}>
-                {getSeriesWithManufacturer(s.id)}
-              </MenuItem>
-            ))}
-          </Select>
-        </FormControl>
+        <Grid container spacing={2} alignItems="center">
+          <Grid item xs={12} md={4}>
+            <FormControl fullWidth size="small">
+              <InputLabel>Filter by Manufacturer</InputLabel>
+              <Select
+                value={filterManufacturer}
+                label="Filter by Manufacturer"
+                onChange={(e) => {
+                  setFilterManufacturer(e.target.value as number | '');
+                  setFilterSeries(''); // Clear series when manufacturer changes
+                }}
+              >
+                <MenuItem value="">All Manufacturers</MenuItem>
+                {manufacturers.map((m) => (
+                  <MenuItem key={m.id} value={m.id}>{m.name}</MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+          </Grid>
+          <Grid item xs={12} md={4}>
+            <FormControl fullWidth size="small">
+              <InputLabel>Filter by Series</InputLabel>
+              <Select
+                value={filterSeries}
+                label="Filter by Series"
+                onChange={(e) => setFilterSeries(e.target.value as number | '')}
+              >
+                <MenuItem value="">All Series</MenuItem>
+                {series
+                  .filter(s => !filterManufacturer || s.manufacturer_id === filterManufacturer)
+                  .map((s) => (
+                    <MenuItem key={s.id} value={s.id}>{getSeriesWithManufacturer(s.id)}</MenuItem>
+                  ))}
+              </Select>
+            </FormControl>
+          </Grid>
+        </Grid>
       </Paper>
 
       <TableContainer component={Paper}>
@@ -910,32 +974,41 @@ export default function ModelsPage() {
           <TableHead>
             <TableRow>
               <TableCell>Name</TableCell>
-              <TableCell>Parent SKU</TableCell>
               <TableCell>Series</TableCell>
+              <TableCell>Manufacturer</TableCell>
               <TableCell>Dimensions (W x D x H)</TableCell>
-              <TableCell>Area (sq in)</TableCell>
-              <TableCell>Handle</TableCell>
-              <TableCell>Angle</TableCell>
-              <TableCell>Actions</TableCell>
+              <TableCell align="right">Actions</TableCell>
             </TableRow>
           </TableHead>
           <TableBody>
-            {models.map((model) => (
+            {filteredModels.map((model) => (
               <TableRow key={model.id}>
                 <TableCell>{model.name}</TableCell>
-                <TableCell sx={{ fontFamily: 'monospace', fontSize: '0.85rem' }}>{model.parent_sku || '-'}</TableCell>
-                <TableCell>{getSeriesWithManufacturer(model.series_id)}</TableCell>
+                <TableCell>{series.find(s => s.id === model.series_id)?.name || 'Unknown'}</TableCell>
+                <TableCell>{manufacturers.find(m => m.id === series.find(s => s.id === model.series_id)?.manufacturer_id)?.name || 'Unknown'}</TableCell>
                 <TableCell>{`${model.width}" x ${model.depth}" x ${model.height}"`}</TableCell>
-                <TableCell>{model.surface_area_sq_in?.toFixed(2) || '-'}</TableCell>
-                <TableCell>{model.handle_location}</TableCell>
-                <TableCell>{model.angle_type}</TableCell>
-                <TableCell>
-                  <IconButton onClick={() => setPricingModel(model)} title="Pricing"><MonetizationOnIcon /></IconButton>
-                  <IconButton onClick={() => openEdit(model)}><EditIcon /></IconButton>
-                  <IconButton onClick={() => handleDeleteClick(model.id)}><DeleteIcon /></IconButton>
+                <TableCell align="right">
+                  <Tooltip title="Pricing Analysis">
+                    <IconButton onClick={() => setPricingModel(model)} color="info">
+                      <MonetizationOnIcon />
+                    </IconButton>
+                  </Tooltip>
+                  <IconButton onClick={() => openEdit(model)}>
+                    <EditIcon />
+                  </IconButton>
+                  <IconButton onClick={() => handleDeleteClick(model.id)}>
+                    <DeleteIcon />
+                  </IconButton>
                 </TableCell>
               </TableRow>
             ))}
+            {filteredModels.length === 0 && (
+              <TableRow>
+                <TableCell colSpan={5} align="center">
+                  No models found.
+                </TableCell>
+              </TableRow>
+            )}
           </TableBody>
         </Table>
       </TableContainer>

@@ -638,7 +638,7 @@ export default function ExportPage() {
                       ))}
                     </TableRow>
                   ))}
-                  {previewData.rows.map((row, rowIdx) => (
+                  {previewData.rows.map((row) => (
                     <TableRow key={`data-${row.model_id}`} sx={{ '&:nth-of-type(odd)': { backgroundColor: '#fafafa' } }}>
                       {row.data.map((cell, colIdx) => (
                         <TableCell

@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
   Box, Typography, Paper, Button, TextField, Dialog, DialogTitle,
   DialogContent, DialogActions, IconButton, List, ListItem, ListItemText,
-  ListItemSecondaryAction, Divider, Chip, Grid
+  ListItemSecondaryAction, Autocomplete, Stack
 } from '@mui/material'
 import DeleteIcon from '@mui/icons-material/Delete'
 import EditIcon from '@mui/icons-material/Edit'
@@ -11,12 +12,16 @@ import { manufacturersApi, seriesApi } from '../services/api'
 import type { Manufacturer, Series } from '../types'
 
 export default function ManufacturersPage() {
+  const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
   const [manufacturers, setManufacturers] = useState<Manufacturer[]>([])
   const [series, setSeries] = useState<Series[]>([])
   const [selectedManufacturer, setSelectedManufacturer] = useState<Manufacturer | null>(null)
+  const [selectedSeries, setSelectedSeries] = useState<Series | null>(null)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [seriesDialogOpen, setSeriesDialogOpen] = useState(false)
   const [editingManufacturer, setEditingManufacturer] = useState<Manufacturer | null>(null)
+  const [editingSeries, setEditingSeries] = useState<Series | null>(null)
   const [name, setName] = useState('')
   const [seriesName, setSeriesName] = useState('')
 
@@ -44,8 +49,27 @@ export default function ManufacturersPage() {
   useEffect(() => {
     if (selectedManufacturer) {
       loadSeries(selectedManufacturer.id)
+    } else {
+      setSeries([])
     }
+    setSelectedSeries(null)
   }, [selectedManufacturer])
+
+  useEffect(() => {
+    const mid = searchParams.get('manufacturerId')
+    if (mid && manufacturers.length > 0 && !selectedManufacturer) {
+      const m = manufacturers.find(x => x.id === Number(mid))
+      if (m) setSelectedManufacturer(m)
+    }
+  }, [manufacturers, searchParams, selectedManufacturer])
+
+  useEffect(() => {
+    const sid = searchParams.get('seriesId')
+    if (sid && series.length > 0 && !selectedSeries) {
+      const s = series.find(x => x.id === Number(sid))
+      if (s) setSelectedSeries(s)
+    }
+  }, [series, searchParams, selectedSeries])
 
   const handleSave = async () => {
     if (editingManufacturer) {
@@ -77,14 +101,27 @@ export default function ManufacturersPage() {
     }
   }
 
-  const handleAddSeries = async () => {
+  const handleAddSeries = () => {
+    setEditingSeries(null)
+    setSeriesName('')
+    setSeriesDialogOpen(true)
+  }
+
+  const handleSaveSeries = async () => {
     if (selectedManufacturer) {
-      await seriesApi.create({ name: seriesName, manufacturer_id: selectedManufacturer.id })
+      if (editingSeries) {
+        await seriesApi.update(editingSeries.id, { name: seriesName, manufacturer_id: selectedManufacturer.id })
+      } else {
+        await seriesApi.create({ name: seriesName, manufacturer_id: selectedManufacturer.id })
+      }
       setSeriesDialogOpen(false)
       setSeriesName('')
+      setEditingSeries(null)
       loadSeries(selectedManufacturer.id)
     }
   }
+
+
 
   const handleDeleteSeriesClick = (id: number) => {
     setSeriesToDelete(id)
@@ -119,82 +156,112 @@ export default function ManufacturersPage() {
         </Button>
       </Box>
 
-      <Grid container spacing={3}>
-        <Grid item xs={12} md={6}>
-          <Paper sx={{ p: 2 }}>
-            <Typography variant="h6" gutterBottom>Manufacturers</Typography>
-            <List>
-              {manufacturers.map((manufacturer) => (
-                <ListItem
-                  key={manufacturer.id}
-                  button
-                  selected={selectedManufacturer?.id === manufacturer.id}
-                  onClick={() => setSelectedManufacturer(manufacturer)}
-                >
-                  <ListItemText primary={manufacturer.name} />
-                  <ListItemSecondaryAction>
-                    <IconButton
-                      edge="end"
-                      onClick={() => {
-                        setEditingManufacturer(manufacturer)
-                        setName(manufacturer.name)
-                        setDialogOpen(true)
-                      }}
-                    >
-                      <EditIcon />
-                    </IconButton>
-                    <IconButton edge="end" onClick={() => handleDeleteManufacturerClick(manufacturer.id)}>
-                      <DeleteIcon />
-                    </IconButton>
-                  </ListItemSecondaryAction>
-                </ListItem>
-              ))}
-            </List>
-          </Paper>
-        </Grid>
+      <Paper sx={{ p: 3, mb: 3 }}>
+        <Stack direction="row" spacing={2} alignItems="center">
+          <Autocomplete
+            options={manufacturers}
+            getOptionLabel={(option) => option.name}
+            value={selectedManufacturer}
+            onChange={(_, newValue) => setSelectedManufacturer(newValue)}
+            renderInput={(params) => <TextField {...params} label="Select Manufacturer" />}
+            sx={{ width: 300 }}
+          />
+          <IconButton
+            disabled={!selectedManufacturer}
+            onClick={() => {
+              if (selectedManufacturer) {
+                setEditingManufacturer(selectedManufacturer)
+                setName(selectedManufacturer.name)
+                setDialogOpen(true)
+              }
+            }}
+          >
+            <EditIcon />
+          </IconButton>
+          <IconButton
+            disabled={!selectedManufacturer}
+            onClick={() => selectedManufacturer && handleDeleteManufacturerClick(selectedManufacturer.id)}
+            color="error"
+          >
+            <DeleteIcon />
+          </IconButton>
+        </Stack>
+        {!selectedManufacturer && (
+          <Typography color="text.secondary" sx={{ mt: 2 }}>
+            Select a manufacturer to view its series.
+          </Typography>
+        )}
+      </Paper>
 
-        <Grid item xs={12} md={6}>
-          <Paper sx={{ p: 2 }}>
-            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-              <Typography variant="h6">
-                Series {selectedManufacturer && `for ${selectedManufacturer.name}`}
-              </Typography>
-              {selectedManufacturer && (
-                <Button
-                  size="small"
-                  startIcon={<AddIcon />}
-                  onClick={() => setSeriesDialogOpen(true)}
-                >
-                  Add Series
-                </Button>
-              )}
-            </Box>
-            {selectedManufacturer ? (
-              <List>
-                {series.map((s) => (
-                  <ListItem key={s.id}>
-                    <ListItemText primary={s.name} />
-                    <ListItemSecondaryAction>
-                      <IconButton edge="end" onClick={() => handleDeleteSeriesClick(s.id)}>
-                        <DeleteIcon />
-                      </IconButton>
-                    </ListItemSecondaryAction>
-                  </ListItem>
-                ))}
-                {series.length === 0 && (
-                  <Typography color="text.secondary" sx={{ p: 2 }}>
-                    No series found. Add one to get started.
-                  </Typography>
-                )}
-              </List>
-            ) : (
+      {selectedManufacturer && (
+        <Paper sx={{ p: 2, mb: 3 }}>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+            <Typography variant="h6">
+              Series for {selectedManufacturer.name}
+            </Typography>
+            <Button
+              size="small"
+              startIcon={<AddIcon />}
+              onClick={handleAddSeries}
+            >
+              Add Series
+            </Button>
+          </Box>
+          <List>
+            {series.map((s) => (
+              <ListItem
+                key={s.id}
+                button
+                selected={selectedSeries?.id === s.id}
+                onClick={() => setSelectedSeries(s)}
+              >
+                <ListItemText primary={s.name} />
+                <ListItemSecondaryAction>
+                  <IconButton
+                    edge="end"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      setEditingSeries(s)
+                      setSeriesName(s.name)
+                      setSeriesDialogOpen(true)
+                    }}
+                  >
+                    <EditIcon />
+                  </IconButton>
+                  <IconButton edge="end" onClick={() => handleDeleteSeriesClick(s.id)}>
+                    <DeleteIcon />
+                  </IconButton>
+                </ListItemSecondaryAction>
+              </ListItem>
+            ))}
+            {series.length === 0 && (
               <Typography color="text.secondary" sx={{ p: 2 }}>
-                Select a manufacturer to view its series
+                No series found. Add one to get started.
               </Typography>
             )}
-          </Paper>
-        </Grid>
-      </Grid>
+          </List>
+        </Paper>
+      )}
+
+      {selectedManufacturer && (
+        <Paper sx={{ p: 3 }}>
+          <Typography variant="h6" gutterBottom>Models</Typography>
+          <Typography sx={{ mb: 2 }}>
+            {selectedSeries
+              ? <>Manage models for <strong>{selectedSeries.name}</strong>.</>
+              : <>Manage all models for <strong>{selectedManufacturer.name}</strong>.</>
+            }
+          </Typography>
+          <Button variant="outlined" onClick={() => {
+            const url = selectedSeries
+              ? `/models?manufacturerId=${selectedManufacturer.id}&seriesId=${selectedSeries.id}`
+              : `/models?manufacturerId=${selectedManufacturer.id}`
+            navigate(url)
+          }}>
+            Go to Models Page
+          </Button>
+        </Paper>
+      )}
 
       <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)}>
         <DialogTitle>
@@ -217,7 +284,7 @@ export default function ManufacturersPage() {
       </Dialog>
 
       <Dialog open={seriesDialogOpen} onClose={() => setSeriesDialogOpen(false)}>
-        <DialogTitle>Add Series</DialogTitle>
+        <DialogTitle>{editingSeries ? 'Edit Series' : 'Add Series'}</DialogTitle>
         <DialogContent>
           <TextField
             autoFocus
@@ -230,7 +297,7 @@ export default function ManufacturersPage() {
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setSeriesDialogOpen(false)}>Cancel</Button>
-          <Button onClick={handleAddSeries} variant="contained">Save</Button>
+          <Button onClick={handleSaveSeries} variant="contained">Save</Button>
         </DialogActions>
       </Dialog>
 

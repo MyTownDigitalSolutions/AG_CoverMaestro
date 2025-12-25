@@ -49,6 +49,7 @@ export interface Material {
   weight_per_linear_yard?: number
   unit_of_measure?: UnitOfMeasure
   package_quantity?: number
+  cost_per_linear_yard?: number
 }
 
 export interface MaterialColourSurcharge {

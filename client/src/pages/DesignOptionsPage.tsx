@@ -51,7 +51,7 @@ export default function DesignOptionsPage() {
   }
 
   const handleDelete = async (id: number) => {
-    if (confirm('Are you sure you want to delete this design option?')) {
+    if (confirm('Are you sure you want to delete this product design option?')) {
       await designOptionsApi.delete(id)
       loadDesignOptions()
     }
@@ -60,19 +60,19 @@ export default function DesignOptionsPage() {
   return (
     <Box>
       <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 3 }}>
-        <Typography variant="h4">Design Options</Typography>
+        <Typography variant="h4">Product Design Options</Typography>
         <Button
           variant="contained"
           startIcon={<AddIcon />}
           onClick={() => handleOpenDialog()}
         >
-          Add Design Option
+          Add Product Design Option
         </Button>
       </Box>
 
       <Paper sx={{ p: 2, mb: 3 }}>
         <Typography variant="body2" color="text.secondary">
-          Design options are features that affect how models are configured (e.g., Handle Options, Angle Options).
+          Product design options are features that affect how models are configured (e.g., Handle Options, Angle Options).
           They can be assigned to equipment types to indicate which design features apply.
         </Typography>
       </Paper>
@@ -104,7 +104,7 @@ export default function DesignOptionsPage() {
             {designOptions.length === 0 && (
               <TableRow>
                 <TableCell colSpan={3} align="center">
-                  No design options found
+                  No product design options found
                 </TableCell>
               </TableRow>
             )}
@@ -113,7 +113,7 @@ export default function DesignOptionsPage() {
       </TableContainer>
 
       <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)} maxWidth="sm" fullWidth>
-        <DialogTitle>{editing ? 'Edit Design Option' : 'Add Design Option'}</DialogTitle>
+        <DialogTitle>{editing ? 'Edit Product Design Option' : 'Add Product Design Option'}</DialogTitle>
         <DialogContent>
           <TextField
             autoFocus

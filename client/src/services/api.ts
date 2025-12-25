@@ -6,7 +6,7 @@ import type {
   Supplier, SupplierMaterial, SupplierMaterialWithSupplier, SupplierMaterialWithMaterial,
   MaterialRoleAssignment, ShippingRateCard, ShippingRateTier, ShippingZoneRate,
   MarketplaceShippingProfile, LaborSetting, MarketplaceFeeRate, VariantProfitSetting, ModelPricingSnapshot,
-  ModelCreate, ProductType, ModelPricingHistory, PricingDiffResponse, ShippingZone, ShippingZoneRateNormalized,
+  ModelPricingHistory, PricingDiffResponse, ShippingZone, ShippingZoneRateNormalized,
   ShippingDefaultSettingResponse
 } from '../types'
 
@@ -52,6 +52,8 @@ export const seriesApi = {
     api.get<Series[]>('/series', { params: { manufacturer_id: manufacturerId } }).then(r => r.data),
   create: (data: { name: string; manufacturer_id: number }) =>
     api.post<Series>('/series', data).then(r => r.data),
+  update: (id: number, data: { name: string; manufacturer_id: number }) =>
+    api.put<Series>(`/series/${id}`, data).then(r => r.data),
   delete: (id: number) => api.delete(`/series/${id}`),
 }
 
@@ -235,12 +237,12 @@ export const settingsApi = {
   // Shipping
   listZones: () => api.get<ShippingZone[]>('/settings/shipping/zones').then(r => r.data),
   listRateCards: (includeInactive = false) => api.get<ShippingRateCard[]>('/settings/shipping/rate-cards', { params: { include_inactive: includeInactive } }).then(r => r.data),
-  createRateCard: (data: { name: string }) => api.post<ShippingRateCard>('/settings/shipping/rate-cards', data).then(r => r.data),
+  createRateCard: (data: { name: string; carrier?: string }) => api.post<ShippingRateCard>('/settings/shipping/rate-cards', data).then(r => r.data),
   updateRateCard: (id: number, data: { name?: string; active?: boolean }) => api.put<ShippingRateCard>(`/settings/shipping/rate-cards/${id}`, data).then(r => r.data),
   deleteRateCard: (id: number) => api.delete(`/settings/shipping/rate-cards/${id}`),
 
   listTiers: (cardId: number, includeInactive = false) => api.get<ShippingRateTier[]>(`/settings/shipping/rate-cards/${cardId}/tiers`, { params: { include_inactive: includeInactive } }).then(r => r.data),
-  createTier: (cardId: number, data: { label?: string; max_weight_oz: number }) => api.post<ShippingRateTier>(`/settings/shipping/rate-cards/${cardId}/tiers`, data).then(r => r.data),
+  createTier: (cardId: number, data: { label?: string; max_weight_oz: number; min_oz?: number }) => api.post<ShippingRateTier>(`/settings/shipping/rate-cards/${cardId}/tiers`, data).then(r => r.data),
   updateTier: (tierId: number, data: { label?: string; max_weight_oz?: number; active?: boolean }) => api.put<ShippingRateTier>(`/settings/shipping/tiers/${tierId}`, data).then(r => r.data),
   deleteTier: (tierId: number) => api.delete(`/settings/shipping/tiers/${tierId}`),
 

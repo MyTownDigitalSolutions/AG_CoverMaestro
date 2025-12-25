@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import {
     Box, Typography, Table, TableBody, TableCell, TableContainer,
     TableHead, TableRow, Paper, Button, FormControl, InputLabel,
-    Select, MenuItem, TextField, FormControlLabel, Switch, Alert
+    Select, MenuItem, TextField, FormControlLabel, Switch
 } from '@mui/material';
 import { settingsApi, materialsApi } from '../../services/api';
 import { MaterialRoleAssignment, Material } from '../../types';
@@ -11,7 +11,7 @@ export const MaterialRoleSettings: React.FC = () => {
     const [assignments, setAssignments] = useState<MaterialRoleAssignment[]>([]);
     const [materials, setMaterials] = useState<Material[]>([]);
     const [showHistory, setShowHistory] = useState(false);
-    const [loading, setLoading] = useState(false);
+    const [, setLoading] = useState(false);
 
     // Form State
     const [role, setRole] = useState("CHOICE_WATERPROOF_FABRIC");

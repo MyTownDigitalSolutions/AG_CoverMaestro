@@ -8,7 +8,7 @@ import {
 } from '@mui/material'
 import Grid from '@mui/material/Grid'
 import { pricingApi } from '../services/api'
-import type { Manufacturer, Series, Model, PricingRecalculateBulkResponse, PricingRecalculateResult } from '../types'
+import type { Manufacturer, Series, Model, PricingRecalculateBulkResponse } from '../types'
 
 interface PricingAdminPanelProps {
     open: boolean
