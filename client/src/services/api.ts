@@ -80,8 +80,8 @@ export const equipmentTypesApi = {
 export const designOptionsApi = {
   list: () => api.get<DesignOption[]>('/design-options').then(r => r.data),
   get: (id: number) => api.get<DesignOption>(`/design-options/${id}`).then(r => r.data),
-  create: (data: { name: string; description?: string }) => api.post<DesignOption>('/design-options', data).then(r => r.data),
-  update: (id: number, data: { name: string; description?: string }) => api.put<DesignOption>(`/design-options/${id}`, data).then(r => r.data),
+  create: (data: { name: string; description?: string; option_type: string; is_pricing_relevant?: boolean; equipment_type_ids?: number[] }) => api.post<DesignOption>('/design-options', data).then(r => r.data),
+  update: (id: number, data: { name: string; description?: string; option_type: string; is_pricing_relevant?: boolean; equipment_type_ids?: number[] }) => api.put<DesignOption>(`/design-options/${id}`, data).then(r => r.data),
   delete: (id: number) => api.delete(`/design-options/${id}`),
 }
 

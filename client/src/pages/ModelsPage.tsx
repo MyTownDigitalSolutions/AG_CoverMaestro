@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from 'react'
+import { useEffect, useState, useMemo, useRef } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
   Box, Typography, Paper, Button, TextField, Dialog, DialogTitle,
@@ -13,7 +13,7 @@ import AddIcon from '@mui/icons-material/Add'
 import RefreshIcon from '@mui/icons-material/Refresh'
 import WarningAmberIcon from '@mui/icons-material/WarningAmber'
 import { modelsApi, seriesApi, equipmentTypesApi, enumsApi, manufacturersApi, settingsApi } from '../services/api'
-import type { Model, Series, EquipmentType, EnumValue, Manufacturer, ModelPricingSnapshot, ModelPricingHistory, PricingDiffResponse } from '../types'
+import type { Model, Series, EquipmentType, Manufacturer, ModelPricingSnapshot, ModelPricingHistory, PricingDiffResponse, DesignOption } from '../types'
 import MonetizationOnIcon from '@mui/icons-material/MonetizationOn';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack'
 import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward'
@@ -740,8 +740,6 @@ export default function ModelsPage() {
   const [series, setSeries] = useState<Series[]>([])
   const [manufacturers, setManufacturers] = useState<Manufacturer[]>([])
   const [equipmentTypes, setEquipmentTypes] = useState<EquipmentType[]>([])
-  const [handleLocations, setHandleLocations] = useState<EnumValue[]>([])
-  const [angleTypes, setAngleTypes] = useState<EnumValue[]>([])
   const [filterSeries, setFilterSeries] = useState<number | ''>('')
   const [filterManufacturer, setFilterManufacturer] = useState<number | ''>('')
   const [dialogOpen, setDialogOpen] = useState(false)
@@ -756,6 +754,7 @@ export default function ModelsPage() {
 
   // Pricing Admin
   const [pricingAdminOpen, setPricingAdminOpen] = useState(false)
+  const modelNameInputRef = useRef<HTMLInputElement | null>(null)
 
   const [formData, setFormData] = useState({
     name: '',
@@ -771,21 +770,61 @@ export default function ModelsPage() {
     image_url: ''
   })
 
+  const [textOptionValues, setTextOptionValues] = useState<Record<number, string>>({})
+
+  // UI-Only Design Note States
+  // Top
+  const [topHandleLength, setTopHandleLength] = useState('')
+  const [topHandleHeight, setTopHandleHeight] = useState('')
+  const [topHandleRearOffset, setTopHandleRearOffset] = useState('')
+  // Side
+  const [sideHandleWidth, setSideHandleWidth] = useState('')
+  const [sideHandleHeight, setSideHandleHeight] = useState('')
+  const [sideHandleDrop, setSideHandleDrop] = useState('')
+  const [sideHandleRearOffset, setSideHandleRearOffset] = useState('')
+  // Rear
+  const [rearHandleLength, setRearHandleLength] = useState('')
+  const [rearHandleHeight, setRearHandleHeight] = useState('')
+
+  const ALLOWED_HANDLE_TYPES = new Set([
+    'guitar amplifier',
+    'bass amplifier',
+    'keyboard amplifier',
+    'cabinet',
+    'combo amp',
+    'head'
+  ])
+
+  const [availableDesignOptions, setAvailableDesignOptions] = useState<DesignOption[]>([])
+
+  useEffect(() => {
+    setTextOptionValues({})
+    if (formData.equipment_type_id) {
+      equipmentTypesApi.getDesignOptions(formData.equipment_type_id)
+        .then(setAvailableDesignOptions)
+        .catch(err => {
+          console.error("Failed to load design options", err)
+          setAvailableDesignOptions([])
+        })
+    } else {
+      setAvailableDesignOptions([])
+    }
+  }, [formData.equipment_type_id])
+
   const loadData = async () => {
-    const [modelsData, seriesData, manufacturersData, equipmentTypesData, handleLocData, angleTypesData] = await Promise.all([
+    const [modelsData, seriesData, manufacturersData, equipmentTypesData, _handleLocData] = await Promise.all([
       modelsApi.list(filterSeries || undefined),
       seriesApi.list(),
       manufacturersApi.list(),
       equipmentTypesApi.list(),
-      enumsApi.handleLocations(),
-      enumsApi.angleTypes()
+      enumsApi.handleLocations()
     ])
     setModels(modelsData)
     setSeries(seriesData)
     setManufacturers(manufacturersData)
     setEquipmentTypes(equipmentTypesData)
-    setHandleLocations(handleLocData)
-    setAngleTypes(angleTypesData)
+    // setHandleLocations(handleLocData)
+    // setAngleTypes(angleTypesData)
   }
 
   useEffect(() => {
@@ -851,7 +890,7 @@ export default function ModelsPage() {
   const resetForm = () => {
     setFormData({
       name: '',
-      series_id: 0,
+      series_id: filterSeries ? Number(filterSeries) : 0,
       equipment_type_id: 0,
       width: 0,
       depth: 0,
@@ -862,6 +901,16 @@ export default function ModelsPage() {
       angle_type: 'none',
       image_url: ''
     })
+    setTextOptionValues({})
+    setTopHandleLength('')
+    setTopHandleHeight('')
+    setTopHandleRearOffset('')
+    setSideHandleWidth('')
+    setSideHandleHeight('')
+    setSideHandleDrop('')
+    setSideHandleRearOffset('')
+    setRearHandleLength('')
+    setRearHandleHeight('')
     setEditingModel(null)
   }
 
@@ -882,6 +931,33 @@ export default function ModelsPage() {
     })
     setDialogOpen(true)
   }
+
+  const selectedEquipmentType = equipmentTypes.find(et => et.id === formData.equipment_type_id)
+  const normalize = (s: string) => s.toLowerCase().trim()
+  const showHandleFields = selectedEquipmentType && ALLOWED_HANDLE_TYPES.has(normalize(selectedEquipmentType.name))
+
+  const handleLocationOptions = useMemo(() => {
+    return availableDesignOptions
+      .filter(o => o.option_type === 'handle_location')
+      .sort((a, b) => a.name.localeCompare(b.name))
+  }, [availableDesignOptions])
+
+  const angleTypeOptions = useMemo(() => {
+    return availableDesignOptions
+      .filter(o => o.option_type === 'angle_type')
+      .sort((a, b) => a.name.localeCompare(b.name))
+  }, [availableDesignOptions])
+
+  const textOptions = useMemo(() => {
+    return availableDesignOptions
+      .filter(o => o.option_type === 'text_option')
+      .sort((a, b) => a.name.localeCompare(b.name))
+  }, [availableDesignOptions])
+
+  const currentHandle = formData.handle_location || ''
+  const showTopHandle = currentHandle.includes('Top')
+  const showSideHandle = currentHandle.includes('Side')
+  const showRearHandle = currentHandle.includes('Rear')
 
   return (
     <Box>
@@ -943,9 +1019,11 @@ export default function ModelsPage() {
                 }}
               >
                 <MenuItem value="">All Manufacturers</MenuItem>
-                {manufacturers.map((m) => (
-                  <MenuItem key={m.id} value={m.id}>{m.name}</MenuItem>
-                ))}
+                {[...manufacturers]
+                  .sort((a, b) => a.name.localeCompare(b.name))
+                  .map((m) => (
+                    <MenuItem key={m.id} value={m.id}>{m.name}</MenuItem>
+                  ))}
               </Select>
             </FormControl>
           </Grid>
@@ -960,6 +1038,7 @@ export default function ModelsPage() {
                 <MenuItem value="">All Series</MenuItem>
                 {series
                   .filter(s => !filterManufacturer || s.manufacturer_id === filterManufacturer)
+                  .sort((a, b) => getSeriesWithManufacturer(a.id).localeCompare(getSeriesWithManufacturer(b.id)))
                   .map((s) => (
                     <MenuItem key={s.id} value={s.id}>{getSeriesWithManufacturer(s.id)}</MenuItem>
                   ))}
@@ -1018,6 +1097,13 @@ export default function ModelsPage() {
         onClose={() => setDialogOpen(false)}
         maxWidth="md"
         fullWidth
+        TransitionProps={{
+          onEntered: () => {
+            if (formData.series_id) {
+              modelNameInputRef.current?.focus()
+            }
+          }
+        }}
         PaperProps={{
           sx: {
             resize: 'both',
@@ -1038,11 +1124,14 @@ export default function ModelsPage() {
                   label="Series"
                   onChange={(e) => setFormData({ ...formData, series_id: e.target.value as number })}
                 >
-                  {series.map((s) => (
-                    <MenuItem key={s.id} value={s.id}>
-                      {getSeriesWithManufacturer(s.id)}
-                    </MenuItem>
-                  ))}
+                  {series
+                    .filter(s => !filterManufacturer || s.manufacturer_id === filterManufacturer)
+                    .sort((a, b) => getSeriesWithManufacturer(a.id).localeCompare(getSeriesWithManufacturer(b.id)))
+                    .map((s) => (
+                      <MenuItem key={s.id} value={s.id}>
+                        {getSeriesWithManufacturer(s.id)}
+                      </MenuItem>
+                    ))}
                 </Select>
               </FormControl>
               {formData.series_id > 0 && (
@@ -1061,6 +1150,7 @@ export default function ModelsPage() {
             </Grid>
             <Grid item xs={12}>
               <TextField
+                inputRef={modelNameInputRef}
                 fullWidth
                 label="Model Name"
                 value={formData.name}
@@ -1109,42 +1199,138 @@ export default function ModelsPage() {
                 onChange={(e) => setFormData({ ...formData, height: parseFloat(e.target.value) })}
               />
             </Grid>
-            <Grid item xs={6}>
-              <FormControl fullWidth>
-                <InputLabel>Handle Location</InputLabel>
-                <Select
-                  value={formData.handle_location}
-                  label="Handle Location"
-                  onChange={(e) => setFormData({ ...formData, handle_location: e.target.value })}
-                >
-                  {handleLocations.map((hl) => (
-                    <MenuItem key={hl.value} value={hl.value}>{hl.name}</MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
-            </Grid>
-            <Grid item xs={6}>
-              <FormControl fullWidth>
-                <InputLabel>Angle Type</InputLabel>
-                <Select
-                  value={formData.angle_type}
-                  label="Angle Type"
-                  onChange={(e) => setFormData({ ...formData, angle_type: e.target.value })}
-                >
-                  {angleTypes.map((at) => (
-                    <MenuItem key={at.value} value={at.value}>{at.name}</MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
-            </Grid>
-            <Grid item xs={12}>
-              <TextField
-                fullWidth
-                label="Image URL"
-                value={formData.image_url}
-                onChange={(e) => setFormData({ ...formData, image_url: e.target.value })}
-              />
-            </Grid>
+            {showHandleFields && (
+              <>
+                <Grid item xs={6}>
+                  <FormControl fullWidth disabled={handleLocationOptions.length === 0}>
+                    <InputLabel>Handle Location</InputLabel>
+                    <Select
+                      value={formData.handle_location}
+                      label="Handle Location"
+                      onChange={(e) => setFormData({ ...formData, handle_location: e.target.value })}
+                    >
+                      {handleLocationOptions.map((opt) => (
+                        <MenuItem key={opt.id} value={opt.name}>{opt.name}</MenuItem>
+                      ))}
+                    </Select>
+                  </FormControl>
+                  {handleLocationOptions.length === 0 && (
+                    <Box sx={{ ml: 1, display: 'flex', alignItems: 'center', gap: 1 }}>
+                      <Typography variant="caption" color="text.secondary">
+                        No handle options configured for this equipment type.
+                      </Typography>
+                      <Button
+                        size="small"
+                        sx={{ fontSize: '0.7rem', p: 0, minWidth: 'auto', textTransform: 'none' }}
+                        onClick={() => navigate('/design-options')}
+                      >
+                        Configure
+                      </Button>
+                    </Box>
+                  )}
+                </Grid>
+                <Grid item xs={6}>
+                  <FormControl fullWidth disabled={angleTypeOptions.length === 0}>
+                    <InputLabel>Angle Type</InputLabel>
+                    <Select
+                      value={formData.angle_type}
+                      label="Angle Type"
+                      onChange={(e) => setFormData({ ...formData, angle_type: e.target.value })}
+                    >
+                      {angleTypeOptions.map((opt) => (
+                        <MenuItem key={opt.id} value={opt.name}>{opt.name}</MenuItem>
+                      ))}
+                    </Select>
+                  </FormControl>
+                  {angleTypeOptions.length === 0 && (
+                    <Box sx={{ ml: 1, display: 'flex', alignItems: 'center', gap: 1 }}>
+                      <Typography variant="caption" color="text.secondary">
+                        No angle options configured for this equipment type.
+                      </Typography>
+                      <Button
+                        size="small"
+                        sx={{ fontSize: '0.7rem', p: 0, minWidth: 'auto', textTransform: 'none' }}
+                        onClick={() => navigate('/design-options')}
+                      >
+                        Configure
+                      </Button>
+                    </Box>
+                  )}
+                </Grid>
+
+                {/* Dynamic Text Options */}
+                {textOptions.map(option => (
+                  <Grid item xs={12} key={option.id} sx={{ mt: 1 }}>
+                    <TextField
+                      fullWidth
+                      label={option.name}
+                      multiline
+                      minRows={2}
+                      value={textOptionValues[option.id] || ''}
+                      onChange={(e) => setTextOptionValues(prev => ({ ...prev, [option.id]: e.target.value }))}
+                      helperText="Design notes only (not used for pricing)."
+                    />
+                  </Grid>
+                ))}
+
+                {/* Top Handle Fields */}
+                {showTopHandle && (
+                  <>
+                    <Grid item xs={12} sx={{ mt: 1 }}>
+                      <Typography variant="subtitle2" color="primary">Top Handle Details (Design Note)</Typography>
+                      <Typography variant="caption" color="text.secondary">Used for sewing placement notes only.</Typography>
+                    </Grid>
+                    <Grid item xs={4}>
+                      <TextField fullWidth label="Length (in)" value={topHandleLength} onChange={(e) => setTopHandleLength(e.target.value)} />
+                    </Grid>
+                    <Grid item xs={4}>
+                      <TextField fullWidth label="Height (in)" value={topHandleHeight} onChange={(e) => setTopHandleHeight(e.target.value)} />
+                    </Grid>
+                    <Grid item xs={4}>
+                      <TextField fullWidth label="Rear Edge → Center (in)" value={topHandleRearOffset} onChange={(e) => setTopHandleRearOffset(e.target.value)} />
+                    </Grid>
+                  </>
+                )}
+
+                {/* Side Handle Fields */}
+                {showSideHandle && (
+                  <>
+                    <Grid item xs={12} sx={{ mt: 1 }}>
+                      <Typography variant="subtitle2" color="primary">Side Handle Details (Design Note)</Typography>
+                      <Typography variant="caption" color="text.secondary">Used for sewing placement notes only.</Typography>
+                    </Grid>
+                    <Grid item xs={3}>
+                      <TextField fullWidth label="Width (in)" value={sideHandleWidth} onChange={(e) => setSideHandleWidth(e.target.value)} />
+                    </Grid>
+                    <Grid item xs={3}>
+                      <TextField fullWidth label="Height (in)" value={sideHandleHeight} onChange={(e) => setSideHandleHeight(e.target.value)} />
+                    </Grid>
+                    <Grid item xs={3}>
+                      <TextField fullWidth label="Top Edge → Center (in)" value={sideHandleDrop} onChange={(e) => setSideHandleDrop(e.target.value)} />
+                    </Grid>
+                    <Grid item xs={3}>
+                      <TextField fullWidth label="Rear Edge → Center (in)" value={sideHandleRearOffset} onChange={(e) => setSideHandleRearOffset(e.target.value)} />
+                    </Grid>
+                  </>
+                )}
+
+                {/* Rear Handle Fields */}
+                {showRearHandle && (
+                  <>
+                    <Grid item xs={12} sx={{ mt: 1 }}>
+                      <Typography variant="subtitle2" color="primary">Rear Handle Details (Design Note)</Typography>
+                      <Typography variant="caption" color="text.secondary">Used for sewing placement notes only.</Typography>
+                    </Grid>
+                    <Grid item xs={6}>
+                      <TextField fullWidth label="Length (in)" value={rearHandleLength} onChange={(e) => setRearHandleLength(e.target.value)} />
+                    </Grid>
+                    <Grid item xs={6}>
+                      <TextField fullWidth label="Height (in)" value={rearHandleHeight} onChange={(e) => setRearHandleHeight(e.target.value)} />
+                    </Grid>
+                  </>
+                )}
+              </>
+            )}
           </Grid>
         </DialogContent>
         <DialogActions>

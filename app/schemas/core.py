@@ -271,6 +271,9 @@ class PricingCalculateResponse(BaseModel):
 class DesignOptionBase(BaseModel):
     name: str
     description: Optional[str] = None
+    option_type: str
+    is_pricing_relevant: bool = False
+    equipment_type_ids: List[int] = []
 
 class DesignOptionCreate(DesignOptionBase):
     pass

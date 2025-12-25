@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
   Box, Typography, Paper, Button, TextField, Dialog, DialogTitle,
@@ -24,6 +24,25 @@ export default function ManufacturersPage() {
   const [editingSeries, setEditingSeries] = useState<Series | null>(null)
   const [name, setName] = useState('')
   const [seriesName, setSeriesName] = useState('')
+  const lastManufacturerDialogTriggerRef = useRef<HTMLElement | null>(null)
+  const lastSeriesDialogTriggerRef = useRef<HTMLElement | null>(null)
+  const manufacturerNameInputRef = useRef<HTMLInputElement | null>(null)
+  const seriesNameInputRef = useRef<HTMLInputElement | null>(null)
+
+  // Restore focus on dialog close
+  useEffect(() => {
+    if (!dialogOpen && lastManufacturerDialogTriggerRef.current) {
+      const el = lastManufacturerDialogTriggerRef.current
+      requestAnimationFrame(() => el.focus())
+    }
+  }, [dialogOpen])
+
+  useEffect(() => {
+    if (!seriesDialogOpen && lastSeriesDialogTriggerRef.current) {
+      const el = lastSeriesDialogTriggerRef.current
+      requestAnimationFrame(() => el.focus())
+    }
+  }, [seriesDialogOpen])
 
   // Delete confirmation states
   const [deleteManufacturerOpen, setDeleteManufacturerOpen] = useState(false)
@@ -146,7 +165,8 @@ export default function ManufacturersPage() {
         <Button
           variant="contained"
           startIcon={<AddIcon />}
-          onClick={() => {
+          onClick={(e) => {
+            lastManufacturerDialogTriggerRef.current = e.currentTarget
             setEditingManufacturer(null)
             setName('')
             setDialogOpen(true)
@@ -202,7 +222,10 @@ export default function ManufacturersPage() {
             <Button
               size="small"
               startIcon={<AddIcon />}
-              onClick={handleAddSeries}
+              onClick={(e) => {
+                lastSeriesDialogTriggerRef.current = e.currentTarget
+                handleAddSeries()
+              }}
             >
               Add Series
             </Button>
@@ -263,18 +286,29 @@ export default function ManufacturersPage() {
         </Paper>
       )}
 
-      <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)}>
+      <Dialog
+        open={dialogOpen}
+        onClose={() => setDialogOpen(false)}
+        TransitionProps={{ onEntered: () => manufacturerNameInputRef.current?.focus() }}
+      >
         <DialogTitle>
           {editingManufacturer ? 'Edit Manufacturer' : 'Add Manufacturer'}
         </DialogTitle>
         <DialogContent>
           <TextField
             autoFocus
+            inputRef={manufacturerNameInputRef}
             margin="dense"
             label="Name"
             fullWidth
             value={name}
             onChange={(e) => setName(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault()
+                handleSave()
+              }
+            }}
           />
         </DialogContent>
         <DialogActions>
@@ -283,16 +317,27 @@ export default function ManufacturersPage() {
         </DialogActions>
       </Dialog>
 
-      <Dialog open={seriesDialogOpen} onClose={() => setSeriesDialogOpen(false)}>
+      <Dialog
+        open={seriesDialogOpen}
+        onClose={() => setSeriesDialogOpen(false)}
+        TransitionProps={{ onEntered: () => seriesNameInputRef.current?.focus() }}
+      >
         <DialogTitle>{editingSeries ? 'Edit Series' : 'Add Series'}</DialogTitle>
         <DialogContent>
           <TextField
             autoFocus
+            inputRef={seriesNameInputRef}
             margin="dense"
             label="Series Name"
             fullWidth
             value={seriesName}
             onChange={(e) => setSeriesName(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault()
+                handleSaveSeries()
+              }
+            }}
           />
         </DialogContent>
         <DialogActions>

@@ -18,6 +18,9 @@ export interface DesignOption {
   id: number
   name: string
   description?: string
+  option_type: string
+  is_pricing_relevant: boolean
+  equipment_type_ids?: number[]
 }
 
 export interface Model {

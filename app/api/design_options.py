@@ -22,8 +22,19 @@ def get_design_option(id: int, db: Session = Depends(get_db)):
 @router.post("", response_model=DesignOptionResponse)
 def create_design_option(data: DesignOptionCreate, db: Session = Depends(get_db)):
     try:
-        option = DesignOption(name=data.name, description=data.description)
+        option = DesignOption(
+            name=data.name, 
+            description=data.description, 
+            option_type=data.option_type,
+            is_pricing_relevant=data.is_pricing_relevant
+        )
         db.add(option)
+        db.flush()
+        
+        for et_id in data.equipment_type_ids:
+            assoc = EquipmentTypeDesignOption(design_option_id=option.id, equipment_type_id=et_id)
+            db.add(assoc)
+            
         db.commit()
         db.refresh(option)
         return option
@@ -39,6 +50,15 @@ def update_design_option(id: int, data: DesignOptionCreate, db: Session = Depend
     try:
         option.name = data.name
         option.description = data.description
+        option.option_type = data.option_type
+        option.is_pricing_relevant = data.is_pricing_relevant
+        
+        # Update associations
+        db.query(EquipmentTypeDesignOption).filter(EquipmentTypeDesignOption.design_option_id == id).delete()
+        for et_id in data.equipment_type_ids:
+            assoc = EquipmentTypeDesignOption(design_option_id=id, equipment_type_id=et_id)
+            db.add(assoc)
+
         db.commit()
         db.refresh(option)
         return option

@@ -2,28 +2,37 @@ import { useEffect, useState } from 'react'
 import {
   Box, Typography, Paper, Button, TextField, Dialog, DialogTitle,
   DialogContent, DialogActions, IconButton, Table, TableBody, TableCell,
-  TableContainer, TableHead, TableRow
+  TableContainer, TableHead, TableRow, Select, MenuItem, FormControl, InputLabel, Chip, Switch, FormControlLabel
 } from '@mui/material'
 import DeleteIcon from '@mui/icons-material/Delete'
 import EditIcon from '@mui/icons-material/Edit'
 import AddIcon from '@mui/icons-material/Add'
-import { designOptionsApi } from '../services/api'
-import type { DesignOption } from '../types'
+import { designOptionsApi, equipmentTypesApi } from '../services/api'
+import type { DesignOption, EquipmentType } from '../types'
 
 export default function DesignOptionsPage() {
   const [designOptions, setDesignOptions] = useState<DesignOption[]>([])
+  const [equipmentTypes, setEquipmentTypes] = useState<EquipmentType[]>([])
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editing, setEditing] = useState<DesignOption | null>(null)
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
+  const [optionTypeSelect, setOptionTypeSelect] = useState('handle_location')
+  const [customOptionType, setCustomOptionType] = useState('')
+  const [isPricingRelevant, setIsPricingRelevant] = useState(false)
+  const [equipmentTypeIds, setEquipmentTypeIds] = useState<number[]>([])
 
-  const loadDesignOptions = async () => {
-    const data = await designOptionsApi.list()
-    setDesignOptions(data)
+  const loadData = async () => {
+    const [doData, etData] = await Promise.all([
+      designOptionsApi.list(),
+      equipmentTypesApi.list()
+    ])
+    setDesignOptions(doData)
+    setEquipmentTypes(etData)
   }
 
   useEffect(() => {
-    loadDesignOptions()
+    loadData()
   }, [])
 
   const handleOpenDialog = (option?: DesignOption) => {
@@ -31,29 +40,64 @@ export default function DesignOptionsPage() {
       setEditing(option)
       setName(option.name)
       setDescription(option.description || '')
+
+      const type = option.option_type || 'handle_location'
+      if (['handle_location', 'angle_type', 'text_option', 'no_user_input_required'].includes(type)) {
+        setOptionTypeSelect(type)
+        setCustomOptionType('')
+      } else {
+        setOptionTypeSelect('__custom__')
+        setCustomOptionType(type)
+      }
+
+      setEquipmentTypeIds(option.equipment_type_ids || [])
+      setIsPricingRelevant(option.is_pricing_relevant || false)
     } else {
       setEditing(null)
       setName('')
       setDescription('')
+      setOptionTypeSelect('handle_location')
+      setCustomOptionType('')
+      setEquipmentTypeIds([])
+      setIsPricingRelevant(false)
     }
     setDialogOpen(true)
   }
 
   const handleSave = async () => {
-    const data = { name, description: description || undefined }
+    let finalOptionType = optionTypeSelect
+    if (finalOptionType === '__custom__') {
+      finalOptionType = customOptionType.toLowerCase().trim()
+        .replace(/[\s-]+/g, '_')
+        .replace(/_+/g, '_')
+        .replace(/^_+|_+$/g, '')
+
+      if (!finalOptionType) {
+        alert('Custom option type is required')
+        return
+      }
+    }
+
+    const data = {
+      name,
+      description: description || undefined,
+      option_type: finalOptionType,
+      is_pricing_relevant: isPricingRelevant,
+      equipment_type_ids: equipmentTypeIds
+    }
     if (editing) {
       await designOptionsApi.update(editing.id, data)
     } else {
       await designOptionsApi.create(data)
     }
     setDialogOpen(false)
-    loadDesignOptions()
+    loadData()
   }
 
   const handleDelete = async (id: number) => {
     if (confirm('Are you sure you want to delete this product design option?')) {
       await designOptionsApi.delete(id)
-      loadDesignOptions()
+      loadData()
     }
   }
 
@@ -82,6 +126,7 @@ export default function DesignOptionsPage() {
           <TableHead>
             <TableRow>
               <TableCell>Name</TableCell>
+              <TableCell>Type</TableCell>
               <TableCell>Description</TableCell>
               <TableCell align="right">Actions</TableCell>
             </TableRow>
@@ -90,6 +135,7 @@ export default function DesignOptionsPage() {
             {designOptions.map((option) => (
               <TableRow key={option.id}>
                 <TableCell>{option.name}</TableCell>
+                <TableCell><Chip label={option.option_type} size="small" /></TableCell>
                 <TableCell>{option.description || '-'}</TableCell>
                 <TableCell align="right">
                   <IconButton onClick={() => handleOpenDialog(option)} size="small">
@@ -103,7 +149,7 @@ export default function DesignOptionsPage() {
             ))}
             {designOptions.length === 0 && (
               <TableRow>
-                <TableCell colSpan={3} align="center">
+                <TableCell colSpan={4} align="center">
                   No product design options found
                 </TableCell>
               </TableRow>
@@ -123,6 +169,66 @@ export default function DesignOptionsPage() {
             value={name}
             onChange={(e) => setName(e.target.value)}
           />
+
+          <FormControl fullWidth margin="dense">
+            <InputLabel>Option Type</InputLabel>
+            <Select
+              value={optionTypeSelect}
+              label="Option Type"
+              onChange={(e) => setOptionTypeSelect(e.target.value)}
+            >
+              <MenuItem value="handle_location">Handle Location</MenuItem>
+              <MenuItem value="angle_type">Angle Type</MenuItem>
+              <MenuItem value="text_option">Text Option</MenuItem>
+              <MenuItem value="no_user_input_required">No User Input Required</MenuItem>
+              <MenuItem value="__custom__">Custom...</MenuItem>
+            </Select>
+          </FormControl>
+
+          {optionTypeSelect === '__custom__' && (
+            <TextField
+              margin="dense"
+              label="Custom Option Type"
+              fullWidth
+              value={customOptionType}
+              onChange={(e) => setCustomOptionType(e.target.value)}
+              helperText="Examples: pocket_style, vent_type"
+            />
+          )}
+
+          <FormControl fullWidth margin="dense">
+            <InputLabel>Assigned Equipment Types</InputLabel>
+            <Select
+              multiple
+              value={equipmentTypeIds}
+              label="Assigned Equipment Types"
+              onChange={(e) => {
+                const val = e.target.value
+                setEquipmentTypeIds(typeof val === 'string' ? val.split(',').map(Number) : val as number[])
+              }}
+              renderValue={(selected) => (
+                <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                  {selected.map((id) => {
+                    const et = equipmentTypes.find(x => x.id === id)
+                    return <Chip key={id} label={et ? et.name : id} size="small" />
+                  })}
+                </Box>
+              )}
+            >
+              {equipmentTypes.map((et) => (
+                <MenuItem key={et.id} value={et.id}>{et.name}</MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+
+          <FormControlLabel
+            control={<Switch checked={isPricingRelevant} onChange={(e) => setIsPricingRelevant(e.target.checked)} />}
+            label="Used for pricing"
+          />
+          <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: -1, ml: 4, mb: 1 }}>
+            If enabled, this option may later affect cost calculations.
+          </Typography>
+
           <TextField
             margin="dense"
             label="Description"

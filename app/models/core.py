@@ -5,6 +5,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import relationship
 from datetime import datetime
+from typing import List
 from app.database import Base
 from app.models.enums import HandleLocation, AngleType, Carrier, Marketplace, MaterialType, UnitOfMeasure
 
@@ -205,8 +206,14 @@ class DesignOption(Base):
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, unique=True, nullable=False)
     description = Column(String, nullable=True)
+    option_type = Column(String, nullable=False, index=True)
+    is_pricing_relevant = Column(Boolean, nullable=False, default=False, server_default="false")
     
     equipment_types = relationship("EquipmentTypeDesignOption", back_populates="design_option")
+
+    @property
+    def equipment_type_ids(self) -> List[int]:
+        return [assoc.equipment_type_id for assoc in self.equipment_types]
 
 class EquipmentTypeDesignOption(Base):
     __tablename__ = "equipment_type_design_options"
