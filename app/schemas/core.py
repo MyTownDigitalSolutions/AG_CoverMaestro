@@ -428,6 +428,14 @@ class VariantProfitSettingResponse(VariantProfitSettingCreate):
     class Config:
         from_attributes = True
 
+class ExportSettingCreate(BaseModel):
+    default_save_path_template: Optional[str] = None
+
+class ExportSettingResponse(ExportSettingCreate):
+    id: int
+    class Config:
+        from_attributes = True
+
 class ModelPricingSnapshotResponse(BaseModel):
     id: int
     model_id: int

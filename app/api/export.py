@@ -3,6 +3,9 @@ import io
 import csv
 import json
 import hashlib
+import requests # Added for image validation
+import concurrent.futures
+import time
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
@@ -20,6 +23,12 @@ from app.api.pricing import recalculate_targeted, PricingRecalculateRequest
 from app.services.pricing_calculator import PricingConfigError
 
 router = APIRouter(prefix="/export", tags=["export"])
+
+# Module-level cache for HTTP results
+# Structure: { url: { 'time': float, 'code': int|None, 'error': str|None } }
+HTTP_CACHE = {}
+MAX_CACHE_ENTRIES = 5000
+TTL_SECONDS = 900 # 15 minutes
 
 # --------------------------------------------------------------------------
 # Staleness Check Helper
@@ -139,6 +148,254 @@ def build_audit_columns(ordered_field_names: List[str], ordered_required_flags: 
 # Example usage:
 # signature = compute_export_signature(code, headers, rows)
 
+def get_field_source_audit(field: ProductTypeField, model: Model, series, manufacturer, equipment_type, is_image_field: bool) -> dict | None:
+    """Determine the source of a field value for audit purposes."""
+    if not field.required:
+        return None
+        
+    lower = field.field_name.lower()
+    # Focus audit on specific content fields prone to template defaults
+    target_keys = ["product_description", "bullet_point", "generic_keyword"]
+    if not any(k in lower for k in target_keys):
+        return None
+
+    if field.selected_value:
+        val = substitute_placeholders(field.selected_value, model, series, manufacturer, equipment_type, is_image_url=is_image_field)
+        return {"field_name": field.field_name, "source": "selected_value", "preview": val[:100]}
+        
+    if field.custom_value:
+         val = substitute_placeholders(field.custom_value, model, series, manufacturer, equipment_type, is_image_url=is_image_field)
+         return {"field_name": field.field_name, "source": "custom_value", "preview": val[:100]}
+    
+    return {"field_name": field.field_name, "source": "none", "preview": ""}
+
+class ExportValidationIssue(BaseModel):
+    severity: str  # "error", "warning"
+    model_id: int | None = None
+    model_name: str | None = None
+    message: str
+
+class ExportValidationResponse(BaseModel):
+    status: str  # "valid", "warnings", "errors"
+    summary_counts: Dict[str, int]
+    items: List[ExportValidationIssue]
+
+@router.post("/validate", response_model=ExportValidationResponse)
+def validate_export(request: ExportPreviewRequest, db: Session = Depends(get_db)):
+    """
+    Pre-flight check for export readiness. Verifies templates, pricing snapshots, and data integrity.
+    """
+    issues = []
+    
+    # 1. Basic Request Validation
+    if not request.model_ids:
+        return ExportValidationResponse(
+            status="errors",
+            summary_counts={"total_models": 0, "issues": 1},
+            items=[ExportValidationIssue(severity="error", message="No models selected.")]
+        )
+
+    models = db.query(Model).filter(Model.id.in_(request.model_ids)).all()
+    if not models or len(models) != len(request.model_ids):
+        found_ids = {m.id for m in models}
+        missing_ids = set(request.model_ids) - found_ids
+        issues.append(ExportValidationIssue(severity="error", message=f"Some requested models exist. Missing IDs: {missing_ids}"))
+
+    total_models = len(models)
+    
+    image_fields = []
+    
+    # 2. Equipment Type Consistency & Template Loading
+    if models:
+        eq_ids = set(m.equipment_type_id for m in models)
+        if len(eq_ids) > 1:
+             issues.append(ExportValidationIssue(severity="error", message="Selected models have mixed Equipment Types. Export requires a single Equipment Type."))
+        elif len(eq_ids) == 1:
+             eq_id = list(eq_ids)[0]
+             link = db.query(EquipmentTypeProductType).filter(EquipmentTypeProductType.equipment_type_id == eq_id).first()
+             if not link:
+                 equip = db.query(EquipmentType).filter(EquipmentType.id == eq_id).first()
+                 name = equip.name if equip else f"ID {eq_id}"
+                 issues.append(ExportValidationIssue(severity="error", message=f"No Amazon Template linked to Equipment Type: {name}"))
+             else:
+                 pt = db.query(AmazonProductType).filter(AmazonProductType.id == link.product_type_id).first()
+                 if not pt or not pt.code:
+                     issues.append(ExportValidationIssue(severity="error", message="Linked Amazon Template is invalid or missing Template Code."))
+                 else:
+                     # Load fields for placeholder verification
+                     all_fields = db.query(ProductTypeField).filter(ProductTypeField.product_type_id == pt.id).all()
+                     image_fields = [f for f in all_fields if is_image_url_field(f.field_name)]
+
+    # 3. Model-Specific Checks
+    MAX_HTTP_MODELS = 25
+    MAX_HTTP_URLS = 60
+    MAX_CONCURRENCY = 6
+
+    http_models_checked_count = 0
+    http_urls_scheduled_count = 0
+    is_capped = False
+    
+    # Prune cache if needed
+    if len(HTTP_CACHE) > MAX_CACHE_ENTRIES:
+        HTTP_CACHE.clear()
+        
+    verification_jobs = [] # List of dicts: {'model': model, 'url': url, 'cached': bool}
+
+    for idx, model in enumerate(models):
+        # A. Pricing Snapshot
+        snap = db.query(ModelPricingSnapshot).filter(
+            ModelPricingSnapshot.model_id == model.id,
+            ModelPricingSnapshot.marketplace == "amazon",
+            ModelPricingSnapshot.variant_key == "choice_no_padding"
+        ).first()
+        
+        if not snap:
+            issues.append(ExportValidationIssue(
+                severity="error", 
+                model_id=model.id, 
+                model_name=model.name, 
+                message="Missing pricing snapshot (choice_no_padding). Recalculation required."
+            ))
+            
+        # B. Image Placeholders & HTTP Check
+        if image_fields:
+            series = db.query(Series).filter(Series.id == model.series_id).first()
+            manufacturer = db.query(Manufacturer).filter(Manufacturer.id == series.manufacturer_id).first() if series else None
+            equip_type = db.query(EquipmentType).filter(EquipmentType.id == model.equipment_type_id).first()
+            
+            # 1. Placeholder Syntax Check (All Fields, Always)
+            for img_field in image_fields:
+                val_to_check = img_field.selected_value or img_field.custom_value
+                
+                if val_to_check:
+                    resolved = substitute_placeholders(val_to_check, model, series, manufacturer, equip_type, is_image_url=True)
+                    if '[' in resolved and ']' in resolved:
+                         issues.append(ExportValidationIssue(
+                            severity="warning",
+                            model_id=model.id,
+                            model_name=model.name,
+                            message=f"Unresolved placeholder in image field '{img_field.field_name}': {resolved}"
+                        ))
+            
+            # 2. HTTP Availability Check (Sampled, Capped, Cached)
+            # Strategy: Full check for first model; First + Last fields only for subsequent models
+            fields_to_check = image_fields if idx == 0 else ([image_fields[0], image_fields[-1]] if len(image_fields) > 1 else image_fields)
+            
+            model_triggering_fetch = False
+            
+            for img_field in fields_to_check:
+                val = img_field.selected_value or img_field.custom_value
+                if val:
+                    url = substitute_placeholders(val, model, series, manufacturer, equip_type, is_image_url=True)
+                    
+                    if '[' in url and ']' in url:
+                        continue
+                    
+                    # Check Cache
+                    now = time.time()
+                    cached_entry = HTTP_CACHE.get(url)
+                    if cached_entry and (now - cached_entry['time'] < TTL_SECONDS):
+                        verification_jobs.append({'model': model, 'url': url, 'cached': True, 'entry': cached_entry})
+                        continue
+                        
+                    # Not Cached: Apply Caps
+                    if is_capped:
+                        continue
+                        
+                    if http_urls_scheduled_count >= MAX_HTTP_URLS:
+                        is_capped = True
+                        continue
+                        
+                    if not model_triggering_fetch and http_models_checked_count >= MAX_HTTP_MODELS:
+                        is_capped = True
+                        continue
+
+                    # Schedule Fetch
+                    verification_jobs.append({'model': model, 'url': url, 'cached': False})
+                    http_urls_scheduled_count += 1
+                    model_triggering_fetch = True
+            
+            if model_triggering_fetch:
+                http_models_checked_count += 1
+
+    if is_capped:
+        issues.append(ExportValidationIssue(
+            severity="warning",
+            message=f"HTTP image checks capped. Checked {http_urls_scheduled_count} new URLs across {http_models_checked_count} models (cap reached)."
+        ))
+
+    # Execute New HTTP Checks
+    urls_to_fetch = list(set(job['url'] for job in verification_jobs if not job['cached']))
+    
+    if urls_to_fetch:
+        def check_url_status(u):
+            try:
+                # Short timeout, use HEAD to be lightweight
+                r = requests.head(u, timeout=2.0, allow_redirects=True)
+                return u, r.status_code, None
+            except Exception as e:
+                return u, None, str(e)
+        
+        fresh_results = {}
+        with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_CONCURRENCY) as executor:
+             future_to_url = {executor.submit(check_url_status, u): u for u in urls_to_fetch}
+             for future in concurrent.futures.as_completed(future_to_url):
+                 u, code, err = future.result()
+                 fresh_results[u] = (code, err)
+                 
+    # Update Cache and Generate Issues
+    now = time.time()
+    
+    for job in verification_jobs:
+        url = job['url']
+        code = None
+        err = None
+        
+        if job['cached']:
+            code = job['entry']['code']
+            err = job['entry']['error']
+        else:
+             if url in fresh_results:
+                 code, err = fresh_results[url]
+                 # Update Cache
+                 HTTP_CACHE[url] = {'time': now, 'code': code, 'error': err}
+        
+        if err:
+             issues.append(ExportValidationIssue(
+                 severity="warning",
+                 model_id=job['model'].id,
+                 model_name=job['model'].name,
+                 message=f"Image URL inaccessible ({err}): {url}"
+                 ))
+        elif code and code >= 400:
+             issues.append(ExportValidationIssue(
+                 severity="warning", 
+                 model_id=job['model'].id, 
+                 model_name=job['model'].name, 
+                 message=f"Image URL inaccessible (HTTP {code}): {url}"
+            ))
+
+    # Determine Status
+    error_count = sum(1 for i in issues if i.severity == "error")
+    warning_count = sum(1 for i in issues if i.severity == "warning")
+    
+    status = "valid"
+    if error_count > 0:
+        status = "errors"
+    elif warning_count > 0:
+        status = "warnings"
+        
+    return ExportValidationResponse(
+        status=status,
+        summary_counts={
+            "total_models": total_models,
+            "issues": len(issues),
+            "errors": error_count,
+            "warnings": warning_count
+        },
+        items=issues
+    )
+
 @router.post("/preview", response_model=ExportPreviewResponse)
 def generate_export_preview(request: ExportPreviewRequest, db: Session = Depends(get_db)):
     recalc_performed, recalc_count = ensure_models_fresh_for_export(request, db)
@@ -198,6 +455,22 @@ def generate_export_preview(request: ExportPreviewRequest, db: Session = Depends
             "key_values": key_values
         })
 
+    # Field Source Audit (for first model)
+    field_sources = []
+    if models:
+        audit_model = models[0]
+        audit_series = db.query(Series).filter(Series.id == audit_model.series_id).first()
+        audit_mfr = db.query(Manufacturer).filter(Manufacturer.id == audit_series.manufacturer_id).first() if audit_series else None
+        audit_equip = db.query(EquipmentType).filter(EquipmentType.id == audit_model.equipment_type_id).first()
+        
+        link = db.query(EquipmentTypeProductType).filter(EquipmentTypeProductType.equipment_type_id == audit_model.equipment_type_id).first()
+        if link:
+            audit_fields = db.query(ProductTypeField).filter(ProductTypeField.product_type_id == link.product_type_id).all()
+            for f in audit_fields:
+               src = get_field_source_audit(f, audit_model, audit_series, audit_mfr, audit_equip, is_image_url_field(f.field_name))
+               if src:
+                   field_sources.append(src)
+
     audit = {
         "row_mode": "BASE",
         "pricing": {
@@ -206,7 +479,8 @@ def generate_export_preview(request: ExportPreviewRequest, db: Session = Depends
         "sku": {
             "matched_sku_fields": matched_sku_fields
         },
-        "row_samples": row_samples
+        "row_samples": row_samples,
+        "field_sources": field_sources
     }
     
     rows = []
@@ -494,9 +768,15 @@ def substitute_placeholders(value: str, model: Model, series, manufacturer, equi
     equip_type = equipment_type.name if equipment_type else ''
     
     if is_image_url:
-        mfr_name_norm = normalize_for_url(mfr_name)
-        series_name_norm = normalize_for_url(series_name)
-        model_name_norm = normalize_for_url(model_name)
+        def img_norm(s):
+            if not s: return ''
+            # Replace whitespace sequences with underscore, keep other chars including punctuation
+            return re.sub(r'\s+', '_', s.strip())
+
+        mfr_name_norm = img_norm(mfr_name)
+        series_name_norm = img_norm(series_name)
+        model_name_norm = img_norm(model_name)
+        equip_type_norm = img_norm(equip_type)
         
         result = result.replace('[Manufacturer_Name]', mfr_name_norm)
         result = result.replace('[Series_Name]', series_name_norm)
@@ -504,6 +784,9 @@ def substitute_placeholders(value: str, model: Model, series, manufacturer, equi
         result = result.replace('[MANUFACTURER_NAME]', mfr_name_norm)
         result = result.replace('[SERIES_NAME]', series_name_norm)
         result = result.replace('[MODEL_NAME]', model_name_norm)
+        
+        result = result.replace('[EQUIPMENT_TYPE]', equip_type_norm)
+        result = result.replace('[Equipment_Type]', equip_type_norm)
     else:
         result = result.replace('[MANUFACTURER_NAME]', mfr_name)
         result = result.replace('[SERIES_NAME]', series_name)
@@ -512,8 +795,8 @@ def substitute_placeholders(value: str, model: Model, series, manufacturer, equi
         result = result.replace('[Series_Name]', series_name)
         result = result.replace('[Model_Name]', model_name)
     
-    result = result.replace('[EQUIPMENT_TYPE]', equip_type)
-    result = result.replace('[Equipment_Type]', equip_type)
+        result = result.replace('[EQUIPMENT_TYPE]', equip_type)
+        result = result.replace('[Equipment_Type]', equip_type)
     
     return result
 
@@ -571,11 +854,11 @@ def get_field_value(field: ProductTypeField, model: Model, series, manufacturer,
     
     # Only include custom_value or selected_value if field is marked as required
     if field.required:
+        if field.selected_value:
+            return substitute_placeholders(field.selected_value, model, series, manufacturer, equipment_type, is_image_url=is_image_field)
+            
         if field.custom_value:
             return substitute_placeholders(field.custom_value, model, series, manufacturer, equipment_type, is_image_url=is_image_field)
-        
-        if field.selected_value:
-            return field.selected_value
         
         # Auto-generate values for common fields only if required
         if 'item_name' in field_name_lower or 'product_name' in field_name_lower or 'title' in field_name_lower:

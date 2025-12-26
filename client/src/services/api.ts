@@ -109,6 +109,12 @@ export const modelsApi = {
 
   getPricingDiff: (id: number, marketplace: string, variant_key: string) =>
     api.get<PricingDiffResponse>(`/models/${id}/pricing/diff`, { params: { marketplace, variant_key } }).then(r => r.data),
+
+  recalculateBaselines: (data: { all?: boolean; manufacturer_id?: number; series_id?: number; model_ids?: number[]; only_if_stale?: boolean }) => api.post('/pricing/recalculate', data).then(r => r.data),
+
+  verifySnapshotStatus: (modelIds: number[]) => api.post<{ missing_snapshots: Record<number, string[]>; complete: boolean }>('/pricing/snapshots/status', { model_ids: modelIds }).then(r => r.data),
+
+  recalculateBulk: (data: { scope: 'manufacturer' | 'series' | 'models'; manufacturer_id?: number; series_id?: number; model_ids?: number[]; marketplaces?: string[]; dry_run?: boolean }) => api.post('/pricing/recalculate/bulk', data).then(r => r.data),
 }
 
 export const materialsApi = {
@@ -190,6 +196,7 @@ export const pricingApi = {
     api.post<PricingRecalculateBulkResponse>('/pricing/recalculate/bulk', data).then(r => r.data),
   recalculateBaselines: (data: RecalcRequest) =>
     api.post<RecalcResponse>('/pricing/recalculate', data).then(r => r.data),
+  verifySnapshotStatus: (modelIds: number[]) => api.post<{ missing_snapshots: Record<number, string[]>; complete: boolean }>('/pricing/snapshots/status', { model_ids: modelIds }).then(r => r.data),
 }
 
 export interface EquipmentTypeProductTypeLink {
@@ -270,6 +277,10 @@ export const settingsApi = {
 
   listProfits: () => api.get<VariantProfitSetting[]>('/settings/profits').then(r => r.data),
   updateProfit: (data: VariantProfitSetting) => api.put<VariantProfitSetting>('/settings/profits', data).then(r => r.data),
+
+  // Export Settings
+  getExport: () => api.get<{ id: number; default_save_path_template?: string }>('/settings/export').then(r => r.data),
+  updateExport: (data: { default_save_path_template?: string }) => api.put<{ id: number; default_save_path_template?: string }>('/settings/export', data).then(r => r.data),
 }
 
 export interface ExportRowData {
@@ -284,7 +295,29 @@ export interface ExportPreviewResponse {
   template_code: string
 }
 
+
+export interface ExportValidationIssue {
+  severity: 'error' | 'warning'
+  model_id?: number
+  model_name?: string
+  message: string
+}
+
+export interface ExportValidationResponse {
+  status: 'valid' | 'warnings' | 'errors'
+  summary_counts: {
+    total_models: number
+    issues: number
+    errors?: number
+    warnings?: number
+  }
+  items: ExportValidationIssue[]
+}
+
 export const exportApi = {
+  validateExport: (modelIds: number[], listingType: 'individual' | 'parent_child' = 'individual') =>
+    api.post<ExportValidationResponse>('/export/validate', { model_ids: modelIds, listing_type: listingType }).then(r => r.data),
+
   generatePreview: (modelIds: number[], listingType: 'individual' | 'parent_child' = 'individual') =>
     api.post<ExportPreviewResponse>('/export/preview', { model_ids: modelIds, listing_type: listingType }).then(r => r.data),
 
@@ -294,7 +327,12 @@ export const exportApi = {
   },
 
   downloadXlsm: async (modelIds: number[], listingType: 'individual' | 'parent_child' = 'individual') => {
+    console.log("[EXPORT][XLSM] download fn: entered");
+    console.trace("[EXPORT][XLSM] download fn stack");
     const response = await api.post('/export/download/xlsm', { model_ids: modelIds, listing_type: listingType }, { responseType: 'blob' })
+    if (response.status !== 200) {
+      throw new Error(`Export failed with status ${response.status}`);
+    }
     return response
   },
 

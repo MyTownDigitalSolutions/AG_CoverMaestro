@@ -16,7 +16,10 @@ from app.services.pricing_service import PricingService
 from app.services.pricing_calculator import PricingCalculator, PricingConfigError
 from app.models.core import Model, Series, ModelPricingSnapshot, ShippingDefaultSetting
 from pydantic import BaseModel
-from typing import Optional, List
+from typing import Optional, List, Dict
+import logging
+
+logger = logging.getLogger(__name__)
 
 # New Schemas for Targeted Recalc
 class PricingRecalculateRequest(BaseModel):
@@ -30,6 +33,14 @@ class PricingRecalculateResponse(BaseModel):
     evaluated_models: int
     recalculated_models: int
     skipped_not_stale: int
+
+class PricingSnapshotStatusRequest(BaseModel):
+    model_ids: List[int]
+    marketplace: str = "amazon"
+
+class PricingSnapshotStatusResponse(BaseModel):
+    missing_snapshots: Dict[int, List[str]]
+    complete: bool
 
 router = APIRouter(prefix="/pricing", tags=["pricing"])
 
@@ -150,6 +161,37 @@ def recalculate_targeted(data: PricingRecalculateRequest, db: Session = Depends(
         evaluated_models=len(target_ids),
         recalculated_models=recalculated_count,
         skipped_not_stale=len(target_ids) - len(ids_to_process)
+    )
+
+@router.post("/snapshots/status", response_model=PricingSnapshotStatusResponse)
+def check_snapshot_status(data: PricingSnapshotStatusRequest, db: Session = Depends(get_db)):
+    logger.info("[SNAPSHOTS-STATUS] Checking %s models for marketplace %s", len(data.model_ids), data.marketplace)
+    missing = {}
+    required_variants = {
+        "choice_no_padding", "choice_padded",
+        "premium_no_padding", "premium_padded"
+    }
+    
+    snapshots = db.query(ModelPricingSnapshot.model_id, ModelPricingSnapshot.variant_key).filter(
+        ModelPricingSnapshot.model_id.in_(data.model_ids),
+        ModelPricingSnapshot.marketplace == data.marketplace
+    ).all()
+    
+    found_map = {}
+    for mid, vkey in snapshots:
+        if mid not in found_map:
+            found_map[mid] = set()
+        found_map[mid].add(vkey)
+        
+    for mid in data.model_ids:
+        found = found_map.get(mid, set())
+        missing_variants = required_variants - found
+        if missing_variants:
+            missing[mid] = list(missing_variants)
+            
+    return PricingSnapshotStatusResponse(
+        missing_snapshots=missing,
+        complete=len(missing) == 0
     )
 
 @router.get("/options", response_model=List[PricingOptionResponse])

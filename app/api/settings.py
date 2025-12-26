@@ -546,3 +546,34 @@ def update_profit(data: VariantProfitSettingCreate, db: Session = Depends(get_db
     db.commit()
     db.refresh(profit)
     return profit
+
+
+# ------------------------------------------------------------------
+# 7. Export Settings
+# ------------------------------------------------------------------
+
+from app.models.core import ExportSetting
+from app.schemas.core import ExportSettingResponse, ExportSettingCreate
+
+@router.get("/export", response_model=ExportSettingResponse)
+def get_export_settings(db: Session = Depends(get_db)):
+    settings = db.query(ExportSetting).first()
+    if not settings:
+        settings = ExportSetting(default_save_path_template="")
+        db.add(settings)
+        db.commit()
+        db.refresh(settings)
+    return settings
+
+
+@router.put("/export", response_model=ExportSettingResponse)
+def update_export_settings(data: ExportSettingCreate, db: Session = Depends(get_db)):
+    settings = db.query(ExportSetting).first()
+    if not settings:
+        settings = ExportSetting()
+        db.add(settings)
+
+    settings.default_save_path_template = data.default_save_path_template
+    db.commit()
+    db.refresh(settings)
+    return settings

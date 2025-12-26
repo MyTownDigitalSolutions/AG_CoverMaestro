@@ -1,6 +1,8 @@
 from sqlalchemy.orm import Session
 from datetime import datetime
 from typing import Optional, List, Dict
+import logging
+
 from app.models.core import (
     Model, Material, MaterialRoleAssignment, MarketplaceShippingProfile,
     ShippingRateCard, ShippingRateTier, ShippingZoneRate, LaborSetting,
@@ -8,6 +10,8 @@ from app.models.core import (
     ShippingDefaultSetting
 )
 from app.models.enums import Marketplace
+
+logger = logging.getLogger(__name__)
 
 # Constants
 WASTE_PERCENTAGE = 0.05
@@ -79,6 +83,7 @@ class PricingCalculator:
         """
         Calculate and persist pricing snapshots for all 4 variants of a model for a specific marketplace.
         """
+        logger.info(f"recalc_baselines start model_id={model_id} marketplace={marketplace}")
         model = self.db.query(Model).filter(Model.id == model_id).first()
         if not model:
             raise ValueError(f"Model ID {model_id} not found")
@@ -123,11 +128,16 @@ class PricingCalculator:
         current_shipping_version = shipping_defaults.shipping_settings_version
         
         for variant_key in variants:
-            self._calculate_single_variant(
-                model, variant_key, marketplace, area_sq_in,
-                materials_map, labor_settings, fee_rate, shipping_profile,
-                current_shipping_version
-            )
+            logger.info(f"variant attempt key={variant_key} model_id={model_id}")
+            try:
+                self._calculate_single_variant(
+                    model, variant_key, marketplace, area_sq_in,
+                    materials_map, labor_settings, fee_rate, shipping_profile,
+                    current_shipping_version
+                )
+            except Exception as e:
+                logger.error(f"variant fail key={variant_key} model_id={model_id} error={str(e)}")
+                raise e
 
     def _calculate_single_variant(
         self, model: Model, variant_key: str, marketplace: str, area_sq_in: float,
@@ -343,6 +353,8 @@ class PricingCalculator:
             self.db.add(history_row)
             
         # self.db.flush() is called by caller or transaction commit
+        
+        logger.info(f"variant success key={variant_key} model_id={model_id}")
         
         self.db.flush() # Flush to detect errors but commit happens at top level
 

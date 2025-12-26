@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useMemo } from 'react'
 import {
   Box, Typography, Paper, Button, Grid, Checkbox,
   Table, TableBody, TableCell, TableContainer, TableHead, TableRow,
@@ -11,8 +11,17 @@ import PreviewIcon from '@mui/icons-material/Preview'
 import CloseIcon from '@mui/icons-material/Close'
 import DownloadIcon from '@mui/icons-material/Download'
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
+import VerifiedUserIcon from '@mui/icons-material/VerifiedUser'
+import GppBadIcon from '@mui/icons-material/GppBad'
 import RefreshIcon from '@mui/icons-material/Refresh'
-import { manufacturersApi, seriesApi, modelsApi, templatesApi, exportApi, pricingApi } from '../services/api'
+import FactCheckIcon from '@mui/icons-material/FactCheck'
+import WarningIcon from '@mui/icons-material/Warning'
+import ErrorIcon from '@mui/icons-material/Error'
+import CheckCircleIcon from '@mui/icons-material/CheckCircle'
+import FolderOpenIcon from '@mui/icons-material/FolderOpen'
+import ContentCopyIcon from '@mui/icons-material/ContentCopy'
+import { manufacturersApi, seriesApi, modelsApi, templatesApi, exportApi, pricingApi, settingsApi, type ExportValidationResponse, type ExportValidationIssue } from '../services/api'
+import { pickBaseDirectory, ensureSubdirectory, writeFileAtomic, loadHandle, clearPersistedHandle, getOrPickWritableBaseDirectory } from '../services/fileSystem'
 import type { Manufacturer, Series, Model, AmazonProductType } from '../types'
 
 interface AuditFieldAction {
@@ -43,6 +52,16 @@ interface ExportPreviewData {
   audit?: AuditData
 }
 
+interface WriteResult {
+  key: string // unique ID for retry targeting (e.g. "master", "series-123")
+  filename: string
+  status: 'success' | 'failed' | 'pending'
+  errorMessage?: string
+  warning?: string
+  verified?: boolean
+  verificationReason?: string
+}
+
 const rowStyles: Record<number, React.CSSProperties> = {
   0: { backgroundColor: '#1976d2', color: 'white', fontWeight: 'bold', fontSize: '11px' },
   1: { backgroundColor: '#2196f3', color: 'white', fontSize: '11px' },
@@ -52,12 +71,27 @@ const rowStyles: Record<number, React.CSSProperties> = {
   5: { backgroundColor: '#fff9c4', color: 'black', fontStyle: 'italic', fontSize: '10px' },
 }
 
+// explicit intent for XLSM downloads to avoid File System Access API due to Windows constraints
+const XLSM_DOWNLOAD_MODE = 'browser-only' as const
+
+const normalizeName = (s?: string | null) => (s ?? '').trim().toLowerCase()
+
+const compareByNameThenId = (a: { name?: string | null, id: number }, b: { name?: string | null, id: number }) => {
+  const nameA = normalizeName(a.name)
+  const nameB = normalizeName(b.name)
+  if (nameA < nameB) return -1
+  if (nameA > nameB) return 1
+  return a.id - b.id
+}
+
 export default function ExportPage() {
   const [manufacturers, setManufacturers] = useState<Manufacturer[]>([])
   const [allSeries, setAllSeries] = useState<Series[]>([])
   const [allModels, setAllModels] = useState<Model[]>([])
   const [templates, setTemplates] = useState<AmazonProductType[]>([])
   const [equipmentTypeLinks, setEquipmentTypeLinks] = useState<{ equipment_type_id: number, product_type_id: number }[]>([])
+  // Phase 7: Export Settings
+  const [exportSettings, setExportSettings] = useState<{ id: number; default_save_path_template?: string } | null>(null)
 
   const [selectedManufacturer, setSelectedManufacturer] = useState<number | ''>('')
   const [selectedSeries, setSelectedSeries] = useState<number | ''>('')
@@ -67,52 +101,205 @@ export default function ExportPage() {
   const [generating, setGenerating] = useState(false)
   const [recalculating, setRecalculating] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [missingSnapshots, setMissingSnapshots] = useState<Record<number, string[]> | null>(null)
 
   const [previewOpen, setPreviewOpen] = useState(false)
   const [previewData, setPreviewData] = useState<ExportPreviewData | null>(null)
   const [listingType, setListingType] = useState<'individual' | 'parent_child'>('individual')
   const [downloading, setDownloading] = useState<string | null>(null)
 
+  // Phase 9: File System Access
+  const [baseDir, setBaseDir] = useState<any | null>(null) // Using any to avoid strict type ref issues if libs mismatch, though typed in service
+  const [fsStatus, setFsStatus] = useState<string | null>(null)
+  const [writeResults, setWriteResults] = useState<WriteResult[]>([])
+  const [lastSavePlanSnapshot, setLastSavePlanSnapshot] = useState<any | null>(null) // Store plan for retry reliability
+
+
+
   // Phase 12: Export Confidence Verification
   const [lastDownloadSignature, setLastDownloadSignature] = useState<string | null>(null)
   const [lastDownloadTemplateCode, setLastDownloadTemplateCode] = useState<string | null>(null)
 
+  // Phase 13A: Validation
+  const [validating, setValidating] = useState(false)
+  const [validationReport, setValidationReport] = useState<ExportValidationResponse | null>(null)
+  const [postExportImageWarnings, setPostExportImageWarnings] = useState<ExportValidationIssue[]>([])
+
+  // Phase 14A: Validation Caching
+  const [lastValidationKey, setLastValidationKey] = useState<string | null>(null)
+  const [lastValidationAtMs, setLastValidationAtMs] = useState<number | null>(null)
+  const VALIDATION_TTL_MS = 60000
+
+  // Phase 14A: Load Instumentation
+  const [loadStep, setLoadStep] = useState<string>('Starting')
+  const [loadError, setLoadError] = useState<string | null>(null)
+
   useEffect(() => {
     loadData()
+    loadHandle().then(h => { if (h) setBaseDir(h) })
   }, [])
 
   const loadData = async () => {
+    // Watchdog
+    const watchdog = setTimeout(() => {
+      setLoading(prev => {
+        if (prev) {
+          console.error('[EXPORT] Initialization Timeout (15s)')
+          setLoadError('Initialization timed out (15s). Please check your connection.')
+          return false
+        }
+        return prev
+      })
+    }, 15000)
+
     try {
       setLoading(true)
-      const [mfrs, series, models, tmpls, links] = await Promise.all([
-        manufacturersApi.list(),
-        seriesApi.list(),
-        modelsApi.list(),
-        templatesApi.list(),
-        templatesApi.listEquipmentTypeLinks()
+      setLoadError(null)
+
+      console.log('[EXPORT] Starting Data Load')
+      setLoadStep('Fetching API Data...')
+
+      const [mfrs, series, models, tmpls, links, expSettings] = await Promise.all([
+        manufacturersApi.list().catch(e => { throw new Error(`Manufacturers: ${e.message}`) }),
+        seriesApi.list().catch(e => { throw new Error(`Series: ${e.message}`) }),
+        modelsApi.list().catch(e => { throw new Error(`Models: ${e.message}`) }),
+        templatesApi.list().catch(e => { throw new Error(`Templates: ${e.message}`) }),
+        templatesApi.listEquipmentTypeLinks().catch(e => { throw new Error(`Links: ${e.message}`) }),
+        settingsApi.getExport().catch(e => { throw new Error(`Settings: ${e.message}`) })
       ])
+
+      console.log('[EXPORT] Data Load Complete')
+      setLoadStep('Processing Data...')
+
       setManufacturers(mfrs)
       setAllSeries(series)
       setAllModels(models)
       setTemplates(tmpls)
       setEquipmentTypeLinks(links)
-    } catch (err) {
+      setExportSettings(expSettings)
+
+    } catch (err: any) {
+      console.error('[EXPORT] Data Load Failed', err)
+      setLoadError(err.message || 'Failed to initialize export data')
       setError('Failed to load data')
-      console.error(err)
     } finally {
+      clearTimeout(watchdog)
       setLoading(false)
     }
   }
+
+  // ... (previous filter logic)
+
+  // Compute Save Plan
+  const savePlan = useMemo(() => {
+    if (!selectedManufacturer || selectedModels.size === 0 || !exportSettings?.default_save_path_template) {
+      return null
+    }
+
+    const mfrName = manufacturers.find(m => m.id === selectedManufacturer)?.name || 'Unknown'
+    const marketplace = 'Amazon' // Static for now
+
+    // Determine involved series
+    const involvedSeriesIds = new Set<number>()
+    selectedModels.forEach(mid => {
+      const model = allModels.find(m => m.id === mid)
+      if (model) involvedSeriesIds.add(model.series_id)
+    })
+
+    const involvedSeries = allSeries.filter(s => involvedSeriesIds.has(s.id))
+    const isMultiSeries = involvedSeries.length > 1
+
+    const replacePlaceholders = (template: string, seriesName: string) => {
+      return template
+        .replace(/\[Manufacturer_Name\]/g, mfrName)
+        .replace(/\[Series_Name\]/g, seriesName)
+        .replace(/\[Marketplace\]/g, marketplace)
+        // Basic sanitization
+        .replace(/[<>"|?*]/g, '') // Kept : and / for path separation
+    }
+
+    const basePath = exportSettings.default_save_path_template
+
+    if (isMultiSeries) {
+      // Master Plan
+      // Note: We might not have a specific Series Name for the master file path if the template uses [Series_Name]
+      // The prompt says: master folder: Base\[Manufacturer]\[Marketplace]-[Manufacturer]-Multi-Series.xlsx
+      // But the path comes from the template. 
+      // If template is "C:\Exports\[Manufacturer]\[Series]", then master path is ambiguous.
+      // We will assume the User's template path ends in a folder structure, and we append filenames.
+
+      // Prompt Rule: 
+      // Master: Base\[Manufacturer]\[Marketplace]-[Manufacturer]-Multi-Series.xlsx
+      // We'll try to deduce "Base" from the template. 
+      // Actually the Template IS the path. 
+      // "Example value: ...\Listings\[Manufacturer_Name]\[Series_Name]"
+
+      // So for Single Series: Path = Template. File = [Marketplace]-[Manufacturer]-[Series].xlsx
+      // For Multi Series: 
+      //   Master Path = Template (but what is Series_Name?). 
+      //   Prompt says: "folder: Base\[Manufacturer]\[Series]"
+
+      // Let's interpret the template as the folder path.
+      // If template has [Series_Name], we can't resolve it for a multi-series master file easily unless we say "Multi-Series" is the series name.
+
+      const masterSeriesName = "Multi-Series"
+      const masterFolder = replacePlaceholders(basePath, masterSeriesName)
+      const masterFile = `${marketplace}-${mfrName.replace(/\s+/g, '_')}-Multi_Series.xlsx`
+
+      const perSeriesPlans = involvedSeries.map(s => {
+        const folder = replacePlaceholders(basePath, s.name)
+        const filename = `${marketplace}-${mfrName.replace(/\s+/g, '_')}-${s.name.replace(/\s+/g, '_')}.xlsx`
+        return { folder, filename, seriesId: s.id }
+      })
+
+      return {
+        type: 'multi',
+        master: { folder: masterFolder, filename: masterFile },
+        children: perSeriesPlans
+      }
+    } else {
+      // Single Series
+      const series = involvedSeries[0]
+      if (!series) return null
+
+      const folder = replacePlaceholders(basePath, series.name)
+      const filename = `${marketplace}-${mfrName.replace(/\s+/g, '_')}-${series.name.replace(/\s+/g, '_')}.xlsx`
+
+      return {
+        type: 'single',
+        plan: { folder, filename }
+      }
+    }
+  }, [selectedManufacturer, selectedModels, exportSettings, manufacturers, allSeries, allModels])
+
+  // ... (previous render logic)
+
+
 
   const filteredSeries = selectedManufacturer
     ? allSeries.filter(s => s.manufacturer_id === selectedManufacturer)
     : allSeries
 
-  const filteredModels = selectedSeries
-    ? allModels.filter(m => m.series_id === selectedSeries)
-    : selectedManufacturer
-      ? allModels.filter(m => filteredSeries.some(s => s.id === m.series_id))
-      : allModels
+  // Deterministic Sort for Display: Name A-Z
+  const sortedSeries = useMemo(() => {
+    return [...filteredSeries].sort(compareByNameThenId);
+  }, [filteredSeries]);
+
+  const filteredModels = useMemo(() => {
+    if (!selectedManufacturer) return []
+
+    let models = allModels.filter(m => {
+      const series = allSeries.find(s => s.id === m.series_id)
+      return series?.manufacturer_id === selectedManufacturer
+    })
+
+    if (selectedSeries) {
+      models = models.filter(m => m.series_id === selectedSeries)
+    }
+
+    // Deterministic Sort for Display: Name A-Z (case-insensitive), then ID
+    return [...models].sort(compareByNameThenId)
+  }, [selectedManufacturer, selectedSeries, allModels, allSeries])
 
   const getTemplateForEquipmentType = (equipmentTypeId: number): string | undefined => {
     const link = equipmentTypeLinks.find(l => l.equipment_type_id === equipmentTypeId)
@@ -159,7 +346,7 @@ export default function ExportPage() {
       const modelIds = Array.from(selectedModels)
       await pricingApi.recalculateBaselines({
         model_ids: modelIds,
-        only_if_stale: true
+        only_if_stale: false
       })
       alert('Recalculation complete for selected models.')
     } catch (err: any) {
@@ -167,6 +354,28 @@ export default function ExportPage() {
       console.error(err)
     } finally {
       setRecalculating(false)
+    }
+  }
+
+  const handleRecalcAndPreview = async () => {
+    if (selectedModels.size === 0) return
+
+    try {
+      setRecalculating(true)
+      setError(null)
+      const modelIds = Array.from(selectedModels)
+      await pricingApi.recalculateBaselines({
+        model_ids: modelIds,
+        only_if_stale: false
+      })
+
+      setRecalculating(false)
+      await handleGeneratePreview()
+
+    } catch (err: any) {
+      setRecalculating(false)
+      setError(err.response?.data?.detail || 'Recalculation failed')
+      console.error(err)
     }
   }
 
@@ -179,11 +388,21 @@ export default function ExportPage() {
     try {
       setGenerating(true)
       setError(null)
+      setMissingSnapshots(null)
+
+      const modelIds = Array.from(selectedModels)
+
+      // Preflight Check
+      const status = await pricingApi.verifySnapshotStatus(modelIds)
+      if (!status.complete) {
+        setMissingSnapshots(status.missing_snapshots)
+        return
+      }
+
       // Clear previous download verification state
       setLastDownloadSignature(null)
       setLastDownloadTemplateCode(null)
 
-      const modelIds = Array.from(selectedModels)
       const preview = await exportApi.generatePreview(modelIds, listingType)
       setPreviewData(preview)
       setPreviewOpen(true)
@@ -195,65 +414,563 @@ export default function ExportPage() {
     }
   }
 
-  const handleDownload = async (format: 'xlsx' | 'xlsm' | 'csv') => {
-    if (selectedModels.size === 0) return
+  const getFreshValidationReport = async (): Promise<ExportValidationResponse> => {
+    // Construct deterministc key for current scope
+    const ids = Array.from(selectedModels).sort((a, b) => a - b).join(',')
+    const currentKey = `${selectedManufacturer}-${selectedSeries}-${listingType}-${ids}`
+    const now = Date.now()
 
+    // Check Cache
+    if (validationReport && lastValidationKey === currentKey && lastValidationAtMs && (now - lastValidationAtMs < VALIDATION_TTL_MS)) {
+      return validationReport
+    }
+
+    // Cache Miss - Fetch Fresh
+    const report = await exportApi.validateExport(Array.from(selectedModels), listingType)
+    setValidationReport(report)
+    setLastValidationKey(currentKey)
+    setLastValidationAtMs(now)
+    return report
+  }
+
+  const handleValidateExport = async () => {
+    try {
+      setValidating(true)
+      // Do not clear validationReport immediately to avoid flicker if cached
+      await getFreshValidationReport()
+    } catch (err) {
+      console.error(err)
+      setError("Failed to run validation check")
+      setValidationReport(null) // Clear if failed
+    } finally {
+      setValidating(false)
+    }
+  }
+
+  const handleFileSystemDownload = async (format: 'xlsx' | 'xlsm' | 'csv', retryMode = false) => {
+    console.log(`[EXPORT][${format.toUpperCase()}] click: start`);
+    console.trace(`[EXPORT][${format.toUpperCase()}] click stack`);
     try {
       setDownloading(format)
-      const modelIds = Array.from(selectedModels)
-      let response
 
-      switch (format) {
-        case 'xlsx':
-          response = await exportApi.downloadXlsx(modelIds, listingType)
-          break
-        case 'xlsm':
-          response = await exportApi.downloadXlsm(modelIds, listingType)
-          break
-        case 'csv':
-          response = await exportApi.downloadCsv(modelIds, listingType)
-          break
-      }
+      // Explicit XLSM Branch: Bypass File System API (Fix for Windows Env)
+      if (format === 'xlsm') {
+        console.log("[EXPORT][XLSM] bypassing file system picker");
+        setError(null);
+        setFsStatus("Generating XLSM...");
+        const modelIds = Array.from(selectedModels);
 
-      const contentDisposition = response.headers['content-disposition']
+        try {
+          // Direct Browser Download
+          const response = await exportApi.downloadXlsm(modelIds, listingType);
 
-      const sig = response.headers['x-export-signature']
-      const tCode = response.headers['x-export-template-code']
-      if (sig) setLastDownloadSignature(sig)
-      if (tCode) setLastDownloadTemplateCode(tCode)
+          // Extract filename from headers or default
+          let filename = "Amazon_Export.xlsm";
+          const disposition = response.headers['content-disposition'];
+          if (disposition && disposition.indexOf('attachment') !== -1) {
+            const filenameRegex = /filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/;
+            const matches = filenameRegex.exec(disposition);
+            if (matches != null && matches[1]) {
+              filename = matches[1].replace(/['"]/g, '');
+            }
+          } else {
+            // Fallback naming
+            const mfrName = manufacturers.find(m => m.id === selectedManufacturer)?.name || 'Export';
+            filename = `Amazon-${mfrName.replace(/\s+/g, '_')}.xlsm`;
+          }
 
-      let filename = `Amazon_export.${format}`
-      if (contentDisposition) {
-        const match = contentDisposition.match(/filename=([^;]+)/)
-        if (match) {
-          filename = match[1].replace(/"/g, '')
+          // Updates for verification stats
+          const sig = response.headers['x-export-signature'];
+          const tCode = response.headers['x-export-template-code'];
+          if (sig) setLastDownloadSignature(sig);
+          if (tCode) setLastDownloadTemplateCode(tCode);
+
+          // Trigger Download
+          const blob = new Blob([response.data], { type: 'application/vnd.ms-excel.sheet.macroEnabled.12' });
+
+          // Safety: If blob is JSON, it means backend errored despite 200 (or axios logic mishandled)
+          if (response.headers['content-type']?.includes('application/json')) {
+            const text = await response.data.text();
+            throw new Error(`Server returned JSON instead of file: ${text.substring(0, 100)}`);
+          }
+
+          if (!filename.toLowerCase().endsWith('.xlsm')) {
+            filename += '.xlsm';
+          }
+
+          const url = window.URL.createObjectURL(blob);
+          const link = document.createElement('a');
+          link.href = url;
+          link.setAttribute('download', filename);
+          document.body.appendChild(link);
+          link.click();
+
+          // Cleanup
+          setTimeout(() => {
+            link.parentNode?.removeChild(link);
+            window.URL.revokeObjectURL(url);
+          }, 100);
+
+          setFsStatus("Download started.");
+          setTimeout(() => setFsStatus(null), 3000);
+
+        } catch (e: any) {
+          console.error("[EXPORT][XLSM] download failed", e);
+          setError("Download failed: " + (e.message || "Unknown error"));
+        } finally {
+          setDownloading(null);
         }
+        return;
       }
 
-      const blob = new Blob([response.data])
-      const url = window.URL.createObjectURL(blob)
-      const link = document.createElement('a')
-      link.href = url
-      link.download = filename
-      document.body.appendChild(link)
-      link.click()
-      document.body.removeChild(link)
-      window.URL.revokeObjectURL(url)
+      // Explicit XLSX Branch: Browser Download
+      if (format === 'xlsx') {
+        console.log("[EXPORT][XLSX] bypassing file system picker");
+        setError(null);
+        setFsStatus("Generating XLSX...");
+        const modelIds = Array.from(selectedModels);
+
+        try {
+          const response = await exportApi.downloadXlsx(modelIds, listingType);
+
+          let filename = "Amazon_Export.xlsx";
+          const disposition = response.headers['content-disposition'];
+          if (disposition && disposition.indexOf('attachment') !== -1) {
+            const filenameRegex = /filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/;
+            const matches = filenameRegex.exec(disposition);
+            if (matches != null && matches[1]) {
+              filename = matches[1].replace(/['"]/g, '');
+            }
+          } else {
+            const mfrName = manufacturers.find(m => m.id === selectedManufacturer)?.name || 'Export';
+            filename = `Amazon-${mfrName.replace(/\s+/g, '_')}.xlsx`;
+          }
+
+          const sig = response.headers['x-export-signature'];
+          const tCode = response.headers['x-export-template-code'];
+          if (sig) setLastDownloadSignature(sig);
+          if (tCode) setLastDownloadTemplateCode(tCode);
+
+          // XLSX Blob Config
+          const blob = new Blob([response.data], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+
+          if (response.headers['content-type']?.includes('application/json')) {
+            const text = await response.data.text();
+            throw new Error(`Server returned JSON instead of file: ${text.substring(0, 100)}`);
+          }
+
+          if (!filename.toLowerCase().endsWith('.xlsx')) {
+            filename += '.xlsx';
+          }
+
+          const url = window.URL.createObjectURL(blob);
+          const link = document.createElement('a');
+          link.href = url;
+          link.setAttribute('download', filename);
+          document.body.appendChild(link);
+          link.click();
+
+          setTimeout(() => {
+            link.parentNode?.removeChild(link);
+            window.URL.revokeObjectURL(url);
+          }, 100);
+
+          setFsStatus("Download started.");
+          setTimeout(() => setFsStatus(null), 3000);
+
+        } catch (e: any) {
+          console.error("[EXPORT][XLSX] download failed", e);
+          setError("Download failed: " + (e.message || "Unknown error"));
+        } finally {
+          setDownloading(null);
+        }
+        return;
+      }
+
+      // Explicit CSV Branch: Browser Download
+      if (format === 'csv') {
+        console.log("[EXPORT][CSV] bypassing file system picker");
+        setError(null);
+        setFsStatus("Generating CSV...");
+        const modelIds = Array.from(selectedModels);
+
+        try {
+          const response = await exportApi.downloadCsv(modelIds, listingType);
+
+          let filename = "Amazon_Export.csv";
+          const disposition = response.headers['content-disposition'];
+          if (disposition && disposition.indexOf('attachment') !== -1) {
+            const filenameRegex = /filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/;
+            const matches = filenameRegex.exec(disposition);
+            if (matches != null && matches[1]) {
+              filename = matches[1].replace(/['"]/g, '');
+            }
+          } else {
+            const mfrName = manufacturers.find(m => m.id === selectedManufacturer)?.name || 'Export';
+            filename = `Amazon-${mfrName.replace(/\s+/g, '_')}.csv`;
+          }
+
+          const sig = response.headers['x-export-signature'];
+          const tCode = response.headers['x-export-template-code'];
+          if (sig) setLastDownloadSignature(sig);
+          if (tCode) setLastDownloadTemplateCode(tCode);
+
+          // CSV Blob Config
+          const blob = new Blob([response.data], { type: 'text/csv;charset=utf-8;' });
+
+          if (response.headers['content-type']?.includes('application/json')) {
+            const text = await response.data.text();
+            throw new Error(`Server returned JSON instead of file: ${text.substring(0, 100)}`);
+          }
+
+          if (!filename.toLowerCase().endsWith('.csv')) {
+            filename += '.csv';
+          }
+
+          const url = window.URL.createObjectURL(blob);
+          const link = document.createElement('a');
+          link.href = url;
+          link.setAttribute('download', filename);
+          document.body.appendChild(link);
+          link.click();
+
+          setTimeout(() => {
+            link.parentNode?.removeChild(link);
+            window.URL.revokeObjectURL(url);
+          }, 100);
+
+          setFsStatus("Download started.");
+          setTimeout(() => setFsStatus(null), 3000);
+
+        } catch (e: any) {
+          console.error("[EXPORT][CSV] download failed", e);
+          setError("Download failed: " + (e.message || "Unknown error"));
+        } finally {
+          setDownloading(null);
+        }
+        return;
+      }
+
+      // REGRESSION GUARD: XLSM/XLSX/CSV must NEVER reach this point.
+      // If the above "return" is bypassed, we must fail loudly rather than trigger the Folder Picker.
+      if (format === 'xlsm' || format === 'xlsx' || format === 'csv') {
+        throw new Error(`[EXPORT][${format.toUpperCase()}] Regression detected: File System API invoked for browser download`);
+      }
+
+      setError(null)
+      setFsStatus(retryMode ? "Retrying failed files..." : "Checking permissions...")
+      if (!retryMode) {
+        setWriteResults([])
+        setLastSavePlanSnapshot(savePlan) // Snapshot key for retry
+        setPostExportImageWarnings([]) // Clear previous run warnings
+      }
+
+      // specific reference to plan to use
+      const activePlan = retryMode ? (lastSavePlanSnapshot || savePlan) : savePlan
+
+      // Track local results to update state at end (or incrementally if we wanted)
+      const currentResults: WriteResult[] = retryMode ? [...writeResults] : []
+
+      let debugCurrentFile = "initialization"
+
+      try {
+        let runValidationIssues: ExportValidationIssue[] = []
+        // 0. Validation Check (Silent Run during export to ensure we catch image issues)
+        // Only run if we don't have a fresh report or if we want to be sure.
+        // Given the requirement to capture "validation report used", let's re-run or use existing?
+        // Re-running ensures we catch transient HTTP failures.
+        setFsStatus("Validating...")
+        setFsStatus("Validating...")
+        try {
+          const freshReport = await getFreshValidationReport()
+          // Filter for image failure warnings
+          // Look for message containing "Image URL inaccessible" or "Unresolved placeholder"
+          runValidationIssues = freshReport.items.filter(i =>
+            i.severity === 'warning' &&
+            (i.message.includes("Image URL inaccessible") || i.message.includes("Unresolved placeholder"))
+          )
+        } catch (e) {
+          console.warn("Silent validation failed", e)
+          // Don't block export on validation crash
+        }
+
+        setFsStatus("Writing files...");
+
+        // 1. Ensure Base Folder (load, verify, or pick)
+        let dirHandle
+        try {
+          dirHandle = await getOrPickWritableBaseDirectory(baseDir)
+          setBaseDir(dirHandle) // Update state if it changed or verified
+        } catch (e: any) {
+          // If it's an abort error, just stop silently or show "Cancelled"
+          if (e.name === 'AbortError' || e.message?.includes('aborted')) {
+            console.log("[EXPORT][FS] picker cancelled");
+            setDownloading(null)
+            setFsStatus(null)
+            return
+          }
+          throw e // Propagate real errors
+        }
+
+        const modelIds = Array.from(selectedModels)
+
+        // Helper to fix extension
+        const getExtension = (fmt: string) => fmt === 'xlsx' ? 'xlsx' : fmt === 'xlsm' ? 'xlsm' : 'csv'
+        const ext = getExtension(format)
+        const fixExt = (name: string) => name.replace(/\.xlsx$/i, `.${ext}`)
+
+        // Helper for verification
+        const verifyBlob = async (blob: Blob, headers: any, expectedTemplateCode?: string): Promise<{ verified: boolean, reason?: string }> => {
+          try {
+            const sigHeader = headers['x-export-signature']
+            const tmplHeader = headers['x-export-template-code']
+
+            if (!sigHeader) return { verified: false, reason: "Missing signature header" }
+
+            const ab = await blob.arrayBuffer()
+            const hashBuffer = await crypto.subtle.digest('SHA-256', ab)
+            const hashArray = Array.from(new Uint8Array(hashBuffer))
+            const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('')
+
+            // Header might be hex or base64. Python usually sends hex if we set it up that way, 
+            // but standard is often hex for simple sigs. Let's assume hex first as per our backend logic.
+            // If backend sends base64, we'd need to convert. 
+            // The prompt says "support hex-64 and base64/base64url formats".
+
+            let sigHex = sigHeader.toLowerCase()
+            // Simple auto-detect: if it has non-hex chars or ends with =, likely base64. 
+            // However, easiest is to check length. SHA256 hex is 64 chars. Base64 is 44 chars.
+            if (sigHeader.length !== 64 && /^[a-zA-Z0-9+/=_-]+$/.test(sigHeader)) {
+              // Decode base64 to hex
+              const binary = atob(sigHeader.replace(/-/g, '+').replace(/_/g, '/'))
+              const bytes = new Uint8Array(binary.length)
+              for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
+              sigHex = Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('')
+            }
+
+            if (hashHex !== sigHex) {
+              return { verified: false, reason: "Hash mismatch (corrupt download)" }
+            }
+
+            if (expectedTemplateCode && tmplHeader && expectedTemplateCode !== tmplHeader) {
+              return { verified: false, reason: `Template mismatch (Server used ${tmplHeader}, expected ${expectedTemplateCode})` }
+            }
+
+            return { verified: true }
+          } catch (e: any) {
+            return { verified: false, reason: "Verification error: " + e.message }
+          }
+        }
+
+        setFsStatus("Writing files...");
+
+        // Helper to update result list
+        const updateResult = (key: string, filename: string, status: 'success' | 'failed', error?: string, warning?: string, verifyResult?: { verified: boolean, reason?: string }) => {
+          const idx = currentResults.findIndex(r => r.key === key)
+          const entry: WriteResult = {
+            key,
+            filename,
+            status,
+            errorMessage: error,
+            warning,
+            verified: verifyResult?.verified,
+            verificationReason: verifyResult?.reason
+          }
+
+          if (idx >= 0) {
+            currentResults[idx] = entry
+          } else {
+            currentResults.push(entry)
+          }
+          setWriteResults([...currentResults])
+        }
+
+        // Helper to check if we should process this key (for retry logic)
+        const shouldProcess = (key: string) => {
+          if (!retryMode) return true
+          const existing = writeResults.find(r => r.key === key)
+          return existing?.status === 'failed'
+        }
+
+        if (activePlan?.type === 'multi') {
+          // Master
+          const masterKey = 'master'
+          if (shouldProcess(masterKey)) {
+            setFsStatus("Processing Master File...")
+            try {
+              // Fetch Master Blob
+              let masterRes;
+              if (format === 'xlsx') masterRes = await exportApi.downloadXlsx(modelIds, listingType)
+              else if (format === 'xlsm') masterRes = await exportApi.downloadXlsm(modelIds, listingType)
+              else masterRes = await exportApi.downloadCsv(modelIds, listingType)
+
+              const sig = masterRes.headers['x-export-signature']
+              const tCode = masterRes.headers['x-export-template-code']
+              if (sig) setLastDownloadSignature(sig)
+              if (tCode) setLastDownloadTemplateCode(tCode)
+
+              const masterFolderParts = activePlan.master!.folder.split(/[\\/]/).filter((p: string) => p)
+              const masterDir = await ensureSubdirectory(dirHandle, masterFolderParts)
+
+              debugCurrentFile = "Master File (" + activePlan.master!.filename + ")"
+              const result = await writeFileAtomic(masterDir, fixExt(activePlan.master!.filename), new Blob([masterRes.data]))
+              if (result.warning) console.warn(result.warning)
+
+              // Verify
+              const ver = await verifyBlob(new Blob([masterRes.data]), masterRes.headers) // Pass blob again or reuse? Reuse ideally but blob is cheap pointer usually.
+
+              updateResult(masterKey, activePlan.master!.filename, 'success', undefined, result.warning, ver)
+            } catch (e: any) {
+              console.error("Master write failed", e)
+              updateResult(masterKey, activePlan.master!.filename, 'failed', e.message || 'Write failed')
+            }
+          }
+
+          // Children
+          let count = 0
+          for (const child of activePlan.children!) {
+            count++
+            const childKey = `series-${(child as any).seriesId}`
+
+            if (!shouldProcess(childKey)) continue
+
+            setFsStatus(`Writing Series ${count}/${activePlan.children!.length}: ${child.filename}...`)
+
+            const childSeriesId = (child as any).seriesId
+            if (!childSeriesId) continue
+
+            const childModels = modelIds.filter(mid => {
+              const m = allModels.find(am => am.id === mid)
+              return m?.series_id === childSeriesId
+            })
+
+            if (childModels.length === 0) continue
+
+            try {
+              let childRes;
+              if (format === 'xlsx') childRes = await exportApi.downloadXlsx(childModels, listingType)
+              else if (format === 'xlsm') childRes = await exportApi.downloadXlsm(childModels, listingType)
+              else childRes = await exportApi.downloadCsv(childModels, listingType)
+
+              const childFolderParts = child.folder.split(/[\\/]/).filter((p: string) => p)
+              const childDir = await ensureSubdirectory(dirHandle, childFolderParts)
+
+              debugCurrentFile = "Series File (" + child.filename + ")"
+              const result = await writeFileAtomic(childDir, fixExt(child.filename), new Blob([childRes.data]))
+              if (result.warning) console.warn(result.warning)
+
+              // Verify
+              const ver = await verifyBlob(new Blob([childRes.data]), childRes.headers)
+
+              updateResult(childKey, child.filename, 'success', undefined, result.warning, ver)
+            } catch (e: any) {
+              console.error(`Series ${childSeriesId} write failed`, e)
+              updateResult(childKey, child.filename, 'failed', e.message || 'Write failed')
+            }
+          }
+
+        } else if (activePlan?.type === 'single') {
+          const key = 'single'
+          if (shouldProcess(key)) {
+            setFsStatus("Writing file...")
+            try {
+              let res;
+              if (format === 'xlsx') res = await exportApi.downloadXlsx(modelIds, listingType)
+              else if (format === 'xlsm') res = await exportApi.downloadXlsm(modelIds, listingType)
+              else res = await exportApi.downloadCsv(modelIds, listingType)
+
+              const sig = res.headers['x-export-signature']
+              const tCode = res.headers['x-export-template-code']
+              if (sig) setLastDownloadSignature(sig)
+              if (tCode) setLastDownloadTemplateCode(tCode)
+
+              const folderParts = activePlan.plan!.folder.split(/[\\/]/).filter((p: string) => p)
+              const dir = await ensureSubdirectory(dirHandle, folderParts)
+
+              debugCurrentFile = activePlan.plan!.filename
+              const result = await writeFileAtomic(dir, fixExt(activePlan.plan!.filename), new Blob([res.data]))
+              if (result.warning) console.warn(result.warning)
+
+              // Verify
+              const ver = await verifyBlob(new Blob([res.data]), res.headers)
+
+              updateResult(key, activePlan.plan!.filename, 'success', undefined, result.warning, ver)
+            } catch (e: any) {
+              console.error("Single write failed", e)
+              updateResult(key, activePlan.plan!.filename, 'failed', e.message || 'Write failed')
+            }
+          }
+        } else {
+          throw new Error("No Save Plan available")
+        }
+
+        // Final Status Update
+        const failureCount = currentResults.filter(r => r.status === 'failed').length
+
+        // Trigger Image Warning Popup if any
+        if (runValidationIssues.length > 0) {
+          setPostExportImageWarnings(runValidationIssues)
+        }
+
+        if (failureCount > 0) {
+          setFsStatus(`Completed with ${failureCount} errors.`)
+        } else {
+          setFsStatus("All files saved successfully!")
+          setTimeout(() => setFsStatus(null), 5000)
+        }
+
+      } catch (err: any) {
+        console.error(err)
+        setError(`File System Error (at ${debugCurrentFile}): ` + (err.message || 'Unknown error'))
+        setFsStatus(null)
+      } finally {
+        setDownloading(null)
+      }
     } catch (err: any) {
-      setError(err.response?.data?.detail || `Failed to download ${format.toUpperCase()} file`)
-      console.error(err)
-    } finally {
-      setDownloading(null)
+      console.error(`[EXPORT][${format.toUpperCase()}] click: failed`, err);
+      if (err instanceof DOMException) {
+        console.error(`[EXPORT][${format.toUpperCase()}] DOMException`, { name: err.name, message: err.message });
+      }
+      throw err;
     }
   }
 
   const allSelected = filteredModels.length > 0 && filteredModels.every(m => selectedModels.has(m.id))
   const someSelected = filteredModels.some(m => selectedModels.has(m.id))
 
+  const sortedManufacturers = useMemo(() => {
+    return [...manufacturers].sort((a, b) => (a.name || '').localeCompare(b.name || '', undefined, { sensitivity: 'base' }))
+  }, [manufacturers])
+
+
+  if (loadError) {
+    return (
+      <Box sx={{ p: 4, display: 'flex', justifyContent: 'center' }}>
+        <Paper sx={{ p: 4, maxWidth: 600, textAlign: 'center', borderColor: 'error.main', border: 1 }}>
+          <ErrorIcon color="error" sx={{ fontSize: 60, mb: 2 }} />
+          <Typography variant="h5" color="error" gutterBottom>
+            Initialization Failed
+          </Typography>
+          <Typography variant="body1" sx={{ mb: 2 }}>
+            The export page could not load required data.
+          </Typography>
+          <Box sx={{ mb: 3, p: 2, bgcolor: 'grey.100', borderRadius: 1, textAlign: 'left' }}>
+            <Typography variant="caption" display="block"><strong>Step:</strong> {loadStep}</Typography>
+            <Typography variant="caption" display="block" color="error"><strong>Error:</strong> {loadError}</Typography>
+          </Box>
+          <Button variant="contained" onClick={() => window.location.reload()}>
+            Reload Page
+          </Button>
+        </Paper>
+      </Box>
+    )
+  }
+
   if (loading) {
     return (
-      <Box sx={{ display: 'flex', justifyContent: 'center', p: 4 }}>
+      <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 400, flexDirection: 'column', gap: 2 }}>
         <CircularProgress />
+        <Typography variant="body2" color="text.secondary">{loadStep}</Typography>
       </Box>
     )
   }
@@ -267,9 +984,183 @@ export default function ExportPage() {
         Select models to generate an Amazon export worksheet. Models are automatically matched with templates based on their equipment type.
       </Typography>
 
+
+      {/* Save Plan Display (disabled: downloads are browser-managed) */}
+      {false && savePlan && (
+        <Paper variant="outlined" sx={{ p: 2, mb: 3, bgcolor: '#f8f9fa' }}>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
+            <Typography variant="subtitle2" color="primary">
+              Settings: Proposed Save Plan
+            </Typography>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              {baseDir ? (
+                <>
+                  <Chip
+                    label={`Saving to: ${baseDir.name}`}
+                    icon={<FolderOpenIcon />}
+                    color="success"
+                    variant="outlined"
+                    onClick={() => pickBaseDirectory().then(h => setBaseDir(h))}
+                  />
+                  <Button
+                    size="small"
+                    variant="text"
+                    color="inherit"
+                    onClick={async () => {
+                      await clearPersistedHandle()
+                      setBaseDir(null)
+                    }}
+                  >
+                    Reset Saved Folder
+                  </Button>
+                </>
+              ) : (
+                <Button
+                  size="small"
+                  startIcon={<FolderOpenIcon />}
+                  onClick={() => pickBaseDirectory().then(h => setBaseDir(h))}
+                  variant="outlined"
+                >
+                  Choose Output Folder
+                </Button>
+              )}
+            </Box>
+          </Box>
+
+          {fsStatus && (
+            <Alert severity="info" sx={{ mb: 1 }}>{fsStatus}</Alert>
+          )}
+
+          {/* Write Summary */}
+          {writeResults.length > 0 && (
+            <Box sx={{ mt: 2, mb: 2, p: 2, bgcolor: '#fff', border: '1px solid #eee', borderRadius: 1 }}>
+              <Typography variant="subtitle2" gutterBottom sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span>Export Summary ({writeResults.filter(r => r.status === 'success').length}/{writeResults.length} successful)</span>
+                <Button
+                  size="small"
+                  onClick={() => {
+                    setWriteResults([])
+                    setLastSavePlanSnapshot(null)
+                    setFsStatus(null)
+                    setPostExportImageWarnings([])
+
+                    // Clear Validation Cache on explicit clear
+                    setLastValidationKey(null)
+                    setLastValidationAtMs(null)
+                    setValidationReport(null)
+                  }}
+                >
+                  Clear
+                </Button>
+              </Typography>
+
+              {/* UI: Success List + Verification */}
+              <Box sx={{ maxHeight: 200, overflowY: 'auto', mb: 2 }}>
+                {writeResults.filter(r => r.status === 'success').map(r => (
+                  <Box key={r.key} sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
+                    {r.verified ? (
+                      <VerifiedUserIcon color="success" fontSize="small" titleAccess="Verified: Signature Matches" />
+                    ) : (
+                      <GppBadIcon color="error" fontSize="small" titleAccess={r.verificationReason || "Verification Failed"} />
+                    )}
+                    <Typography variant="caption" sx={{ flexGrow: 1 }}>
+                      {r.filename}
+                    </Typography>
+                    {!r.verified && (
+                      <Typography variant="caption" color="error">
+                        {r.verificationReason}
+                      </Typography>
+                    )}
+                    {r.warning && (
+                      <Typography variant="caption" color="warning.main">
+                        (Cleanup Warning: {r.warning})
+                      </Typography>
+                    )}
+                  </Box>
+                ))}
+              </Box>
+
+
+              {writeResults.filter(r => r.status === 'failed').length > 0 && (
+                <Box>
+                  <Alert severity="error" sx={{ mb: 1 }}>
+                    {writeResults.filter(r => r.status === 'failed').length} files failed to save.
+                  </Alert>
+                  <Box sx={{ maxHeight: 150, overflowY: 'auto', mb: 1 }}>
+                    {writeResults.filter(r => r.status === 'failed').map(r => (
+                      <Typography key={r.key} variant="caption" color="error" display="block">
+                        • {r.filename}: {r.errorMessage}
+                      </Typography>
+                    ))}
+                  </Box>
+                  <Button
+                    size="small"
+                    variant="contained"
+                    color="error"
+                    onClick={() => {
+                      handleFileSystemDownload('xlsx', true)
+                    }}
+                  >
+                    Retry Failed Files
+                  </Button>
+                  <Typography variant="caption" sx={{ ml: 1, color: 'text.secondary' }}>
+                    (Retries using XLSX as default)
+                  </Typography>
+                </Box>
+              )}
+            </Box>
+          )}
+
+          {savePlan.type === 'single' ? (
+            <Box>
+              <Typography variant="body2"><strong>Folder:</strong> {savePlan.plan!.folder}</Typography>
+              <Typography variant="body2"><strong>File:</strong> {savePlan.plan!.filename}</Typography>
+            </Box>
+          ) : (
+            <Box>
+              <Typography variant="body2" sx={{ mb: 1 }}><strong>Master File:</strong></Typography>
+              <Box sx={{ pl: 2, mb: 2, borderLeft: '2px solid #ddd' }}>
+                <Typography variant="body2">Folder: {savePlan.master!.folder}</Typography>
+                <Typography variant="body2">File: {savePlan.master!.filename}</Typography>
+              </Box>
+
+              <Typography variant="body2" sx={{ mb: 1 }}><strong>Per-Series Files ({savePlan.children!.length}):</strong></Typography>
+              <Box sx={{ pl: 2, maxHeight: 100, overflowY: 'auto', borderLeft: '2px solid #ddd' }}>
+                {savePlan.children!.map((child, i) => (
+                  <Box key={i} sx={{ mb: 1 }}>
+                    <Typography variant="caption" display="block">Folder: {child.folder}</Typography>
+                    <Typography variant="caption" display="block">File: {child.filename}</Typography>
+                  </Box>
+                ))}
+              </Box>
+            </Box>
+          )}
+        </Paper>
+      )}
+
       {error && (
         <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError(null)}>
           {error}
+        </Alert>
+      )}
+
+      {missingSnapshots && (
+        <Alert severity="warning" sx={{ mb: 2 }} onClose={() => setMissingSnapshots(null)}>
+          <Typography variant="subtitle2">Missing Baseline Pricing Snapshots</Typography>
+          <Typography variant="body2">The following variants must be calculated before generating a preview:</Typography>
+          <Box sx={{ mt: 1, maxHeight: 200, overflow: 'auto' }}>
+            {Object.entries(missingSnapshots).map(([mid, variants]) => {
+              const model = allModels.find(m => m.id === Number(mid))
+              return (
+                <div key={mid}>
+                  <strong>{model?.name || `Model ${mid}`}</strong>: {variants.join(', ')}
+                </div>
+              )
+            })}
+          </Box>
+          <Button color="inherit" size="small" sx={{ mt: 1 }} onClick={handleRecalcAndPreview} disabled={recalculating}>
+            {recalculating ? 'Fixing...' : 'Run Recalculate Now'}
+          </Button>
         </Alert>
       )}
 
@@ -288,10 +1179,11 @@ export default function ExportPage() {
                   setSelectedManufacturer(e.target.value as number | '')
                   setSelectedSeries('')
                   setSelectedModels(new Set())
+                  setMissingSnapshots(null)
                 }}
               >
                 <MenuItem value="">All Manufacturers</MenuItem>
-                {manufacturers.map(m => (
+                {sortedManufacturers.map(m => (
                   <MenuItem key={m.id} value={m.id}>{m.name}</MenuItem>
                 ))}
               </Select>
@@ -304,13 +1196,23 @@ export default function ExportPage() {
                 value={selectedSeries}
                 label="Series"
                 onChange={(e) => {
-                  setSelectedSeries(e.target.value as number | '')
-                  setSelectedModels(new Set())
+                  const newSeriesId = e.target.value as number | ''
+                  setSelectedSeries(newSeriesId)
+                  setMissingSnapshots(null)
+
+                  // Auto-select ONLY when a specific series is chosen (Series-first workflow)
+                  if (newSeriesId) {
+                    const modelsInSeries = allModels.filter(m => m.series_id === newSeriesId)
+                    setSelectedModels(new Set(modelsInSeries.map(m => m.id)))
+                  } else {
+                    // Reset selection when series is cleared (Manufacturer-wide view)
+                    setSelectedModels(new Set())
+                  }
                 }}
                 disabled={!selectedManufacturer}
               >
                 <MenuItem value="">All Series</MenuItem>
-                {filteredSeries.map(s => (
+                {sortedSeries.map(s => (
                   <MenuItem key={s.id} value={s.id}>{s.name}</MenuItem>
                 ))}
               </Select>
@@ -339,9 +1241,60 @@ export default function ExportPage() {
               >
                 {generating ? 'Generating...' : 'Generate Preview'}
               </Button>
+              <Button
+                variant="outlined"
+                color="info"
+                size="small"
+                startIcon={<FactCheckIcon />}
+                onClick={handleValidateExport}
+                disabled={selectedModels.size === 0 || validating}
+              >
+                {validating ? 'Checking...' : 'Readiness Report'}
+              </Button>
             </Box>
           </Grid>
         </Grid>
+
+        {/* Validation Report UI */}
+        {validationReport && (
+          <Box sx={{ mt: 3, p: 2, border: '1px solid', borderColor: 'divider', borderRadius: 1, bgcolor: '#fafafa' }}>
+            <Typography variant="subtitle1" gutterBottom sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              Export Readiness Report
+              {validationReport.status === 'valid' && <Chip label="Ready" color="success" size="small" icon={<CheckCircleIcon />} />}
+              {validationReport.status === 'warnings' && <Chip label="Warnings" color="warning" size="small" icon={<WarningIcon />} />}
+              {validationReport.status === 'errors' && <Chip label="Not Ready" color="error" size="small" icon={<ErrorIcon />} />}
+            </Typography>
+
+            <Box sx={{ display: 'flex', gap: 3, mb: 2 }}>
+              <Typography variant="body2"><strong>Models Checked:</strong> {validationReport.summary_counts.total_models}</Typography>
+              <Typography variant="body2" color="error.main"><strong>Errors:</strong> {validationReport.summary_counts.errors || 0}</Typography>
+              <Typography variant="body2" color="warning.main"><strong>Warnings:</strong> {validationReport.summary_counts.warnings || 0}</Typography>
+            </Box>
+
+            {validationReport.status === 'errors' && (
+              <Alert severity="error" sx={{ mb: 2 }}>
+                Critical issues found. Export is disabled until these are resolved.
+              </Alert>
+            )}
+
+            {validationReport.items.length > 0 ? (
+              <Box sx={{ maxHeight: 200, overflowY: 'auto', bgcolor: 'white', border: '1px solid #eee', p: 1 }}>
+                {validationReport.items.map((item, idx) => (
+                  <Box key={idx} sx={{ display: 'flex', gap: 1, mb: 0.5, alignItems: 'flex-start' }}>
+                    {item.severity === 'error' ? <ErrorIcon color="error" fontSize="small" sx={{ mt: 0.3 }} /> : <WarningIcon color="warning" fontSize="small" sx={{ mt: 0.3 }} />}
+                    <Box>
+                      <Typography variant="body2" color={item.severity === 'error' ? 'error' : 'text.primary'}>
+                        {item.model_name ? <strong>{item.model_name}: </strong> : ''}{item.message}
+                      </Typography>
+                    </Box>
+                  </Box>
+                ))}
+              </Box>
+            ) : (
+              <Typography variant="body2" color="text.secondary">No issues found.</Typography>
+            )}
+          </Box>
+        )}
 
         <Box sx={{ mt: 3, pt: 2, borderTop: '1px solid #eee' }}>
           <Typography variant="subtitle2" gutterBottom>
@@ -373,6 +1326,16 @@ export default function ExportPage() {
       </Paper>
 
       <Paper sx={{ p: 2 }}>
+        <Box sx={{ px: 1, py: 1, borderBottom: '1px solid #f0f0f0', mb: 1 }}>
+          <Typography variant="body2" color="text.secondary" sx={{ fontStyle: 'italic' }}>
+            {!selectedManufacturer
+              ? "Select a manufacturer to view models."
+              : !selectedSeries
+                ? `Showing all models for ${manufacturers.find(m => m.id === selectedManufacturer)?.name || 'Manufacturer'} (all series)`
+                : `Showing models for ${manufacturers.find(m => m.id === selectedManufacturer)?.name || 'Manufacturer'} → ${allSeries.find(s => s.id === selectedSeries)?.name || 'Series'}`
+            }
+          </Typography>
+        </Box>
         <TableContainer sx={{ maxHeight: 500 }}>
           <Table stickyHeader size="small">
             <TableHead>
@@ -668,33 +1631,99 @@ export default function ExportPage() {
           <DialogActions sx={{ px: 3, py: 2, gap: 1 }}>
             <Button onClick={() => setPreviewOpen(false)}>Close</Button>
             <Box sx={{ flex: 1 }} />
-            <Button
-              variant="outlined"
-              startIcon={<DownloadIcon />}
-              onClick={() => handleDownload('csv')}
-              disabled={downloading !== null}
-            >
-              {downloading === 'csv' ? 'Downloading...' : 'CSV'}
-            </Button>
-            <Button
-              variant="outlined"
-              startIcon={<DownloadIcon />}
-              onClick={() => handleDownload('xlsm')}
-              disabled={downloading !== null}
-            >
-              {downloading === 'xlsm' ? 'Downloading...' : 'XLSM'}
-            </Button>
-            <Button
-              variant="contained"
-              startIcon={<DownloadIcon />}
-              onClick={() => handleDownload('xlsx')}
-              disabled={downloading !== null}
-            >
-              {downloading === 'xlsx' ? 'Downloading...' : 'Download XLSX'}
-            </Button>
+            {!validationReport || validationReport.status !== 'errors' ? (
+              <>
+                <Button
+                  variant="outlined"
+                  startIcon={<DownloadIcon />}
+                  onClick={() => handleFileSystemDownload('csv')}
+                  disabled={downloading !== null}
+                >
+                  {downloading === 'csv' ? 'Downloading...' : 'CSV'}
+                </Button>
+                <Button
+                  variant="outlined"
+                  startIcon={<DownloadIcon />}
+                  onClick={() => handleFileSystemDownload('xlsm')}
+                  disabled={downloading !== null}
+                >
+                  {downloading === 'xlsm' ? 'Downloading...' : 'XLSM'}
+                </Button>
+                <Button
+                  variant="contained"
+                  startIcon={<DownloadIcon />}
+                  onClick={() => handleFileSystemDownload('xlsx')}
+                  disabled={downloading !== null}
+                >
+                  {downloading === 'xlsx' ? 'Downloading...' : 'Download XLSX'}
+                </Button>
+              </>
+            ) : (
+              <Button disabled color="error" variant="contained">
+                Fix Export Errors to Download
+              </Button>
+            )}
           </DialogActions>
         </Dialog>
       )}
+
+      {/* Image Failure Warnings Popup */}
+      <Dialog
+        open={postExportImageWarnings.length > 0}
+        onClose={() => setPostExportImageWarnings([])}
+        maxWidth="md"
+        fullWidth
+      >
+        <DialogTitle sx={{ display: 'flex', alignItems: 'center', gap: 1, color: 'warning.main' }}>
+          <WarningIcon />
+          Export Completed with Image Warnings
+        </DialogTitle>
+        <DialogContent dividers>
+          <Alert severity="warning" sx={{ mb: 2 }}>
+            Some sampled image URLs were inaccessible or invalid. The export files were saved, but these images may be broken on Amazon.
+          </Alert>
+          <TableContainer component={Paper} variant="outlined" sx={{ maxHeight: 300 }}>
+            <Table size="small" stickyHeader>
+              <TableHead>
+                <TableRow>
+                  <TableCell>Model</TableCell>
+                  <TableCell>Issue</TableCell>
+                  <TableCell align="right">Action</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {postExportImageWarnings.map((issue, idx) => {
+                  // Extract URL if present in message "Image URL inaccessible (...): URL"
+                  const urlMatch = issue.message.match(/: (http.*)$/)
+                  const url = urlMatch ? urlMatch[1] : null
+                  return (
+                    <TableRow key={idx}>
+                      <TableCell>{issue.model_name || `ID ${issue.model_id}`}</TableCell>
+                      <TableCell sx={{ wordBreak: 'break-word', fontSize: '0.85rem' }}>
+                        {issue.message}
+                      </TableCell>
+                      <TableCell align="right">
+                        {url && (
+                          <Tooltip title="Copy URL">
+                            <IconButton size="small" onClick={() => navigator.clipboard.writeText(url)}>
+                              <ContentCopyIcon fontSize="small" />
+                            </IconButton>
+                          </Tooltip>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  )
+                })}
+              </TableBody>
+            </Table>
+          </TableContainer>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setPostExportImageWarnings([])} color="primary" variant="contained">
+            Acknowledge
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   )
 }

@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Container, Typography, Box, Tabs, Tab, Paper, Grid, TextField, Button } from '@mui/material';
@@ -5,6 +6,7 @@ import { settingsApi } from '../services/api';
 import { LaborSetting, MarketplaceFeeRate, VariantProfitSetting } from '../types';
 import { MaterialRoleSettings } from '../components/settings/MaterialRoleSettings';
 import { ShippingSettings } from '../components/settings/ShippingSettings';
+import { ExportSettings } from '../components/settings/ExportSettings';
 
 interface GeneralSettingsProps {
     labor: LaborSetting | null;
@@ -121,15 +123,12 @@ const GeneralSettings: React.FC<GeneralSettingsProps> = ({ labor, fees, profits,
     );
 };
 
-// Placeholder for other tabs (implementation in next steps if needed, or simplified here)
-// const MaterialRoleSettings = () => <Typography>Material Roles Management (Coming Soon)</Typography>;
-// const ShippingSettings = () => <Typography>Shipping Configuration (Coming Soon)</Typography>;
-
 // Tab Key Mapping
 const TAB_MAPPING: Record<string, number> = {
     'general': 0,
     'material-roles': 1,
-    'shipping': 2
+    'shipping': 2,
+    'export': 3
 };
 
 const SettingsPage = () => {
@@ -182,11 +181,13 @@ const SettingsPage = () => {
                     <Tab label="General (Labor/Fees/Profit)" />
                     <Tab label="Material Roles" />
                     <Tab label="Shipping Config" />
+                    <Tab label="Export Config" />
                 </Tabs>
 
                 {tabIndex === 0 && <GeneralSettings labor={labor} fees={fees} profits={profits} onRefresh={fetchData} />}
                 {tabIndex === 1 && <MaterialRoleSettings />}
                 {tabIndex === 2 && <ShippingSettings />}
+                {tabIndex === 3 && <ExportSettings />}
             </Paper>
         </Container>
     );

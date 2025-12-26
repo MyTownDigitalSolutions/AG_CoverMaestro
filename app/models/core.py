@@ -337,6 +337,12 @@ class MarketplaceFeeRate(Base):
     marketplace = Column(String, primary_key=True)
     fee_rate = Column(Float, nullable=False) # DECIMAL(6,5)
 
+class ExportSetting(Base):
+    __tablename__ = "export_settings"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    default_save_path_template = Column(String, nullable=True)
+
 class ModelPricingSnapshot(Base):
     __tablename__ = "model_pricing_snapshots"
     

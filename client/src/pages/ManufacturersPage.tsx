@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useState, useRef, useMemo } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import {
   Box, Typography, Paper, Button, TextField, Dialog, DialogTitle,
@@ -158,6 +158,10 @@ export default function ManufacturersPage() {
     }
   }
 
+  const sortedManufacturers = useMemo(() => {
+    return [...manufacturers].sort((a, b) => (a.name || '').localeCompare(b.name || ''))
+  }, [manufacturers])
+
   return (
     <Box>
       <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 3 }}>
@@ -179,7 +183,7 @@ export default function ManufacturersPage() {
       <Paper sx={{ p: 3, mb: 3 }}>
         <Stack direction="row" spacing={2} alignItems="center">
           <Autocomplete
-            options={manufacturers}
+            options={sortedManufacturers}
             getOptionLabel={(option) => option.name}
             value={selectedManufacturer}
             onChange={(_, newValue) => setSelectedManufacturer(newValue)}

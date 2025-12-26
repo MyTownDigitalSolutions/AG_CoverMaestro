@@ -351,3 +351,9 @@ export interface PricingRecalculateBulkResponse {
     failed: PricingRecalculateResult[]
   }>
 }
+
+export interface ExportSetting {
+  id: number
+  default_save_path_template?: string
+}
+

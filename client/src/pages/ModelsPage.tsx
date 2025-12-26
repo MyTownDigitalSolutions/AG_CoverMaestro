@@ -840,13 +840,37 @@ export default function ModelsPage() {
   }, [filterSeries])
 
   const filteredModels = useMemo(() => {
-    let result = models
-    if (filterManufacturer) {
-      const manufacturerSeriesIds = series.filter(s => s.manufacturer_id === filterManufacturer).map(s => s.id)
-      result = result.filter(m => manufacturerSeriesIds.includes(m.series_id))
+    // 0. Empty State: If no filters, show nothing (UI consistency with ExportGrid)
+    if (!filterManufacturer && !filterSeries) {
+      return []
     }
-    return result
-  }, [models, filterManufacturer, series])
+
+    let result = [...models] // Clone to sort safely
+
+    // 1. Filter by Manufacturer (if strictly filtering from a larger set)
+    if (filterManufacturer) {
+      const manufacturerSeriesIds = new Set(
+        series.filter(s => s.manufacturer_id === filterManufacturer).map(s => s.id)
+      )
+      result = result.filter(m => manufacturerSeriesIds.has(m.series_id))
+    }
+
+    // 2. Filter by Series (Redundant if API handled it, but robust for local updates)
+    if (filterSeries) {
+      result = result.filter(m => m.series_id === filterSeries)
+    }
+
+    // 3. Sort: Series Name (A-Z) -> Model Name (A-Z)
+    return result.sort((a, b) => {
+      const seriesA = series.find(s => s.id === a.series_id)?.name || ''
+      const seriesB = series.find(s => s.id === b.series_id)?.name || ''
+
+      const seriesCompare = seriesA.localeCompare(seriesB, undefined, { sensitivity: 'base' })
+      if (seriesCompare !== 0) return seriesCompare
+
+      return a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })
+    })
+  }, [models, filterManufacturer, filterSeries, series])
 
   const getSeriesWithManufacturer = (seriesId: number) => {
     const s = series.find(x => x.id === seriesId)
