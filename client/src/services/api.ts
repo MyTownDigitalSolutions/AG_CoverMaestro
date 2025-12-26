@@ -7,7 +7,7 @@ import type {
   MaterialRoleAssignment, ShippingRateCard, ShippingRateTier, ShippingZoneRate,
   MarketplaceShippingProfile, LaborSetting, MarketplaceFeeRate, VariantProfitSetting, ModelPricingSnapshot,
   ModelPricingHistory, PricingDiffResponse, ShippingZone, ShippingZoneRateNormalized,
-  ShippingDefaultSettingResponse
+  ShippingDefaultSettingResponse, AmazonCustomizationTemplate
 } from '../types'
 
 export interface PricingRecalculateBulkRequest {
@@ -279,8 +279,26 @@ export const settingsApi = {
   updateProfit: (data: VariantProfitSetting) => api.put<VariantProfitSetting>('/settings/profits', data).then(r => r.data),
 
   // Export Settings
-  getExport: () => api.get<{ id: number; default_save_path_template?: string }>('/settings/export').then(r => r.data),
-  updateExport: (data: { default_save_path_template?: string }) => api.put<{ id: number; default_save_path_template?: string }>('/settings/export', data).then(r => r.data),
+  getExport: () => api.get<{ id: number; default_save_path_template?: string; amazon_customization_export_format?: string }>('/settings/export').then(r => r.data),
+  updateExport: (data: { default_save_path_template?: string; amazon_customization_export_format?: string }) => api.put<{ id: number; default_save_path_template?: string; amazon_customization_export_format?: string }>('/settings/export', data).then(r => r.data),
+
+  // Customization Templates
+  listAmazonCustomizationTemplates: () => api.get<AmazonCustomizationTemplate[]>('/settings/amazon-customization-templates').then(r => r.data),
+  uploadAmazonCustomizationTemplate: (file: File) => {
+    const formData = new FormData()
+    formData.append('file', file)
+    return api.post('/settings/amazon-customization-templates/upload', formData).then(r => r.data)
+  },
+  updateAmazonCustomizationTemplate: (id: number, file: File) => {
+    const formData = new FormData()
+    formData.append('file', file)
+    return api.post(`/settings/amazon-customization-templates/${id}/upload`, formData).then(r => r.data)
+  },
+  deleteAmazonCustomizationTemplate: (id: number) => api.delete(`/settings/amazon-customization-templates/${id}`),
+  downloadAmazonCustomizationTemplateUrl: (id: number) => `/api/settings/amazon-customization-templates/${id}/download`,
+
+  assignAmazonCustomizationTemplate: (equipmentTypeId: number, templateId: number | null) =>
+    api.post<EquipmentType>(`/settings/equipment-types/${equipmentTypeId}/amazon-customization-template/assign`, { template_id: templateId }).then(r => r.data),
 }
 
 export interface ExportRowData {
@@ -338,6 +356,27 @@ export const exportApi = {
 
   downloadCsv: async (modelIds: number[], listingType: 'individual' | 'parent_child' = 'individual') => {
     const response = await api.post('/export/download/csv', { model_ids: modelIds, listing_type: listingType }, { responseType: 'blob' })
+    return response
+  },
+
+  downloadZip: async (
+    modelIds: number[],
+    listingType: 'individual' | 'parent_child',
+    includeCustomization: boolean,
+    tokens: { marketplace: string; manufacturer: string; series: string; date: string },
+    customizationFormat: string = 'xlsx'
+  ) => {
+    const payload = {
+      model_ids: modelIds,
+      listing_type: listingType,
+      include_customization: includeCustomization,
+      marketplace_token: tokens.marketplace,
+      manufacturer_token: tokens.manufacturer,
+      series_token: tokens.series,
+      date_token: tokens.date,
+      customization_format: customizationFormat
+    }
+    const response = await api.post('/export/download/zip', payload, { responseType: 'blob' })
     return response
   },
 }

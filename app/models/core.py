@@ -36,6 +36,10 @@ class EquipmentType(Base):
     name = Column(String, unique=True, nullable=False)
     
     models = relationship("Model", back_populates="equipment_type")
+    
+    amazon_customization_template_id = Column(Integer, ForeignKey("amazon_customization_templates.id"), nullable=True)
+    amazon_customization_template = relationship("AmazonCustomizationTemplate")
+
     # product_types = relationship("EquipmentTypeProductType", back_populates="equipment_type")
     # Relationships defined at end of file to resolve forward references
 
@@ -342,6 +346,7 @@ class ExportSetting(Base):
     
     id = Column(Integer, primary_key=True, index=True)
     default_save_path_template = Column(String, nullable=True)
+    amazon_customization_export_format = Column(String, default="xlsx", nullable=False)
 
 class ModelPricingSnapshot(Base):
     __tablename__ = "model_pricing_snapshots"

@@ -4,14 +4,19 @@ from sqlalchemy import desc
 from typing import List
 from datetime import datetime, timedelta
 import traceback
+import shutil
+import os
+from fastapi import File, UploadFile
 
 from app.database import get_db
 from app.models.enums import Carrier
 from app.models.core import (
     MaterialRoleAssignment, Material,
     ShippingRateCard, ShippingRateTier, ShippingZoneRate, MarketplaceShippingProfile,
-    LaborSetting, MarketplaceFeeRate, VariantProfitSetting, ShippingZone, ShippingDefaultSetting
+    LaborSetting, MarketplaceFeeRate, VariantProfitSetting, ShippingZone, ShippingDefaultSetting,
+    ExportSetting, EquipmentType
 )
+from app.models.templates import AmazonCustomizationTemplate
 from app.schemas.core import (
     MaterialRoleAssignmentCreate, MaterialRoleAssignmentResponse,
     ShippingRateCardCreate, ShippingRateCardResponse, ShippingRateCardUpdate,
@@ -23,7 +28,8 @@ from app.schemas.core import (
     VariantProfitSettingCreate, VariantProfitSettingResponse,
     ShippingZoneResponse,
     ShippingZoneRateNormalizedResponse, ShippingZoneRateUpsertRequest,
-    ShippingDefaultSettingCreate, ShippingDefaultSettingResponse
+    ShippingDefaultSettingCreate, ShippingDefaultSettingResponse,
+    AmazonCustomizationTemplateAssignmentRequest, EquipmentTypeResponse
 )
 
 router = APIRouter(prefix="/settings", tags=["settings"])
@@ -573,7 +579,124 @@ def update_export_settings(data: ExportSettingCreate, db: Session = Depends(get_
         settings = ExportSetting()
         db.add(settings)
 
-    settings.default_save_path_template = data.default_save_path_template
+    if data.default_save_path_template is not None:
+        settings.default_save_path_template = data.default_save_path_template
+    
+    if data.amazon_customization_export_format is not None:
+        settings.amazon_customization_export_format = data.amazon_customization_export_format
+        
     db.commit()
     db.refresh(settings)
     return settings
+
+
+# ------------------------------------------------------------------
+# 8. Amazon Customization Templates
+# ------------------------------------------------------------------
+
+@router.post("/amazon-customization-templates/upload")
+def upload_amazon_customization_template(file: UploadFile = File(...), db: Session = Depends(get_db)):
+    base_dir = "attached_assets/customization_templates"
+    os.makedirs(base_dir, exist_ok=True)
+    
+    file_path = os.path.join(base_dir, file.filename)
+    
+    with open(file_path, "wb") as buffer:
+        shutil.copyfileobj(file.file, buffer)
+        
+    # Get file size
+    file_size = os.path.getsize(file_path)
+    
+    # Save to DB
+    template = AmazonCustomizationTemplate(
+        original_filename=file.filename,
+        file_path=file_path,
+        file_size=file_size,
+        upload_date=datetime.utcnow()
+    )
+    db.add(template)
+    db.commit()
+    db.refresh(template)
+    
+    return {"message": "Upload successful", "id": template.id, "filename": template.original_filename}
+
+@router.get("/amazon-customization-templates")
+def list_amazon_customization_templates(db: Session = Depends(get_db)):
+    return db.query(AmazonCustomizationTemplate).order_by(desc(AmazonCustomizationTemplate.upload_date)).all()
+
+@router.post("/amazon-customization-templates/{id}/upload")
+def update_amazon_customization_template(id: int, file: UploadFile = File(...), db: Session = Depends(get_db)):
+    template = db.query(AmazonCustomizationTemplate).filter(AmazonCustomizationTemplate.id == id).first()
+    if not template:
+        raise HTTPException(status_code=404, detail="Template not found")
+
+    base_dir = "attached_assets/customization_templates"
+    os.makedirs(base_dir, exist_ok=True)
+    
+    # Overwrite using new filename (or preserve old? User req implies "replace stored file + update metadata")
+    file_path = os.path.join(base_dir, file.filename)
+    
+    with open(file_path, "wb") as buffer:
+        shutil.copyfileobj(file.file, buffer)
+        
+    file_size = os.path.getsize(file_path)
+    
+    # Update DB
+    template.original_filename = file.filename
+    template.file_path = file_path # Update path in case filename changed
+    template.file_size = file_size
+    template.upload_date = datetime.utcnow()
+    
+    db.commit()
+    db.refresh(template)
+    
+    return {"message": "Update successful", "id": template.id, "filename": template.original_filename}
+
+@router.delete("/amazon-customization-templates/{id}")
+def delete_amazon_customization_template(id: int, db: Session = Depends(get_db)):
+    template = db.query(AmazonCustomizationTemplate).filter(AmazonCustomizationTemplate.id == id).first()
+    if not template:
+        raise HTTPException(status_code=404, detail="Template not found")
+        
+    # Check if used? (Optional safeguard, user didn't strictly require it but it's good practice. 
+    # However user said "Additive only... deletion."
+    # We will just delete. If FK is generic logs might complain but it is nullable on EquipmentType.
+    
+    # Delete file from disk?
+    if os.path.exists(template.file_path):
+        try:
+            os.remove(template.file_path)
+        except:
+            pass # Ignore file lock issues etc
+            
+    db.delete(template)
+    db.commit()
+    return {"message": "Template deleted"}
+
+@router.get("/amazon-customization-templates/{id}/download")
+def download_amazon_customization_template(id: int, db: Session = Depends(get_db)):
+    template = db.query(AmazonCustomizationTemplate).filter(AmazonCustomizationTemplate.id == id).first()
+    if not template:
+        raise HTTPException(status_code=404, detail="Template not found")
+        
+    if not os.path.exists(template.file_path):
+        raise HTTPException(status_code=404, detail="File missing on disk")
+        
+    from fastapi.responses import FileResponse
+    return FileResponse(template.file_path, filename=template.original_filename)
+
+@router.post("/equipment-types/{id}/amazon-customization-template/assign", response_model=EquipmentTypeResponse)
+def assign_amazon_customization_template(id: int, data: AmazonCustomizationTemplateAssignmentRequest, db: Session = Depends(get_db)):
+    equipment_type = db.query(EquipmentType).filter(EquipmentType.id == id).first()
+    if not equipment_type:
+        raise HTTPException(status_code=404, detail="Equipment type not found")
+    
+    if data.template_id is not None:
+        template = db.query(AmazonCustomizationTemplate).filter(AmazonCustomizationTemplate.id == data.template_id).first()
+        if not template:
+            raise HTTPException(status_code=404, detail="Amazon Customization Template not found")
+            
+    equipment_type.amazon_customization_template_id = data.template_id
+    db.commit()
+    db.refresh(equipment_type)
+    return equipment_type

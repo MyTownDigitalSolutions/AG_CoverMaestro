@@ -6,7 +6,6 @@ import { settingsApi } from '../services/api';
 import { LaborSetting, MarketplaceFeeRate, VariantProfitSetting } from '../types';
 import { MaterialRoleSettings } from '../components/settings/MaterialRoleSettings';
 import { ShippingSettings } from '../components/settings/ShippingSettings';
-import { ExportSettings } from '../components/settings/ExportSettings';
 
 interface GeneralSettingsProps {
     labor: LaborSetting | null;
@@ -127,8 +126,7 @@ const GeneralSettings: React.FC<GeneralSettingsProps> = ({ labor, fees, profits,
 const TAB_MAPPING: Record<string, number> = {
     'general': 0,
     'material-roles': 1,
-    'shipping': 2,
-    'export': 3
+    'shipping': 2
 };
 
 const SettingsPage = () => {
@@ -181,13 +179,11 @@ const SettingsPage = () => {
                     <Tab label="General (Labor/Fees/Profit)" />
                     <Tab label="Material Roles" />
                     <Tab label="Shipping Config" />
-                    <Tab label="Export Config" />
                 </Tabs>
 
                 {tabIndex === 0 && <GeneralSettings labor={labor} fees={fees} profits={profits} onRefresh={fetchData} />}
                 {tabIndex === 1 && <MaterialRoleSettings />}
                 {tabIndex === 2 && <ShippingSettings />}
-                {tabIndex === 3 && <ExportSettings />}
             </Paper>
         </Container>
     );

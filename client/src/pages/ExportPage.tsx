@@ -1,12 +1,13 @@
 import { useEffect, useState, useMemo } from 'react'
 import {
-  Box, Typography, Paper, Button, Grid, Checkbox,
+  Box, Typography, Paper, Button, Grid, Checkbox, TextField,
   Table, TableBody, TableCell, TableContainer, TableHead, TableRow,
   Alert, CircularProgress, FormControl, InputLabel, Select, MenuItem,
   Chip, IconButton, Dialog, DialogTitle, DialogContent, DialogActions,
   ToggleButton, ToggleButtonGroup, Tooltip,
-  Accordion, AccordionSummary, AccordionDetails
+  Accordion, AccordionSummary, AccordionDetails, Switch, FormControlLabel, Radio, RadioGroup, FormLabel
 } from '@mui/material'
+import { Link as RouterLink } from 'react-router-dom'
 import PreviewIcon from '@mui/icons-material/Preview'
 import CloseIcon from '@mui/icons-material/Close'
 import DownloadIcon from '@mui/icons-material/Download'
@@ -20,9 +21,9 @@ import ErrorIcon from '@mui/icons-material/Error'
 import CheckCircleIcon from '@mui/icons-material/CheckCircle'
 import FolderOpenIcon from '@mui/icons-material/FolderOpen'
 import ContentCopyIcon from '@mui/icons-material/ContentCopy'
-import { manufacturersApi, seriesApi, modelsApi, templatesApi, exportApi, pricingApi, settingsApi, type ExportValidationResponse, type ExportValidationIssue } from '../services/api'
+import { manufacturersApi, seriesApi, modelsApi, templatesApi, exportApi, pricingApi, settingsApi, equipmentTypesApi, type ExportValidationResponse, type ExportValidationIssue } from '../services/api'
 import { pickBaseDirectory, ensureSubdirectory, writeFileAtomic, loadHandle, clearPersistedHandle, getOrPickWritableBaseDirectory } from '../services/fileSystem'
-import type { Manufacturer, Series, Model, AmazonProductType } from '../types'
+import type { Manufacturer, Series, Model, AmazonProductType, EquipmentType } from '../types'
 
 interface AuditFieldAction {
   field_name: string
@@ -71,8 +72,7 @@ const rowStyles: Record<number, React.CSSProperties> = {
   5: { backgroundColor: '#fff9c4', color: 'black', fontStyle: 'italic', fontSize: '10px' },
 }
 
-// explicit intent for XLSM downloads to avoid File System Access API due to Windows constraints
-const XLSM_DOWNLOAD_MODE = 'browser-only' as const
+
 
 const normalizeName = (s?: string | null) => (s ?? '').trim().toLowerCase()
 
@@ -88,10 +88,12 @@ export default function ExportPage() {
   const [manufacturers, setManufacturers] = useState<Manufacturer[]>([])
   const [allSeries, setAllSeries] = useState<Series[]>([])
   const [allModels, setAllModels] = useState<Model[]>([])
+  const [allEquipmentTypes, setAllEquipmentTypes] = useState<EquipmentType[]>([])
   const [templates, setTemplates] = useState<AmazonProductType[]>([])
   const [equipmentTypeLinks, setEquipmentTypeLinks] = useState<{ equipment_type_id: number, product_type_id: number }[]>([])
   // Phase 7: Export Settings
   const [exportSettings, setExportSettings] = useState<{ id: number; default_save_path_template?: string } | null>(null)
+  const [localSavePathTemplate, setLocalSavePathTemplate] = useState('')
 
   const [selectedManufacturer, setSelectedManufacturer] = useState<number | ''>('')
   const [selectedSeries, setSelectedSeries] = useState<number | ''>('')
@@ -107,6 +109,7 @@ export default function ExportPage() {
   const [previewData, setPreviewData] = useState<ExportPreviewData | null>(null)
   const [listingType, setListingType] = useState<'individual' | 'parent_child'>('individual')
   const [downloading, setDownloading] = useState<string | null>(null)
+  const [includeCustomization, setIncludeCustomization] = useState(true)
 
   // Phase 9: File System Access
   const [baseDir, setBaseDir] = useState<any | null>(null) // Using any to avoid strict type ref issues if libs mismatch, though typed in service
@@ -134,6 +137,26 @@ export default function ExportPage() {
   const [loadStep, setLoadStep] = useState<string>('Starting')
   const [loadError, setLoadError] = useState<string | null>(null)
 
+  // Customization Format State
+  const [localCustomizationFormat, setLocalCustomizationFormat] = useState<string>('xlsx')
+
+  // Computed Status Logic (Phase 4 - Chunk 3)
+  const missingTemplateNames = useMemo(() => {
+    if (!includeCustomization) return []
+    const missingSet = new Set<string>()
+    selectedModels.forEach(modelId => {
+      const model = allModels.find(m => m.id === modelId)
+      if (model) {
+        const et = allEquipmentTypes.find(e => e.id === model.equipment_type_id)
+        // If ET missing OR template assignment missing, it's a "missing" case
+        if (!et || !et.amazon_customization_template_id) {
+          missingSet.add(et ? et.name : `Unknown Equipment Type (ID: ${model.equipment_type_id})`)
+        }
+      }
+    })
+    return Array.from(missingSet)
+  }, [includeCustomization, selectedModels, allModels, allEquipmentTypes])
+
   useEffect(() => {
     loadData()
     loadHandle().then(h => { if (h) setBaseDir(h) })
@@ -159,13 +182,14 @@ export default function ExportPage() {
       console.log('[EXPORT] Starting Data Load')
       setLoadStep('Fetching API Data...')
 
-      const [mfrs, series, models, tmpls, links, expSettings] = await Promise.all([
-        manufacturersApi.list().catch(e => { throw new Error(`Manufacturers: ${e.message}`) }),
-        seriesApi.list().catch(e => { throw new Error(`Series: ${e.message}`) }),
-        modelsApi.list().catch(e => { throw new Error(`Models: ${e.message}`) }),
-        templatesApi.list().catch(e => { throw new Error(`Templates: ${e.message}`) }),
-        templatesApi.listEquipmentTypeLinks().catch(e => { throw new Error(`Links: ${e.message}`) }),
-        settingsApi.getExport().catch(e => { throw new Error(`Settings: ${e.message}`) })
+      const [mfrs, series, models, eqTypes, tmpls, links, expSettings] = await Promise.all([
+        manufacturersApi.list().catch((e: any) => { throw new Error(`Manufacturers: ${e.message}`) }),
+        seriesApi.list().catch((e: any) => { throw new Error(`Series: ${e.message}`) }),
+        modelsApi.list().catch((e: any) => { throw new Error(`Models: ${e.message}`) }),
+        equipmentTypesApi.list().catch((e: any) => { throw new Error(`Equipment Types: ${e.message}`) }),
+        templatesApi.list().catch((e: any) => { throw new Error(`Templates: ${e.message}`) }),
+        templatesApi.listEquipmentTypeLinks().catch((e: any) => { throw new Error(`Links: ${e.message}`) }),
+        settingsApi.getExport().catch((e: any) => { throw new Error(`Settings: ${e.message}`) })
       ])
 
       console.log('[EXPORT] Data Load Complete')
@@ -174,9 +198,12 @@ export default function ExportPage() {
       setManufacturers(mfrs)
       setAllSeries(series)
       setAllModels(models)
+      setAllEquipmentTypes(eqTypes)
       setTemplates(tmpls)
       setEquipmentTypeLinks(links)
       setExportSettings(expSettings)
+      setLocalSavePathTemplate(expSettings.default_save_path_template || '')
+      setLocalCustomizationFormat(expSettings.amazon_customization_export_format || 'xlsx')
 
     } catch (err: any) {
       console.error('[EXPORT] Data Load Failed', err)
@@ -185,6 +212,20 @@ export default function ExportPage() {
     } finally {
       clearTimeout(watchdog)
       setLoading(false)
+    }
+  }
+
+  const handleSaveExportSettings = async () => {
+    try {
+      const updated = await settingsApi.updateExport({
+        default_save_path_template: localSavePathTemplate,
+        amazon_customization_export_format: localCustomizationFormat
+      })
+      setExportSettings(updated)
+      alert('Export configuration saved.')
+    } catch (err) {
+      console.error(err)
+      alert('Failed to save export configuration')
     }
   }
 
@@ -444,6 +485,74 @@ export default function ExportPage() {
       setValidationReport(null) // Clear if failed
     } finally {
       setValidating(false)
+    }
+  }
+
+  const handleZipDownload = async () => {
+    try {
+      setDownloading('zip')
+      const modelIds = Array.from(selectedModels)
+
+      // Compute Tokens
+      const marketplaceToken = "Amazon" // Hardcoded for now
+
+      const mfr = manufacturers.find(m => m.id === selectedManufacturer)
+      const manufacturerToken = mfr ? normalizeName(mfr.name) : "UnknownManufacturer"
+
+      let seriesToken = "UnknownSeries"
+      if (selectedSeries !== '') {
+        const s = allSeries.find(s => s.id === selectedSeries)
+        seriesToken = s ? normalizeName(s.name) : "UnknownSeries"
+      } else {
+        // If no specific series selected, but we have models, it implies Multiple Series (or All)
+        seriesToken = "Multiple_Series"
+      }
+
+      const dateToken = new Date().toISOString().split('T')[0] // YYYY-MM-DD
+
+      const tokens = {
+        marketplace: marketplaceToken,
+        manufacturer: manufacturerToken,
+        series: seriesToken,
+        date: dateToken
+      }
+
+      console.log("[EXPORT][ZIP] Starting download", tokens)
+
+      const response = await exportApi.downloadZip(modelIds, listingType, includeCustomization, tokens, localCustomizationFormat)
+
+      // Filename from header
+      let filename = `${tokens.marketplace}-${tokens.manufacturer}-${tokens.series}-Product_Upload-${tokens.date}.zip`
+      const disposition = response.headers['content-disposition']
+      if (disposition && disposition.indexOf('attachment') !== -1) {
+        const filenameRegex = /filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/
+        const matches = filenameRegex.exec(disposition)
+        if (matches != null && matches[1]) {
+          filename = matches[1].replace(/['"]/g, '')
+        }
+      }
+
+      const blob = new Blob([response.data], { type: 'application/zip' })
+      const url = window.URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.setAttribute('download', filename)
+      document.body.appendChild(link)
+      link.click()
+
+      setTimeout(() => {
+        link.parentNode?.removeChild(link)
+        window.URL.revokeObjectURL(url)
+      }, 100)
+
+      setFsStatus("ZIP Download started.")
+      setTimeout(() => setFsStatus(null), 3000)
+
+    } catch (e: any) {
+      console.error("[EXPORT][ZIP] download failed", e)
+      setError("ZIP Download failed: " + (e.message || "Unknown error"))
+    } finally {
+      setDownloading(null)
     }
   }
 
@@ -1111,7 +1220,7 @@ export default function ExportPage() {
             </Box>
           )}
 
-          {savePlan.type === 'single' ? (
+          {savePlan && (savePlan.type === 'single' ? (
             <Box>
               <Typography variant="body2"><strong>Folder:</strong> {savePlan.plan!.folder}</Typography>
               <Typography variant="body2"><strong>File:</strong> {savePlan.plan!.filename}</Typography>
@@ -1134,7 +1243,7 @@ export default function ExportPage() {
                 ))}
               </Box>
             </Box>
-          )}
+          ))}
         </Paper>
       )}
 
@@ -1163,6 +1272,107 @@ export default function ExportPage() {
           </Button>
         </Alert>
       )}
+
+      {/* Export Settings Panel */}
+      <Paper sx={{ p: 3, mb: 3 }}>
+        <Typography variant="h6" gutterBottom>Export Settings (Amazon)</Typography>
+        <Grid container spacing={2} alignItems="flex-start">
+          <Grid item xs={12} md={8}>
+            <TextField
+              fullWidth
+              label="Default Save Path Template"
+              value={localSavePathTemplate}
+              onChange={(e) => setLocalSavePathTemplate(e.target.value)}
+              helperText={
+                <span>
+                  Note: This does not control where the browser downloads files. Downloads still go to your browser’s default Downloads folder unless you change browser settings.<br />
+                  Supported Placeholders: [Marketplace], [Manufacturer_Name], [Series_Name]
+                </span>
+              }
+              size="small"
+            />
+            <Box sx={{ mt: 2 }}>
+              <FormControlLabel
+                control={
+                  <Switch
+                    checked={includeCustomization}
+                    onChange={(e) => setIncludeCustomization(e.target.checked)}
+                    size="small"
+                  />
+                }
+                label="Include Customization"
+              />
+            </Box>
+            <Box sx={{ mt: 2 }}>
+              <FormControl component="fieldset">
+                <FormLabel component="legend" sx={{ fontSize: '0.875rem' }}>Customization Export Format</FormLabel>
+                <RadioGroup
+                  row
+                  value={localCustomizationFormat}
+                  onChange={(e) => setLocalCustomizationFormat(e.target.value)}
+                >
+                  <FormControlLabel
+                    value="xlsx"
+                    control={<Radio size="small" />}
+                    label={<Typography variant="body2">Excel (.xlsx) — Recommended</Typography>}
+                  />
+                  <FormControlLabel
+                    value="txt"
+                    control={<Radio size="small" />}
+                    label={<Typography variant="body2">Unicode Text (.txt) — Legacy</Typography>}
+                  />
+                </RadioGroup>
+              </FormControl>
+            </Box>
+            <Box sx={{ mt: 2, p: 2, bgcolor: '#f5f5f5', borderRadius: 1, border: '1px solid #e0e0e0' }}>
+              {!includeCustomization ? (
+                <Typography variant="body2" color="text.secondary">Customization is disabled.</Typography>
+              ) : missingTemplateNames.length > 0 ? (
+                <>
+                  <Typography variant="body2" color="error" sx={{ mb: 1, fontWeight: 500 }}>
+                    Customization is enabled, but these equipment types are missing an assigned customization template:
+                  </Typography>
+                  <ul style={{ margin: '4px 0 12px 20px', padding: 0, fontSize: '0.875rem' }}>
+                    {missingTemplateNames.map(name => <li key={name}>{name}</li>)}
+                  </ul>
+                  <Typography variant="body2" sx={{ mb: 1 }}>
+                    The customization file will not be included.
+                  </Typography>
+                  <Box sx={{ display: 'flex', gap: 1 }}>
+                    <Button
+                      component={RouterLink}
+                      to="/templates"
+                      size="small"
+                      variant="outlined"
+                      color="primary"
+                    >
+                      Manage templates
+                    </Button>
+                    <Button
+                      component={RouterLink}
+                      to="/templates?focus=customization&scroll=linking"
+                      size="small"
+                      variant="contained"
+                      color="warning"
+                    >
+                      Fix missing templates
+                    </Button>
+                  </Box>
+                </>
+              ) : (
+                <Typography variant="body2" color="success.main" sx={{ fontWeight: 500 }}>
+                  Customization file will be included as: {localCustomizationFormat.toUpperCase()}
+                </Typography>
+              )}
+            </Box>
+          </Grid>
+          <Grid item xs={12} md={4}>
+            <Button variant="contained" onClick={handleSaveExportSettings} sx={{ height: 40 }}>
+              Save Configuration
+            </Button>
+          </Grid>
+        </Grid>
+      </Paper>
 
       <Paper sx={{ p: 3, mb: 3 }}>
         <Typography variant="h6" gutterBottom>
@@ -1633,6 +1843,29 @@ export default function ExportPage() {
             <Box sx={{ flex: 1 }} />
             {!validationReport || validationReport.status !== 'errors' ? (
               <>
+                <Box sx={{ display: 'flex', alignItems: 'center', mr: 2, borderRight: '1px solid #ddd', pr: 2 }}>
+                  <FormControlLabel
+                    control={
+                      <Switch
+                        size="small"
+                        checked={includeCustomization}
+                        onChange={(e) => setIncludeCustomization(e.target.checked)}
+                      />
+                    }
+                    label={<Typography variant="caption">Include Customization</Typography>}
+                  />
+                </Box>
+                <Button
+                  variant="contained"
+                  color="primary"
+                  startIcon={<DownloadIcon />}
+                  onClick={handleZipDownload}
+                  disabled={downloading !== null}
+                  sx={{ mr: 2 }}
+                >
+                  {downloading === 'zip' ? 'Zipping...' : 'Download ZIP Package'}
+                </Button>
+
                 <Button
                   variant="outlined"
                   startIcon={<DownloadIcon />}
@@ -1650,12 +1883,12 @@ export default function ExportPage() {
                   {downloading === 'xlsm' ? 'Downloading...' : 'XLSM'}
                 </Button>
                 <Button
-                  variant="contained"
+                  variant="outlined" // Changed to outlined to emphasize ZIP as primary
                   startIcon={<DownloadIcon />}
                   onClick={() => handleFileSystemDownload('xlsx')}
                   disabled={downloading !== null}
                 >
-                  {downloading === 'xlsx' ? 'Downloading...' : 'Download XLSX'}
+                  {downloading === 'xlsx' ? 'Downloading...' : 'XLSX'}
                 </Button>
               </>
             ) : (

@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
+import { useSearchParams, Link as RouterLink } from 'react-router-dom'
 import {
   Box, Typography, Paper, Button, TextField, Grid, IconButton,
   Table, TableBody, TableCell, TableContainer, TableHead, TableRow,
@@ -16,8 +17,9 @@ import LinkIcon from '@mui/icons-material/Link'
 import AddIcon from '@mui/icons-material/Add'
 import PreviewIcon from '@mui/icons-material/Preview'
 import CloseIcon from '@mui/icons-material/Close'
-import { templatesApi, equipmentTypesApi, type EquipmentTypeProductTypeLink } from '../services/api'
-import type { AmazonProductType, EquipmentType, ProductTypeField } from '../types'
+import DownloadIcon from '@mui/icons-material/Download'
+import { templatesApi, equipmentTypesApi, settingsApi, type EquipmentTypeProductTypeLink } from '../services/api'
+import type { AmazonProductType, EquipmentType, ProductTypeField, AmazonCustomizationTemplate } from '../types'
 import FieldDetailsDialog from '../components/FieldDetailsDialog'
 
 const rowStyles: Record<number, React.CSSProperties> = {
@@ -37,7 +39,7 @@ interface TemplatePreviewProps {
 function TemplatePreview({ template, onClose }: TemplatePreviewProps) {
   const headerRows = template.header_rows || []
   const maxCols = Math.max(...headerRows.map(r => r?.length || 0), template.fields?.length || 0)
-  
+
   if (headerRows.length === 0) {
     return (
       <Dialog open onClose={onClose} maxWidth="md" fullWidth>
@@ -51,7 +53,7 @@ function TemplatePreview({ template, onClose }: TemplatePreviewProps) {
       </Dialog>
     )
   }
-  
+
   return (
     <Dialog open onClose={onClose} maxWidth={false} fullWidth PaperProps={{ sx: { maxWidth: '95vw', height: '80vh' } }}>
       <DialogTitle sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -108,18 +110,18 @@ const normalizeText = (text: string): string => {
 const checkFileMatch = (filename: string, productCode: string): 'match' | 'mismatch' => {
   const normalizedFilename = normalizeText(filename)
   const normalizedCode = normalizeText(productCode)
-  
+
   if (normalizedFilename.includes(normalizedCode) || normalizedCode.includes(normalizedFilename)) {
     return 'match'
   }
-  
+
   const codeWords = productCode.toLowerCase().split(/[_\s&]+/).filter(w => w.length > 2)
   const matchingWords = codeWords.filter(word => normalizedFilename.includes(word))
-  
+
   if (matchingWords.length >= Math.ceil(codeWords.length / 2)) {
     return 'match'
   }
-  
+
   return 'mismatch'
 }
 
@@ -131,58 +133,97 @@ interface PendingUpload {
 }
 
 export default function TemplatesPage() {
-  const [templates, setTemplates] = useState<AmazonProductType[]>([])
-  const [selectedTemplate, setSelectedTemplate] = useState<AmazonProductType | null>(null)
+  // Existing state for Product Types
+  const [productTypeTemplates, setProductTypeTemplates] = useState<AmazonProductType[]>([])
+
+  // New state for Customization
+  const [customizationTemplates, setCustomizationTemplates] = useState<AmazonCustomizationTemplate[]>([])
+
+  // UI State
+  const [templateType, setTemplateType] = useState<'product' | 'customization'>('product')
+  const [selectedTemplate, setSelectedTemplate] = useState<AmazonProductType | AmazonCustomizationTemplate | null>(null)
+
+  // Navigation State
+  const [searchParams] = useSearchParams()
+  const customLinkingRef = useRef<HTMLDivElement>(null)
+
+  // Upload State
   const [productCode, setProductCode] = useState('')
   const [selectedExistingCode, setSelectedExistingCode] = useState('')
+  const [selectedCustomizationId, setSelectedCustomizationId] = useState<number | ''>('')
+
   const [uploading, setUploading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
+
+  // Product Type Upload Confirmation
   const [pendingUpload, setPendingUpload] = useState<PendingUpload | null>(null)
   const [fileInputRef, setFileInputRef] = useState<HTMLInputElement | null>(null)
-  
+
+  // Linking State
   const [equipmentTypes, setEquipmentTypes] = useState<EquipmentType[]>([])
-  const [equipmentTypeLinks, setEquipmentTypeLinks] = useState<EquipmentTypeProductTypeLink[]>([])
-  const [selectedEquipmentTypeId, setSelectedEquipmentTypeId] = useState<number | ''>('')
-  const [selectedProductTypeId, setSelectedProductTypeId] = useState<number | ''>('')
+  const [equipmentTypeLinks, setEquipmentTypeLinks] = useState<EquipmentTypeProductTypeLink[]>([]) // For Product Types
+
+  const [ptLinkEquipId, setPtLinkEquipId] = useState<number | ''>('')
+  const [ptLinkTemplateId, setPtLinkTemplateId] = useState<number | ''>('')
+
+  const [custLinkEquipId, setCustLinkEquipId] = useState<number | ''>('')
+  const [custLinkTemplateId, setCustLinkTemplateId] = useState<number | ''>('')
+
   const [showPreview, setShowPreview] = useState(false)
   const [selectedField, setSelectedField] = useState<ProductTypeField | null>(null)
   const [showOnlyRequired, setShowOnlyRequired] = useState(false)
 
-  const loadTemplates = async () => {
-    const data = await templatesApi.list()
-    setTemplates(data)
-  }
-  
-  const loadEquipmentTypes = async () => {
-    const data = await equipmentTypesApi.list()
-    setEquipmentTypes(data)
-  }
-  
-  const loadLinks = async () => {
-    const data = await templatesApi.listEquipmentTypeLinks()
-    setEquipmentTypeLinks(data)
+  const loadData = async () => {
+    const [pts, custs, ets, links] = await Promise.all([
+      templatesApi.list(),
+      settingsApi.listAmazonCustomizationTemplates(),
+      equipmentTypesApi.list(),
+      templatesApi.listEquipmentTypeLinks()
+    ])
+    setProductTypeTemplates(pts)
+    setCustomizationTemplates(custs)
+    setEquipmentTypes(ets)
+    setEquipmentTypeLinks(links)
   }
 
   useEffect(() => {
-    loadTemplates()
-    loadEquipmentTypes()
-    loadLinks()
+    loadData()
   }, [])
 
-  const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>, isUpdate: boolean) => {
+  // Handle Query Params for Auto-Focus
+  useEffect(() => {
+    const focus = searchParams.get('focus')
+    const scroll = searchParams.get('scroll')
+
+    if (focus === 'customization') {
+      setTemplateType('customization')
+    }
+
+    if (scroll === 'linking') {
+      // Small delay to ensure render is settled
+      setTimeout(() => {
+        customLinkingRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      }, 100)
+    }
+  }, [searchParams])
+
+  const isFixMissingFlow = searchParams.get('focus') === 'customization' && searchParams.get('scroll') === 'linking'
+
+  // --- Handlers: Product Type Upload ---
+  const handleProductTypeFileSelect = (event: React.ChangeEvent<HTMLInputElement>, isUpdate: boolean) => {
     const file = event.target.files?.[0]
     const codeToUse = isUpdate ? selectedExistingCode : productCode
-    
+
     setFileInputRef(event.target)
-    
+
     if (!file || !codeToUse) {
       setError(isUpdate ? 'Please select a Product Type to update' : 'Please enter a product code before uploading')
       return
     }
-    
+
     const matchStatus = checkFileMatch(file.name, codeToUse)
-    
+
     setPendingUpload({
       file,
       productCode: codeToUse,
@@ -191,178 +232,338 @@ export default function TemplatesPage() {
     })
   }
 
-  const handleConfirmUpload = async () => {
+  const handleConfirmProductTypeUpload = async () => {
     if (!pendingUpload) return
-    
     setUploading(true)
     setError(null)
     setSuccess(null)
     setPendingUpload(null)
-    
+
     try {
       const result = await templatesApi.import(pendingUpload.file, pendingUpload.productCode)
       const action = pendingUpload.isUpdate ? 'Updated' : 'Imported'
       setSuccess(`${action} ${result.fields_imported} fields, ${result.keywords_imported} keywords, ${result.valid_values_imported} valid values`)
       setProductCode('')
       setSelectedExistingCode('')
-      loadTemplates()
+      loadData()
     } catch (e: unknown) {
       const err = e as { response?: { data?: { detail?: string } } }
       setError(err.response?.data?.detail || 'Failed to import template')
     } finally {
       setUploading(false)
-      if (fileInputRef) {
-        fileInputRef.value = ''
-      }
+      if (fileInputRef) fileInputRef.value = ''
     }
   }
 
-  const handleCancelUpload = () => {
+  const handleCancelProductTypeUpload = () => {
     setPendingUpload(null)
-    if (fileInputRef) {
-      fileInputRef.value = ''
+    if (fileInputRef) fileInputRef.value = ''
+  }
+
+  // --- Handlers: Customization Upload ---
+  const handleCustomizationFileSelect = async (event: React.ChangeEvent<HTMLInputElement>, isUpdate: boolean) => {
+    const file = event.target.files?.[0]
+    if (!file) return
+
+    setUploading(true)
+    setError(null)
+    setSuccess(null)
+
+    try {
+      if (isUpdate) {
+        if (!selectedCustomizationId) {
+          setError("No template selected for update")
+          return
+        }
+        await settingsApi.updateAmazonCustomizationTemplate(selectedCustomizationId as number, file)
+        setSuccess('Customization template updated successfully')
+        setSelectedCustomizationId('')
+        setSelectedTemplate(null)
+      } else {
+        await settingsApi.uploadAmazonCustomizationTemplate(file)
+        setSuccess('Customization template uploaded successfully')
+      }
+      loadData()
+    } catch (e: unknown) {
+      const err = e as { response?: { data?: { detail?: string } } }
+      setError(err.response?.data?.detail || 'Failed to upload customization template')
+    } finally {
+      setUploading(false)
+      event.target.value = '' // Reset input
     }
   }
 
-  const handleDelete = async (code: string) => {
-    if (confirm('Are you sure you want to delete this template?')) {
+  // --- Handlers: Deletion ---
+  const handleDeleteProductType = async (code: string) => {
+    if (confirm('Are you sure you want to delete this Product Type template?')) {
       await templatesApi.delete(code)
-      loadTemplates()
-      if (selectedTemplate?.code === code) {
+      loadData()
+      if ((selectedTemplate as AmazonProductType)?.code === code) {
         setSelectedTemplate(null)
       }
     }
   }
 
-  const viewTemplate = async (code: string) => {
-    const template = await templatesApi.get(code)
-    setSelectedTemplate(template)
+  const handleDeleteCustomization = async (id: number) => {
+    if (confirm('Are you sure you want to delete this Customization template?')) {
+      await settingsApi.deleteAmazonCustomizationTemplate(id)
+      loadData()
+      if ((selectedTemplate as AmazonCustomizationTemplate)?.id === id) {
+        setSelectedTemplate(null)
+      }
+    }
   }
-  
-  const handleCreateLink = async () => {
-    if (selectedEquipmentTypeId === '' || selectedProductTypeId === '') {
+
+  // --- Handlers: Linking ---
+  const handleCreateProductTypeLink = async () => {
+    if (ptLinkEquipId === '' || ptLinkTemplateId === '') {
       setError('Please select both an Equipment Type and a Product Type')
       return
     }
-    
     try {
-      await templatesApi.createEquipmentTypeLink(selectedEquipmentTypeId, selectedProductTypeId)
+      await templatesApi.createEquipmentTypeLink(ptLinkEquipId as number, ptLinkTemplateId as number)
       setSuccess('Equipment Type linked to Product Type successfully')
-      setSelectedEquipmentTypeId('')
-      setSelectedProductTypeId('')
-      loadLinks()
+      setPtLinkEquipId('')
+      setPtLinkTemplateId('')
+      loadData()
     } catch (e: unknown) {
       const err = e as { response?: { data?: { detail?: string } } }
       setError(err.response?.data?.detail || 'Failed to create link')
     }
   }
-  
-  const handleDeleteLink = async (linkId: number) => {
+
+  const handleDeleteProductTypeLink = async (linkId: number) => {
     try {
       await templatesApi.deleteEquipmentTypeLink(linkId)
-      loadLinks()
+      loadData()
     } catch (e: unknown) {
       const err = e as { response?: { data?: { detail?: string } } }
       setError(err.response?.data?.detail || 'Failed to delete link')
     }
   }
-  
+
+  const handleCreateCustomizationLink = async () => {
+    if (custLinkEquipId === '' || custLinkTemplateId === '') {
+      setError('Please select both an Equipment Type and a Customization Template')
+      return
+    }
+
+    try {
+      await settingsApi.assignAmazonCustomizationTemplate(custLinkEquipId as number, custLinkTemplateId as number)
+      setSuccess('Equipment Type linked to Customization Template successfully')
+      setCustLinkEquipId('')
+      setCustLinkTemplateId('')
+      loadData()
+    } catch (e: unknown) {
+      const err = e as { response?: { data?: { detail?: string } } }
+      setError(err.response?.data?.detail || 'Failed to link customization template')
+    }
+  }
+
   const getEquipmentTypeName = (id: number) => {
     const et = equipmentTypes.find(e => e.id === id)
     return et?.name || `ID: ${id}`
   }
-  
-  const getProductTypeName = (id: number) => {
-    const pt = templates.find(t => t.id === id)
+
+  const getProductTypeCode = (id: number) => {
+    const pt = productTypeTemplates.find(t => t.id === id)
     return pt?.code || `ID: ${id}`
+  }
+
+  const getCustomizationName = (id: number) => {
+    const ct = customizationTemplates.find(c => c.id === id)
+    return ct?.original_filename || `ID: ${id}`
   }
 
   return (
     <Box>
       <Typography variant="h4" gutterBottom>Amazon Templates</Typography>
 
-      <Paper sx={{ p: 3, mb: 3 }}>
-        <Typography variant="h6" gutterBottom>Import New Product Type</Typography>
-        <Grid container spacing={2} alignItems="center">
-          <Grid item xs={12} md={4}>
-            <TextField
-              fullWidth
-              label="Product Type Code"
-              value={productCode}
-              onChange={(e) => setProductCode(e.target.value)}
-              placeholder="e.g., CARRIER_BAG_CASE"
-              helperText="Enter the product type code for this template"
-            />
-          </Grid>
-          <Grid item xs={12} md={4}>
-            <Button
-              variant="contained"
-              component="label"
-              startIcon={uploading ? <CircularProgress size={20} /> : <UploadFileIcon />}
-              disabled={uploading || !productCode}
-            >
-              Upload New Template
-              <input type="file" hidden accept=".xlsx,.xls" onChange={(e) => handleFileSelect(e, false)} />
+      {isFixMissingFlow && (
+        <Paper
+          sx={{
+            p: 2,
+            mb: 3,
+            backgroundColor: '#e3f2fd',
+            border: '1px solid #90caf9',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center'
+          }}
+        >
+          <Box>
+            <Typography variant="subtitle1" component="div" sx={{ fontWeight: 'bold', color: '#0d47a1' }}>
+              Assign missing customization templates below.
+            </Typography>
+            <Typography variant="body2" color="text.secondary">
+              Once complete, return to the Export page to generate your files.
+            </Typography>
+          </Box>
+          <Box sx={{ display: 'flex', gap: 1 }}>
+            <Button component={RouterLink} to="/templates" variant="text" size="small">
+              Clear Focus
             </Button>
-          </Grid>
-        </Grid>
-        
-        {templates.length > 0 && (
+            <Button component={RouterLink} to="/export" variant="contained" color="primary">
+              Back to Amazon Export
+            </Button>
+          </Box>
+        </Paper>
+      )}
+
+      {/* Main Action Card: Import/Update */}
+      <Paper sx={{ p: 3, mb: 3 }}>
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 2 }}>
+          <Typography variant="h6">Import New Template</Typography>
+          <FormControl size="small" sx={{ minWidth: 200 }}>
+            <InputLabel>Template Type</InputLabel>
+            <Select
+              value={templateType}
+              label="Template Type"
+              onChange={(e) => setTemplateType(e.target.value as 'product' | 'customization')}
+            >
+              <MenuItem value="product">Product Type Template</MenuItem>
+              <MenuItem value="customization">Customization Template</MenuItem>
+            </Select>
+          </FormControl>
+        </Box>
+
+        {templateType === 'product' ? (
+          // PRODUCT TYPE IMPORT UI
           <>
-            <Divider sx={{ my: 3 }} />
-            <Typography variant="h6" gutterBottom>Update Existing Product Type</Typography>
             <Grid container spacing={2} alignItems="center">
               <Grid item xs={12} md={4}>
-                <FormControl fullWidth>
-                  <InputLabel>Select Product Type</InputLabel>
-                  <Select
-                    value={selectedExistingCode}
-                    label="Select Product Type"
-                    onChange={(e) => setSelectedExistingCode(e.target.value)}
-                  >
-                    {templates.map((t) => (
-                      <MenuItem key={t.id} value={t.code}>{t.code}</MenuItem>
-                    ))}
-                  </Select>
-                </FormControl>
+                <TextField
+                  fullWidth
+                  label="Product Type Code"
+                  value={productCode}
+                  onChange={(e) => setProductCode(e.target.value)}
+                  placeholder="e.g., CARRIER_BAG_CASE"
+                  helperText="Enter the product type code for this template"
+                />
               </Grid>
               <Grid item xs={12} md={4}>
                 <Button
-                  variant="outlined"
+                  variant="contained"
                   component="label"
-                  color="warning"
-                  startIcon={uploading ? <CircularProgress size={20} /> : <RefreshIcon />}
-                  disabled={uploading || !selectedExistingCode}
+                  startIcon={uploading ? <CircularProgress size={20} /> : <UploadFileIcon />}
+                  disabled={uploading || !productCode}
                 >
-                  Upload Updated Template
-                  <input type="file" hidden accept=".xlsx,.xls" onChange={(e) => handleFileSelect(e, true)} />
+                  Upload New Product Type
+                  <input type="file" hidden accept=".xlsx,.xls" onChange={(e) => handleProductTypeFileSelect(e, false)} />
                 </Button>
               </Grid>
             </Grid>
+
+            {productTypeTemplates.length > 0 && (
+              <>
+                <Divider sx={{ my: 3 }} />
+                <Typography variant="h6" gutterBottom>Update Existing Product Type</Typography>
+                <Grid container spacing={2} alignItems="center">
+                  <Grid item xs={12} md={4}>
+                    <FormControl fullWidth>
+                      <InputLabel>Select Product Type</InputLabel>
+                      <Select
+                        value={selectedExistingCode}
+                        label="Select Product Type"
+                        onChange={(e) => setSelectedExistingCode(e.target.value)}
+                      >
+                        {productTypeTemplates.map((t) => (
+                          <MenuItem key={t.id} value={t.code}>{t.code}</MenuItem>
+                        ))}
+                      </Select>
+                    </FormControl>
+                  </Grid>
+                  <Grid item xs={12} md={4}>
+                    <Button
+                      variant="outlined"
+                      component="label"
+                      color="warning"
+                      startIcon={uploading ? <CircularProgress size={20} /> : <RefreshIcon />}
+                      disabled={uploading || !selectedExistingCode}
+                    >
+                      Upload Updated Template
+                      <input type="file" hidden accept=".xlsx,.xls" onChange={(e) => handleProductTypeFileSelect(e, true)} />
+                    </Button>
+                  </Grid>
+                </Grid>
+              </>
+            )}
+          </>
+        ) : (
+          // CUSTOMIZATION IMPORT UI
+          <>
+            <Grid container spacing={2} alignItems="center">
+              <Grid item xs={12} md={4}>
+                <Button
+                  variant="contained"
+                  component="label"
+                  startIcon={uploading ? <CircularProgress size={20} /> : <UploadFileIcon />}
+                  disabled={uploading}
+                >
+                  Upload New Customization Template
+                  <input type="file" hidden accept=".xlsx,.xls" onChange={(e) => handleCustomizationFileSelect(e, false)} />
+                </Button>
+              </Grid>
+            </Grid>
+
+            {customizationTemplates.length > 0 && (
+              <>
+                <Divider sx={{ my: 3 }} />
+                <Typography variant="h6" gutterBottom>Update Existing Customization Template</Typography>
+                <Grid container spacing={2} alignItems="center">
+                  <Grid item xs={12} md={4}>
+                    <FormControl fullWidth>
+                      <InputLabel>Select Customization Template</InputLabel>
+                      <Select
+                        value={selectedCustomizationId}
+                        label="Select Customization Template"
+                        onChange={(e) => setSelectedCustomizationId(e.target.value as number)}
+                      >
+                        {customizationTemplates.map((t) => (
+                          <MenuItem key={t.id} value={t.id}>{t.original_filename}</MenuItem>
+                        ))}
+                      </Select>
+                    </FormControl>
+                  </Grid>
+                  <Grid item xs={12} md={4}>
+                    <Button
+                      variant="outlined"
+                      component="label"
+                      color="warning"
+                      startIcon={uploading ? <CircularProgress size={20} /> : <RefreshIcon />}
+                      disabled={uploading || selectedCustomizationId === ''}
+                    >
+                      Upload Updated File
+                      <input type="file" hidden accept=".xlsx,.xls" onChange={(e) => handleCustomizationFileSelect(e, true)} />
+                    </Button>
+                  </Grid>
+                </Grid>
+              </>
+            )}
           </>
         )}
-        
+
         {error && <Alert severity="error" sx={{ mt: 2 }}>{error}</Alert>}
         {success && <Alert severity="success" sx={{ mt: 2 }}>{success}</Alert>}
       </Paper>
 
-      {templates.length > 0 && equipmentTypes.length > 0 && (
-        <Paper sx={{ p: 3, mb: 3 }}>
-          <Typography variant="h6" gutterBottom sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-            <LinkIcon /> Link Equipment Types to Product Types
-          </Typography>
-          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-            Associate your equipment types with Amazon Product Type templates. This determines which template fields are used when creating listings for each equipment type.
-          </Typography>
-          
-          <Grid container spacing={2} alignItems="center" sx={{ mb: 3 }}>
+      {/* Linking Section */}
+      <Paper sx={{ p: 3, mb: 3 }}>
+        <Typography variant="h6" gutterBottom sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          <LinkIcon /> Template Linking
+        </Typography>
+
+        {/* Product Type Links */}
+        <Box sx={{ mb: 4 }}>
+          <Typography variant="subtitle1" sx={{ fontWeight: 'bold', }} gutterBottom>Product Type Templates (for regular listing data)</Typography>
+          <Grid container spacing={2} alignItems="center" sx={{ mb: 2 }}>
             <Grid item xs={12} md={4}>
               <FormControl fullWidth size="small">
                 <InputLabel>Equipment Type</InputLabel>
                 <Select
-                  value={selectedEquipmentTypeId}
+                  value={ptLinkEquipId}
                   label="Equipment Type"
-                  onChange={(e) => setSelectedEquipmentTypeId(e.target.value as number)}
+                  onChange={(e) => setPtLinkEquipId(e.target.value as number)}
                 >
                   {equipmentTypes.map((et) => (
                     <MenuItem key={et.id} value={et.id}>{et.name}</MenuItem>
@@ -374,47 +575,33 @@ export default function TemplatesPage() {
               <FormControl fullWidth size="small">
                 <InputLabel>Product Type Template</InputLabel>
                 <Select
-                  value={selectedProductTypeId}
+                  value={ptLinkTemplateId}
                   label="Product Type Template"
-                  onChange={(e) => setSelectedProductTypeId(e.target.value as number)}
+                  onChange={(e) => setPtLinkTemplateId(e.target.value as number)}
                 >
-                  {templates.map((t) => (
+                  {productTypeTemplates.map((t) => (
                     <MenuItem key={t.id} value={t.id}>{t.code}</MenuItem>
                   ))}
                 </Select>
               </FormControl>
             </Grid>
             <Grid item xs={12} md={4}>
-              <Button
-                variant="contained"
-                startIcon={<AddIcon />}
-                onClick={handleCreateLink}
-                disabled={selectedEquipmentTypeId === '' || selectedProductTypeId === ''}
-              >
-                Create Link
+              <Button variant="contained" startIcon={<AddIcon />} onClick={handleCreateProductTypeLink} disabled={ptLinkEquipId === '' || ptLinkTemplateId === ''}>
+                Link Product Type
               </Button>
             </Grid>
           </Grid>
-          
           {equipmentTypeLinks.length > 0 && (
             <TableContainer>
               <Table size="small">
-                <TableHead>
-                  <TableRow>
-                    <TableCell>Equipment Type</TableCell>
-                    <TableCell>Product Type Template</TableCell>
-                    <TableCell>Actions</TableCell>
-                  </TableRow>
-                </TableHead>
+                <TableHead><TableRow><TableCell>Equipment Type</TableCell><TableCell>Template</TableCell><TableCell>Actions</TableCell></TableRow></TableHead>
                 <TableBody>
                   {equipmentTypeLinks.map((link) => (
                     <TableRow key={link.id}>
                       <TableCell>{getEquipmentTypeName(link.equipment_type_id)}</TableCell>
-                      <TableCell>{getProductTypeName(link.product_type_id)}</TableCell>
+                      <TableCell>{getProductTypeCode(link.product_type_id)}</TableCell>
                       <TableCell>
-                        <IconButton size="small" onClick={() => handleDeleteLink(link.id)}>
-                          <DeleteIcon />
-                        </IconButton>
+                        <IconButton size="small" onClick={() => handleDeleteProductTypeLink(link.id)}><DeleteIcon /></IconButton>
                       </TableCell>
                     </TableRow>
                   ))}
@@ -422,44 +609,87 @@ export default function TemplatesPage() {
               </Table>
             </TableContainer>
           )}
-        </Paper>
-      )}
+        </Box>
 
-      <Dialog open={pendingUpload !== null} onClose={handleCancelUpload}>
+        <Divider />
+
+        {/* Customization Links */}
+        <Box sx={{ mt: 3 }} ref={customLinkingRef} style={{ scrollMarginTop: '80px' }}>
+          <Typography variant="subtitle1" sx={{ fontWeight: 'bold' }} gutterBottom>Customization Templates (for customization.txt)</Typography>
+          <Typography variant="caption" color="text.secondary" paragraph>
+            Note: This assigns the template to the Equipment Type directly. Re-assign to change.
+          </Typography>
+          <Grid container spacing={2} alignItems="center" sx={{ mb: 2 }}>
+            <Grid item xs={12} md={4}>
+              <FormControl fullWidth size="small">
+                <InputLabel>Equipment Type</InputLabel>
+                <Select
+                  value={custLinkEquipId}
+                  label="Equipment Type"
+                  onChange={(e) => setCustLinkEquipId(e.target.value as number)}
+                >
+                  {equipmentTypes.map((et) => (
+                    <MenuItem key={et.id} value={et.id}>{et.name}</MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            </Grid>
+            <Grid item xs={12} md={4}>
+              <FormControl fullWidth size="small">
+                <InputLabel>Customization Template</InputLabel>
+                <Select
+                  value={custLinkTemplateId}
+                  label="Customization Template"
+                  onChange={(e) => setCustLinkTemplateId(e.target.value as number)}
+                >
+                  {customizationTemplates.map((t) => (
+                    <MenuItem key={t.id} value={t.id}>{t.original_filename}</MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            </Grid>
+            <Grid item xs={12} md={4}>
+              <Button variant="contained" startIcon={<AddIcon />} onClick={handleCreateCustomizationLink} disabled={custLinkEquipId === '' || custLinkTemplateId === ''}>
+                Assign Template
+              </Button>
+            </Grid>
+          </Grid>
+
+          <TableContainer>
+            <Table size="small">
+              <TableHead><TableRow><TableCell>Equipment Type</TableCell><TableCell>Assigned Template</TableCell></TableRow></TableHead>
+              <TableBody>
+                {equipmentTypes.filter(et => et.amazon_customization_template_id).map((et) => (
+                  <TableRow key={et.id}>
+                    <TableCell>{et.name}</TableCell>
+                    <TableCell>
+                      {getCustomizationName(et.amazon_customization_template_id!)}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </TableContainer>
+        </Box>
+      </Paper>
+
+      <Dialog open={pendingUpload !== null} onClose={handleCancelProductTypeUpload}>
         <DialogTitle sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-          {pendingUpload?.matchStatus === 'match' ? (
-            <CheckCircleIcon color="success" />
-          ) : (
-            <WarningIcon color="warning" />
-          )}
+          {pendingUpload?.matchStatus === 'match' ? <CheckCircleIcon color="success" /> : <WarningIcon color="warning" />}
           {pendingUpload?.matchStatus === 'match' ? 'Confirm Upload' : 'File Mismatch Warning'}
         </DialogTitle>
         <DialogContent>
           <DialogContentText>
             {pendingUpload?.matchStatus === 'match' ? (
-              <>
-                The file <strong>{pendingUpload?.file.name}</strong> appears to match 
-                the Product Type <strong>{pendingUpload?.productCode}</strong>.
-                <br /><br />
-                Do you want to proceed with the {pendingUpload?.isUpdate ? 'update' : 'import'}?
-              </>
+              <>File <strong>{pendingUpload?.file.name}</strong> matches Product Type <strong>{pendingUpload?.productCode}</strong>. Proceed?</>
             ) : (
-              <>
-                The file <strong>{pendingUpload?.file.name}</strong> does not appear to match 
-                the Product Type <strong>{pendingUpload?.productCode}</strong>.
-                <br /><br />
-                Are you sure you want to use this file to {pendingUpload?.isUpdate ? 'update' : 'import'} this Product Type?
-              </>
+              <>File <strong>{pendingUpload?.file.name}</strong> does not match Product Type <strong>{pendingUpload?.productCode}</strong>. Use anyway?</>
             )}
           </DialogContentText>
         </DialogContent>
         <DialogActions>
-          <Button onClick={handleCancelUpload}>Cancel</Button>
-          <Button 
-            onClick={handleConfirmUpload} 
-            variant="contained"
-            color={pendingUpload?.matchStatus === 'match' ? 'primary' : 'warning'}
-          >
+          <Button onClick={handleCancelProductTypeUpload}>Cancel</Button>
+          <Button onClick={handleConfirmProductTypeUpload} variant="contained" color={pendingUpload?.matchStatus === 'match' ? 'primary' : 'warning'}>
             {pendingUpload?.matchStatus === 'match' ? 'Proceed' : 'Yes, Use This File'}
           </Button>
         </DialogActions>
@@ -469,308 +699,257 @@ export default function TemplatesPage() {
         <Grid item xs={12}>
           <Paper sx={{ p: 2 }}>
             <Typography variant="h6" gutterBottom>Imported Templates</Typography>
-            {templates.length === 0 ? (
-              <Typography color="text.secondary">
-                No templates imported yet. Upload an Amazon template file to get started.
-              </Typography>
-            ) : (
-              <TableContainer>
-                <Table size="small">
-                  <TableHead>
-                    <TableRow>
-                      <TableCell>Code</TableCell>
-                      <TableCell>Fields</TableCell>
-                      <TableCell>Actions</TableCell>
+            <TableContainer>
+              <Table size="small">
+                <TableHead>
+                  <TableRow>
+                    <TableCell>Name / Code</TableCell>
+                    <TableCell>Type</TableCell>
+                    <TableCell>Info</TableCell>
+                    <TableCell>Actions</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {productTypeTemplates.map(pt => (
+                    <TableRow key={`pt-${pt.id}`} hover selected={(selectedTemplate as AmazonProductType)?.code === pt.code} onClick={() => { setSelectedTemplate(pt); setTemplateType('product') }} sx={{ cursor: 'pointer' }}>
+                      <TableCell>{pt.code}</TableCell>
+                      <TableCell><Chip label="Product Type" size="small" color="primary" variant="outlined" /></TableCell>
+                      <TableCell>{pt.fields?.length || 0} fields</TableCell>
+                      <TableCell>
+                        <IconButton size="small" onClick={(e) => { e.stopPropagation(); handleDeleteProductType(pt.code); }}><DeleteIcon /></IconButton>
+                      </TableCell>
                     </TableRow>
-                  </TableHead>
-                  <TableBody>
-                    {templates.map((template) => (
-                      <TableRow 
-                        key={template.id}
-                        hover
-                        selected={selectedTemplate?.id === template.id}
-                        onClick={() => viewTemplate(template.code)}
-                        sx={{ cursor: 'pointer' }}
-                      >
-                        <TableCell>{template.code}</TableCell>
-                        <TableCell>{template.fields?.length || 0}</TableCell>
-                        <TableCell>
-                          <IconButton 
-                            size="small" 
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              handleDelete(template.code)
-                            }}
-                          >
-                            <DeleteIcon />
-                          </IconButton>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </TableContainer>
-            )}
+                  ))}
+                  {customizationTemplates.map(ct => (
+                    <TableRow key={`ct-${ct.id}`} hover selected={(selectedTemplate as AmazonCustomizationTemplate)?.id === ct.id} onClick={() => { setSelectedTemplate(ct); setTemplateType('customization') }} sx={{ cursor: 'pointer' }}>
+                      <TableCell>{ct.original_filename}</TableCell>
+                      <TableCell><Chip label="Customization" size="small" color="secondary" variant="outlined" /></TableCell>
+                      <TableCell>{Math.round(ct.file_size / 1024)} KB</TableCell>
+                      <TableCell>
+                        <IconButton size="small" component="a" href={settingsApi.downloadAmazonCustomizationTemplateUrl(ct.id)} download onClick={(e) => e.stopPropagation()}><DownloadIcon /></IconButton>
+                        <IconButton size="small" onClick={(e) => { e.stopPropagation(); handleDeleteCustomization(ct.id); }}><DeleteIcon /></IconButton>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </TableContainer>
           </Paper>
         </Grid>
 
         <Grid item xs={12}>
-          <Paper sx={{ p: 2 }}>
-            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-              <Typography variant="h6">
-                Template Fields
-                {selectedTemplate && ` - ${selectedTemplate.code}`}
-              </Typography>
-              <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
-                {selectedTemplate && (
-                  <>
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                      <Switch
-                        size="small"
-                        checked={showOnlyRequired}
-                        onChange={(e) => setShowOnlyRequired(e.target.checked)}
-                      />
-                      <Typography variant="body2">Required Only</Typography>
-                    </Box>
-                    <Button
-                      variant="outlined"
-                      size="small"
-                      startIcon={<PreviewIcon />}
-                      onClick={() => setShowPreview(true)}
-                    >
-                      Preview Export
-                    </Button>
-                  </>
-                )}
-              </Box>
-            </Box>
-            
-            {selectedTemplate ? (
-              <Box>
-                {selectedTemplate.keywords && selectedTemplate.keywords.length > 0 && (
-                  <Accordion sx={{ mb: 2 }} defaultExpanded={false}>
-                    <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-                      <Typography variant="subtitle2">
-                        Keywords ({selectedTemplate.keywords.length})
-                      </Typography>
-                    </AccordionSummary>
-                    <AccordionDetails>
-                      <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-                        {selectedTemplate.keywords.map((kw) => (
-                          <Chip key={kw.id} label={kw.keyword} size="small" />
-                        ))}
+          {selectedTemplate && (
+            <Paper sx={{ p: 2 }}>
+              {templateType === 'product' ? (
+                // PRODUCT TYPE DETAILS (Existing Logic)
+                <>
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                    <Typography variant="h6">Template Fields - {(selectedTemplate as AmazonProductType).code}</Typography>
+                    <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                        <Switch size="small" checked={showOnlyRequired} onChange={(e) => setShowOnlyRequired(e.target.checked)} />
+                        <Typography variant="body2">Required Only</Typography>
                       </Box>
-                    </AccordionDetails>
-                  </Accordion>
-                )}
-                
-                <Box sx={{ maxHeight: 500, overflowY: 'auto' }}>
-                  {(() => {
-                    const allFields = selectedTemplate.fields || []
-                    const filteredFields = showOnlyRequired 
-                      ? allFields.filter(f => f.required)
-                      : allFields
-                    
-                    const groupedFields = filteredFields.reduce((acc, field) => {
-                      const group = field.attribute_group || 'Other'
-                      if (!acc[group]) acc[group] = []
-                      acc[group].push(field)
-                      return acc
-                    }, {} as Record<string, typeof selectedTemplate.fields>)
-                    
-                    const groups = Object.keys(groupedFields || {})
-                    
-                    if (showOnlyRequired && filteredFields.length === 0) {
-                      return (
-                        <Typography color="text.secondary" sx={{ py: 2 }}>
-                          No fields marked as required. Toggle the switches to mark fields as required.
-                        </Typography>
-                      )
-                    }
-                    
-                    const handleToggleGroupRequired = async (groupName: string, setRequired: boolean) => {
-                      const groupFields = groupedFields![groupName] || []
-                      for (const field of groupFields) {
-                        if (field.required !== setRequired) {
-                          try {
-                            await templatesApi.updateField(field.id, { required: setRequired })
-                          } catch (err) {
-                            console.error('Failed to update field', err)
+                      <Button variant="outlined" size="small" startIcon={<PreviewIcon />} onClick={() => setShowPreview(true)}>Preview Export</Button>
+                    </Box>
+                  </Box>
+
+                  <Box sx={{ maxHeight: 500, overflowY: 'auto' }}>
+                    {/* Render fields logic reused from before */}
+                    {(() => {
+                      const pt = selectedTemplate as AmazonProductType
+                      const allFields = pt.fields || []
+                      const filteredFields = showOnlyRequired ? allFields.filter(f => f.required) : allFields
+                      const groupedFields = filteredFields.reduce((acc, field) => {
+                        const group = field.attribute_group || 'Other'
+                        if (!acc[group]) acc[group] = []
+                        acc[group].push(field)
+                        return acc
+                      }, {} as Record<string, typeof pt.fields>)
+                      const groups = Object.keys(groupedFields || {})
+
+                      const handleToggleGroupRequired = async (groupName: string, setRequired: boolean) => {
+                        const groupFields = groupedFields![groupName] || []
+                        // Optimistic update locally first? No, let's do it safely.
+                        // Actually, we should probably do parallel requests or a bulk endpoint.
+                        // Existing pattern was loop.
+                        for (const field of groupFields) {
+                          if (field.required !== setRequired) {
+                            try {
+                              await templatesApi.updateField(field.id, { required: setRequired })
+                            } catch (err) {
+                              console.error('Failed to update field', err)
+                            }
                           }
                         }
+
+                        // Update UI
+                        const currentPt = selectedTemplate as AmazonProductType
+                        const updatedFields = currentPt.fields.map(f => {
+                          const inGroup = groupFields.some(gf => gf.id === f.id)
+                          return inGroup ? { ...f, required: setRequired } : f
+                        })
+
+                        const updatedPt = { ...currentPt, fields: updatedFields }
+                        setSelectedTemplate(updatedPt)
+                        setProductTypeTemplates(prev => prev.map(t => t.id === updatedPt.id ? updatedPt : t))
                       }
-                      const updatedFields = selectedTemplate.fields.map(f => {
-                        const inGroup = groupFields.some(gf => gf.id === f.id)
-                        return inGroup ? { ...f, required: setRequired } : f
-                      })
-                      setSelectedTemplate({ ...selectedTemplate, fields: updatedFields })
-                      setTemplates(templates.map(t => 
-                        t.id === selectedTemplate.id ? { ...t, fields: updatedFields } : t
-                      ))
-                    }
-                    
-                    return groups.map((groupName) => {
-                      const groupFields = groupedFields![groupName] || []
-                      const allRequired = groupFields.every(f => f.required)
-                      const noneRequired = groupFields.every(f => !f.required)
-                      
-                      return (
-                      <Accordion key={groupName} defaultExpanded={false} sx={{ '&:before': { display: 'none' } }}>
-                        <AccordionSummary 
-                          expandIcon={<ExpandMoreIcon />}
-                          sx={{ 
-                            backgroundColor: 'action.hover',
-                            '&:hover': { backgroundColor: 'action.selected' }
-                          }}
-                        >
-                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, width: '100%', pr: 2 }}>
-                            <Typography variant="subtitle2" sx={{ fontWeight: 'medium', flexGrow: 1 }}>
-                              {groupName} ({groupFields.length})
-                            </Typography>
-                            <Chip 
-                              label={`${groupFields.filter(f => f.required).length} req`}
-                              size="small"
-                              color={allRequired ? 'primary' : noneRequired ? 'default' : 'warning'}
-                              sx={{ fontSize: '10px', height: 20 }}
-                            />
-                          </Box>
-                        </AccordionSummary>
-                        <AccordionDetails sx={{ p: 0 }}>
-                          <Box sx={{ display: 'flex', gap: 1, p: 1, backgroundColor: '#f5f5f5', borderBottom: '1px solid #ddd' }}>
-                            <Button 
-                              size="small" 
-                              variant="outlined"
-                              onClick={() => handleToggleGroupRequired(groupName, true)}
-                              disabled={allRequired}
+
+                      return groups.map((groupName) => {
+                        const groupFields = groupedFields![groupName] || []
+                        const allRequired = groupFields.every(f => f.required)
+                        const noneRequired = groupFields.every(f => !f.required)
+
+                        return (
+                          <Accordion key={groupName} defaultExpanded={false} sx={{ '&:before': { display: 'none' } }}>
+                            <AccordionSummary
+                              expandIcon={<ExpandMoreIcon />}
+                              sx={{
+                                backgroundColor: 'action.hover',
+                                '&:hover': { backgroundColor: 'action.selected' }
+                              }}
                             >
-                              Mark All Required
-                            </Button>
-                            <Button 
-                              size="small" 
-                              variant="outlined"
-                              onClick={() => handleToggleGroupRequired(groupName, false)}
-                              disabled={noneRequired}
-                            >
-                              Clear All Required
-                            </Button>
-                          </Box>
-                          <Table size="small">
-                            <TableHead>
-                              <TableRow>
-                                <TableCell>Field Name</TableCell>
-                                <TableCell width={80}>Required</TableCell>
-                                <TableCell>Default / Selected Value</TableCell>
-                              </TableRow>
-                            </TableHead>
-                            <TableBody>
-                              {groupFields.map((field) => (
-                                <TableRow 
-                                  key={field.id}
-                                  hover
-                                  sx={{ cursor: 'pointer' }}
-                                  onClick={() => setSelectedField(field)}
+                              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, width: '100%', pr: 2 }}>
+                                <Typography variant="subtitle2" sx={{ fontWeight: 'medium', flexGrow: 1 }}>
+                                  {groupName} ({groupFields.length})
+                                </Typography>
+                                <Chip
+                                  label={`${groupFields.filter(f => f.required).length} req`}
+                                  size="small"
+                                  color={allRequired ? 'primary' : noneRequired ? 'default' : 'warning'}
+                                  sx={{ fontSize: '10px', height: 20 }}
+                                />
+                              </Box>
+                            </AccordionSummary>
+                            <AccordionDetails sx={{ p: 0 }}>
+                              <Box sx={{ display: 'flex', gap: 1, p: 1, backgroundColor: '#f5f5f5', borderBottom: '1px solid #ddd' }}>
+                                <Button
+                                  size="small"
+                                  variant="outlined"
+                                  onClick={() => handleToggleGroupRequired(groupName, true)}
+                                  disabled={allRequired}
                                 >
-                                  <TableCell>{field.field_name}</TableCell>
-                                  <TableCell onClick={(e) => e.stopPropagation()}>
-                                    <Switch
-                                      size="small"
-                                      checked={field.required}
-                                      onChange={async (e) => {
-                                        const newRequired = e.target.checked
-                                        try {
-                                          const updated = await templatesApi.updateField(field.id, { required: newRequired })
-                                          const updatedField = { ...field, required: updated.required }
-                                          setSelectedTemplate({
-                                            ...selectedTemplate,
-                                            fields: selectedTemplate.fields.map(f => 
-                                              f.id === field.id ? updatedField : f
-                                            )
-                                          })
-                                          setTemplates(templates.map(t => 
-                                            t.id === selectedTemplate.id 
-                                              ? { ...t, fields: t.fields.map(f => f.id === field.id ? updatedField : f) }
-                                              : t
-                                          ))
-                                        } catch (err) {
-                                          console.error('Failed to update required status', err)
-                                        }
-                                      }}
-                                    />
-                                  </TableCell>
-                                  <TableCell>
-                                    {field.selected_value ? (
-                                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                                        <Chip label={field.selected_value} size="small" color="primary" />
-                                        {field.valid_values?.length > 0 && (
-                                          <Typography variant="body2" color="text.secondary">
-                                            ({field.valid_values.length})
-                                          </Typography>
-                                        )}
-                                      </Box>
-                                    ) : field.custom_value ? (
-                                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                                        <Chip 
-                                          label={field.custom_value.length > 30 ? field.custom_value.substring(0, 30) + '...' : field.custom_value} 
-                                          size="small" 
-                                          color="success"
-                                          title={field.custom_value}
+                                  Mark All Required
+                                </Button>
+                                <Button
+                                  size="small"
+                                  variant="outlined"
+                                  onClick={() => handleToggleGroupRequired(groupName, false)}
+                                  disabled={noneRequired}
+                                >
+                                  Clear All Required
+                                </Button>
+                              </Box>
+                              <Table size="small">
+                                <TableHead><TableRow><TableCell>Field Name</TableCell><TableCell width={80}>Required</TableCell><TableCell>Default / Selected Value</TableCell></TableRow></TableHead>
+                                <TableBody>
+                                  {groupFields.map(field => (
+                                    <TableRow key={field.id} hover sx={{ cursor: 'pointer' }} onClick={() => setSelectedField(field)}>
+                                      <TableCell>{field.field_name}</TableCell>
+                                      <TableCell onClick={(e) => e.stopPropagation()}>
+                                        <Switch
+                                          size="small"
+                                          checked={field.required}
+                                          onChange={async (e) => {
+                                            const newRequired = e.target.checked
+                                            try {
+                                              const updated = await templatesApi.updateField(field.id, { required: newRequired })
+                                              const updatedField = { ...field, required: updated.required }
+                                              setSelectedTemplate({
+                                                ...selectedTemplate,
+                                                fields: (selectedTemplate as AmazonProductType).fields.map(f =>
+                                                  f.id === field.id ? updatedField : f
+                                                )
+                                              })
+                                              setProductTypeTemplates(prev => prev.map(t =>
+                                                t.id === (selectedTemplate as AmazonProductType).id
+                                                  ? { ...t, fields: t.fields.map(f => f.id === field.id ? updatedField : f) }
+                                                  : t
+                                              ))
+                                            } catch (err) {
+                                              console.error('Failed to update required status', err)
+                                            }
+                                          }}
                                         />
-                                        {field.valid_values?.length > 0 && (
+                                      </TableCell>
+                                      <TableCell>
+                                        {field.selected_value ? (
+                                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                            <Chip label={field.selected_value} size="small" color="primary" />
+                                            {field.valid_values?.length > 0 && (
+                                              <Typography variant="body2" color="text.secondary">
+                                                ({field.valid_values.length})
+                                              </Typography>
+                                            )}
+                                          </Box>
+                                        ) : field.custom_value ? (
+                                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                            <Chip
+                                              label={field.custom_value.length > 30 ? field.custom_value.substring(0, 30) + '...' : field.custom_value}
+                                              size="small"
+                                              color="success"
+                                              title={field.custom_value}
+                                            />
+                                            {field.valid_values?.length > 0 && (
+                                              <Typography variant="body2" color="text.secondary">
+                                                ({field.valid_values.length})
+                                              </Typography>
+                                            )}
+                                          </Box>
+                                        ) : field.valid_values?.length > 0 ? (
                                           <Typography variant="body2" color="text.secondary">
-                                            ({field.valid_values.length})
+                                            {field.valid_values.length} values
                                           </Typography>
+                                        ) : (
+                                          <Typography variant="body2" color="text.secondary">Any</Typography>
                                         )}
-                                      </Box>
-                                    ) : field.valid_values?.length > 0 ? (
-                                      <Typography variant="body2" color="text.secondary">
-                                        {field.valid_values.length} values
-                                      </Typography>
-                                    ) : (
-                                      <Typography variant="body2" color="text.secondary">Any</Typography>
-                                    )}
-                                  </TableCell>
-                                </TableRow>
-                              ))}
-                            </TableBody>
-                          </Table>
-                        </AccordionDetails>
-                      </Accordion>
-                    )})
-                  })()}
+                                      </TableCell>
+                                    </TableRow>
+                                  ))}
+                                </TableBody>
+                              </Table>
+                            </AccordionDetails>
+                          </Accordion>
+                        )
+                      })
+                    })()}
+                  </Box>
+                </>
+              ) : (
+                // CUSTOMIZATION DETAILS
+                <Box>
+                  <Typography variant="h6">Customization Template Details</Typography>
+                  <Box sx={{ mt: 2 }}>
+                    <Typography><strong>Filename:</strong> {(selectedTemplate as AmazonCustomizationTemplate).original_filename}</Typography>
+                    <Typography><strong>Upload Date:</strong> {new Date((selectedTemplate as AmazonCustomizationTemplate).upload_date).toLocaleString()}</Typography>
+                    <Typography><strong>Size:</strong> {(selectedTemplate as AmazonCustomizationTemplate).file_size} bytes</Typography>
+                    <Typography sx={{ mt: 2, fontStyle: 'italic', color: 'text.secondary' }}>
+                      This is a raw Excel template used for generating customization files. No field mapping is required.
+                    </Typography>
+                  </Box>
                 </Box>
-              </Box>
-            ) : (
-              <Typography color="text.secondary">
-                Select a template to view its fields
-              </Typography>
-            )}
-          </Paper>
+              )}
+            </Paper>
+          )}
         </Grid>
       </Grid>
-      
-      {showPreview && selectedTemplate && (
-        <TemplatePreview 
-          template={selectedTemplate} 
-          onClose={() => setShowPreview(false)} 
-        />
+
+      {showPreview && selectedTemplate && templateType === 'product' && (
+        <TemplatePreview template={selectedTemplate as AmazonProductType} onClose={() => setShowPreview(false)} />
       )}
-      
-      {selectedField && selectedTemplate && (
+
+      {selectedField && selectedTemplate && templateType === 'product' && (
         <FieldDetailsDialog
           field={selectedField}
           onClose={() => setSelectedField(null)}
           onUpdate={(updatedField) => {
-            setSelectedTemplate({
-              ...selectedTemplate,
-              fields: selectedTemplate.fields.map(f => 
-                f.id === updatedField.id ? updatedField : f
-              )
-            })
-            setTemplates(templates.map(t => 
-              t.id === selectedTemplate.id 
-                ? { ...t, fields: t.fields.map(f => f.id === updatedField.id ? updatedField : f) }
-                : t
-            ))
+            // Update local state for immediate feedback
+            // (Abbreviated update logic for brevity - in real app full update is safer, but here relying on reloadData or basic immutability)
+            const pt = selectedTemplate as AmazonProductType
+            const newFields = pt.fields.map(f => f.id === updatedField.id ? updatedField : f)
+            const newPt = { ...pt, fields: newFields }
+            setSelectedTemplate(newPt)
+            setProductTypeTemplates(prev => prev.map(p => p.id === newPt.id ? newPt : p))
             setSelectedField(updatedField)
           }}
         />

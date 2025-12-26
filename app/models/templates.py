@@ -1,6 +1,16 @@
-from sqlalchemy import Column, Integer, String, Boolean, ForeignKey, Text, JSON
+from sqlalchemy import Column, Integer, String, Boolean, ForeignKey, Text, JSON, DateTime
 from sqlalchemy.orm import relationship
 from app.database import Base
+from datetime import datetime
+
+class AmazonCustomizationTemplate(Base):
+    __tablename__ = "amazon_customization_templates"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    original_filename = Column(String, nullable=False)
+    file_path = Column(String, nullable=False)
+    upload_date = Column(DateTime, default=datetime.utcnow)
+    file_size = Column(Integer, nullable=True)
 
 class AmazonProductType(Base):
     __tablename__ = "amazon_product_types"

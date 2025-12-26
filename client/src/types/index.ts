@@ -9,9 +9,16 @@ export interface Series {
   manufacturer_id: number
 }
 
+export interface AmazonCustomizationTemplate {
+  id: number
+  original_filename: string
+}
+
 export interface EquipmentType {
   id: number
   name: string
+  amazon_customization_template_id?: number | null
+  amazon_customization_template?: AmazonCustomizationTemplate | null
 }
 
 export interface DesignOption {

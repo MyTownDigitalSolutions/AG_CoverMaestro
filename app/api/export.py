@@ -1,4 +1,7 @@
 import re
+import os
+import logging
+import zipfile
 import io
 import csv
 import json
@@ -12,7 +15,7 @@ from sqlalchemy.orm import Session
 from typing import List, Dict, Any
 from pydantic import BaseModel
 from app.schemas.core import ModelPricingSnapshotResponse
-from openpyxl import Workbook
+from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Font, PatternFill, Alignment
 from app.database import get_db
 from app.models.core import Model, Series, Manufacturer, EquipmentType, ModelPricingSnapshot
@@ -737,7 +740,339 @@ def download_csv(request: ExportPreviewRequest, db: Session = Depends(get_db)):
     return response
 
 
+
+def generate_customization_unicode_txt(template_path: str, skus: List[str]) -> bytes:
+    """
+    Generate Amazon Customization File (.txt) from a template and list of SKUs.
+    Format:
+    - UTF-16 LE with BOM
+    - Tab-delimited
+    - Rows 1-3: from template unmodified
+    - Row 4: Blueprint row (from template)
+    - Rows 5+: Blueprint row with Column A replaced by real SKU
+    """
+    try:
+        wb = load_workbook(template_path, read_only=False, data_only=True)
+        ws = wb.worksheets[0]
+        rows = list(ws.iter_rows(values_only=True))
+        wb.close()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to read customization template: {str(e)}")
+
+    if len(rows) < 4:
+         raise HTTPException(status_code=500, detail="Customization template is invalid (fewer than 4 rows).")
+
+    # Capture Headers (1-3) and Blueprint (4)
+    header_rows = rows[:3]
+    blueprint_row = rows[3]
+    
+    output = io.BytesIO()
+    # Write BOM for UTF-16 LE
+    output.write(b'\xff\xfe')
+    
+    def write_row(row_values):
+        # Normalize: 
+        # - None -> ""
+        # - strip tabs/newlines from content to prevent breaking format
+        # - join with tabs
+        cleaned = []
+        for val in row_values:
+            s = str(val) if val is not None else ""
+            s = s.replace('\t', ' ').replace('\r', ' ').replace('\n', ' ')
+            cleaned.append(s)
+        
+        line = "\t".join(cleaned) + "\r\n"
+        output.write(line.encode('utf-16-le'))
+
+    # Write Headers
+    for r in header_rows:
+        write_row(r)
+        
+    # Write Data Rows
+    for sku in skus:
+        # Create new row based on blueprint
+        new_row = list(blueprint_row)
+        # Column A is index 0
+        if len(new_row) > 0:
+            new_row[0] = sku
+        else:
+            new_row = [sku]
+            
+        write_row(new_row)
+        
+    return output.getvalue()
+
+
+class DownloadZipRequest(BaseModel):
+    model_ids: List[int]
+    listing_type: str = "individual"
+    include_customization: bool = True
+    marketplace_token: str
+    manufacturer_token: str
+    series_token: str
+    series_token: str
+    date_token: str  # YYYY-MM-DD
+    customization_format: Optional[str] = "xlsx" # "xlsx" or "txt"
+
+@router.post("/download/zip")
+def download_zip(request: DownloadZipRequest, db: Session = Depends(get_db)):
+    """
+    Download a ZIP package containing:
+    1. XLSM (Macro-Enabled)
+    2. XLSX (Standard)
+    3. CSV (Data Only)
+    Optional: 4. Customization .txt (if toggle ON and rules apply - future chunk)
+    
+    Filenames are strictly constructed from tokens provided by the UI.
+    """
+    # 1. Validation & Data Build (Reuse existing logic)
+    # We map DownloadZipRequest to ExportPreviewRequest for the helper
+    preview_req = ExportPreviewRequest(model_ids=request.model_ids, listing_type=request.listing_type)
+    ensure_models_fresh_for_export(preview_req, db)
+    
+    header_rows, data_rows, _, template_code, exported_models, ordered_field_names, _ = build_export_data(preview_req, db)
+    
+    # 2. Compute Filename Base
+    # Syntax: [Marketplace]-[Manufacturer]-[Series]-Product_Upload-[Date]
+    filename_base = f"{request.marketplace_token}-{request.manufacturer_token}-{request.series_token}-Product_Upload-{request.date_token}"
+    
+    # 3. Generate Files In-Memory
+    zip_buffer = io.BytesIO()
+    
+    with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
+        
+        # --- A. Generate XLSX ---
+        wb_xlsx = Workbook()
+        ws_xlsx = wb_xlsx.active
+        ws_xlsx.title = "Template"
+        
+        # Styles (Same as download_xlsx)
+        row_styles = [
+            (Font(bold=True, color="FFFFFF"), PatternFill(start_color="1976D2", end_color="1976D2", fill_type="solid")),
+            (Font(color="FFFFFF"), PatternFill(start_color="2196F3", end_color="2196F3", fill_type="solid")),
+            (Font(bold=True, color="FFFFFF"), PatternFill(start_color="4CAF50", end_color="4CAF50", fill_type="solid")),
+            (Font(bold=True), PatternFill(start_color="8BC34A", end_color="8BC34A", fill_type="solid")),
+            (Font(size=9), PatternFill(start_color="C8E6C9", end_color="C8E6C9", fill_type="solid")),
+            (Font(italic=True, size=9), PatternFill(start_color="FFF9C4", end_color="FFF9C4", fill_type="solid")),
+        ]
+        
+        current_row = 1
+        for row_idx, header_row in enumerate(header_rows):
+            for col_idx, value in enumerate(header_row):
+                cell = ws_xlsx.cell(row=current_row, column=col_idx + 1, value=value or '')
+                if row_idx < len(row_styles):
+                    cell.font = row_styles[row_idx][0]
+                    cell.fill = row_styles[row_idx][1]
+                cell.alignment = Alignment(horizontal='left', vertical='center')
+            current_row += 1
+        
+        for data_row in data_rows:
+            for col_idx, value in enumerate(data_row):
+                ws_xlsx.cell(row=current_row, column=col_idx + 1, value=value or '')
+            current_row += 1
+            
+        # Column Widths
+        for col in ws_xlsx.columns:
+            max_length = 0
+            column = col[0].column_letter
+            for cell in col:
+                try:
+                    if len(str(cell.value)) > max_length:
+                        max_length = min(len(str(cell.value)), 50)
+                except:
+                    pass
+            ws_xlsx.column_dimensions[column].width = max_length + 2
+
+        xlsx_buffer = io.BytesIO()
+        wb_xlsx.save(xlsx_buffer)
+        zf.writestr(f"{filename_base}.xlsx", xlsx_buffer.getvalue())
+        
+        # --- B. Generate XLSM ---
+        # Note: logic is identical to XLSX for openpyxl, but MIME/vbaProject handling might differ in real apps.
+        # openpyxl saves as macro enabled if asked, but doesn't add macros dynamically.
+        # existing download_xlsm endpoint essentially saves standard xlsx as .xlsm MIME.
+        # We replicate that exact behavior here.
+        wb_xlsm = Workbook()
+        ws_xlsm = wb_xlsm.active
+        ws_xlsm.title = "Template"
+        
+        current_row = 1
+        for row_idx, header_row in enumerate(header_rows):
+            for col_idx, value in enumerate(header_row):
+                cell = ws_xlsm.cell(row=current_row, column=col_idx + 1, value=value or '')
+                if row_idx < len(row_styles):
+                    cell.font = row_styles[row_idx][0]
+                    cell.fill = row_styles[row_idx][1]
+                cell.alignment = Alignment(horizontal='left', vertical='center')
+            current_row += 1
+        
+        for data_row in data_rows:
+            for col_idx, value in enumerate(data_row):
+                ws_xlsm.cell(row=current_row, column=col_idx + 1, value=value or '')
+            current_row += 1
+            
+        for col in ws_xlsm.columns:
+            max_length = 0
+            column = col[0].column_letter
+            for cell in col:
+                try:
+                    if len(str(cell.value)) > max_length:
+                        max_length = min(len(str(cell.value)), 50)
+                except:
+                    pass
+            ws_xlsm.column_dimensions[column].width = max_length + 2
+            
+        xlsm_buffer = io.BytesIO()
+        wb_xlsm.save(xlsm_buffer)
+        zf.writestr(f"{filename_base}.xlsm", xlsm_buffer.getvalue())
+
+        # --- C. Generate CSV ---
+        csv_output = io.StringIO()
+        writer = csv.writer(csv_output)
+        for header_row in header_rows:
+            writer.writerow([v or '' for v in header_row])
+        for data_row in data_rows:
+            writer.writerow([v or '' for v in data_row])
+        
+        zf.writestr(f"{filename_base}.csv", csv_output.getvalue().encode('utf-8'))
+        
+        # --- D. Customization File ---
+        if request.include_customization:
+            # 1. Identify SKU column from export data
+            sku_col_idx = -1
+            target_fields = ["item_sku", "contribution_sku", "external_product_id"] # Fallbacks
+            
+            for target in target_fields:
+                for idx, field_name in enumerate(ordered_field_names):
+                    if target in field_name.lower():
+                        sku_col_idx = idx
+                        break
+                if sku_col_idx != -1:
+                    break
+            
+            # If still found, fallback to Model.parent_sku? 
+            # Requirement says "skus[] from the Amazon worksheet export rows (authoritative)"
+            # If not found in export, we likely cannot proceed safely with an authoritative matching.
+            # But let's check if we can fallback to index 0.
+            if sku_col_idx == -1:
+                # Fallback: Assume first column is SKU if named appropriately? Or just use index 0.
+                # Common Amazon template practice: Column A is SKU.
+                if ordered_field_names and "sku" in ordered_field_names[0].lower():
+                     sku_col_idx = 0
+            
+            skus = []
+            if sku_col_idx != -1:
+                for row in data_rows:
+                    if sku_col_idx < len(row):
+                         skus.append(row[sku_col_idx])
+                    else:
+                         skus.append("")
+            else:
+                 # Fallback to model parent_sku if we can't find it in the sheet?
+                 # This violates "authoritative from export rows", but is safer than crashing.
+                 # Actually, let's log/warn and skip if we can't find SKUs.
+                 pass
+
+            # Audit / Reconciliation Check
+            worksheet_count = len(data_rows)
+            skus_count = len(skus)
+            
+            # Robustness: Check for duplicates and content signature
+            unique_skus = set(skus)
+            dupe_count = skus_count - len(unique_skus)
+            
+            # Deterministic Signature (SHA256 of joined SKUs)
+            # Normalize to empty string if None before joining, though skus list extraction handled that above somewhat. (appended "")
+            # Ensure all are strings
+            clean_skus_for_sig = [str(s) if s is not None else "" for s in skus]
+            sku_signature = hashlib.sha256("\n".join(clean_skus_for_sig).encode("utf-8")).hexdigest()[:12]
+            
+            first_sku = clean_skus_for_sig[0] if clean_skus_for_sig else "<none>"
+            last_sku = clean_skus_for_sig[-1] if clean_skus_for_sig else "<none>"
+            
+            # Log full audit
+            print(f"[EXPORT] SKU Audit: signature={sku_signature} count={skus_count} dupes={dupe_count} first={first_sku} last={last_sku}")
+            
+            should_skip = False
+            if skus_count != worksheet_count:
+                print(f"[EXPORT][ERROR] Customization SKU count mismatch (rows={worksheet_count}, skus={skus_count}).")
+                should_skip = True
+            
+            if dupe_count > 0:
+                print(f"[EXPORT][ERROR] Duplicate SKUs detected in export ({dupe_count}). Customization template requires unique SKUs.")
+                should_skip = True
+                
+            if should_skip:
+                print(f"[EXPORT][ERROR] Skipping customization file generation due to audit failure.")
+                skus = [] # Force skip
+
+            if skus:
+                 # 2. Determine Template
+                 # Group models by equipment type to find template.
+                 # build_export_data enforces single equipment_type for the batch.
+                 # So we just check the first model.
+                 if exported_models:
+                     first_model = exported_models[0]
+                     equip_type = db.query(EquipmentType).filter(EquipmentType.id == first_model.equipment_type_id).first()
+                     
+                     if equip_type and equip_type.amazon_customization_template_id:
+                         template = equip_type.amazon_customization_template
+                         # We need the full path
+                         
+                         if os.path.exists(template.file_path):
+                             try:
+                                 # Format Logic:
+                                 fmt = (request.customization_format or "xlsx").lower()
+
+                                 if fmt == 'xlsx':
+                                     # --- XLSX Mode ---
+                                     # Read raw template file and write to ZIP
+                                     # Filename: ...-Customization-[Date].xlsx
+                                     with open(template.file_path, "rb") as f:
+                                         cust_bytes = f.read()
+                                     
+                                     cust_filename = f"{request.marketplace_token}-{request.manufacturer_token}-{request.series_token}-Customization-{request.date_token}.xlsx"
+                                     zf.writestr(cust_filename, cust_bytes)
+                                 
+                                 else:
+                                     # --- TXT Mode (Legacy) ---
+                                     cust_bytes = generate_customization_unicode_txt(template.file_path, skus)
+                                     cust_filename = f"{request.marketplace_token}-{request.manufacturer_token}-{request.series_token}-Customization-{request.date_token}.txt"
+                                     zf.writestr(cust_filename, cust_bytes)
+                                 
+                             except Exception as e:
+                                 # Log error but don't fail entire export? 
+                                 # User said "Hard error" if multiple templates. Here it's generation failure.
+                                 # Failing safe for now by raising to alert user.
+                                 raise HTTPException(status_code=500, detail=f"Failed to generate customization file: {str(e)}")
+                         else:
+                             # File missing on disk
+                             raise HTTPException(status_code=500, detail=f"Assigned customization template file missing: {template.file_path}")
+                     # Else: No assignment -> Skip (as per requirements)
+            
+    # Helper for customization generation
+    # ... logic ...
+    
+# Wait, I need to do this in steps.
+# 1. Update imports.
+# 2. Update a helper function `generate_customization_unicode_txt`.
+# 3. Update `download_zip` to capture `ordered_field_names` and implement the logic.
+
+# Let's do imports first.
+
+            
+    zip_buffer.seek(0)
+    
+    zip_filename = f"{filename_base}.zip"
+    
+    return StreamingResponse(
+        zip_buffer,
+        media_type="application/zip",
+        headers={"Content-Disposition": f"attachment; filename={zip_filename}"}
+    )
+
 IMAGE_FIELD_TO_NUMBER = {
+
     'main_product_image_locator': '001',
     'other_product_image_locator_1': '002',
     'other_product_image_locator_2': '003',

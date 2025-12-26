@@ -13,7 +13,7 @@ from app.models.core import (
 )
 from app.models.templates import (
     AmazonProductType, ProductTypeKeyword, ProductTypeField, ProductTypeFieldValue,
-    EquipmentTypeProductType
+    EquipmentTypeProductType, AmazonCustomizationTemplate
 )
 
 config = context.config

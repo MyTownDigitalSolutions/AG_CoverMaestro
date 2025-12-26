@@ -10,8 +10,8 @@ import EditIcon from '@mui/icons-material/Edit'
 import AddIcon from '@mui/icons-material/Add'
 import SettingsIcon from '@mui/icons-material/Settings'
 import DesignServicesIcon from '@mui/icons-material/DesignServices'
-import { equipmentTypesApi, pricingApi, designOptionsApi } from '../services/api'
-import type { EquipmentType, PricingOption, DesignOption } from '../types'
+import { equipmentTypesApi, pricingApi, designOptionsApi, settingsApi } from '../services/api'
+import type { EquipmentType, PricingOption, DesignOption, AmazonCustomizationTemplate } from '../types'
 
 export default function EquipmentTypesPage() {
   const [equipmentTypes, setEquipmentTypes] = useState<EquipmentType[]>([])
@@ -27,6 +27,8 @@ export default function EquipmentTypesPage() {
   const [selectedDesignOptionIds, setSelectedDesignOptionIds] = useState<number[]>([])
   const [editing, setEditing] = useState<EquipmentType | null>(null)
   const [name, setName] = useState('')
+  const [allCustomizationTemplates, setAllCustomizationTemplates] = useState<AmazonCustomizationTemplate[]>([])
+  const [selectedTemplateId, setSelectedTemplateId] = useState<number | null>(null)
 
   const loadEquipmentTypes = async () => {
     const data = await equipmentTypesApi.list()
@@ -59,30 +61,45 @@ export default function EquipmentTypesPage() {
     setAllDesignOptions(data)
   }
 
+  const loadCustomizationTemplates = async () => {
+    const data = await settingsApi.listAmazonCustomizationTemplates()
+    setAllCustomizationTemplates(data)
+  }
+
   useEffect(() => {
     loadEquipmentTypes()
     loadPricingOptions()
     loadDesignOptions()
+    loadCustomizationTemplates()
   }, [])
 
   const handleOpenDialog = (equipmentType?: EquipmentType) => {
     if (equipmentType) {
       setEditing(equipmentType)
       setName(equipmentType.name)
+      setSelectedTemplateId(equipmentType.amazon_customization_template_id ?? null)
     } else {
       setEditing(null)
       setName('')
+      setSelectedTemplateId(null)
     }
     setDialogOpen(true)
   }
 
   const handleSave = async () => {
     const data = { name }
+    let savedId: number
     if (editing) {
       await equipmentTypesApi.update(editing.id, data)
+      savedId = editing.id
     } else {
-      await equipmentTypesApi.create(data)
+      const res = await equipmentTypesApi.create(data)
+      savedId = res.id
     }
+
+    // Assign template (always, even if null, to handle clearing)
+    await settingsApi.assignAmazonCustomizationTemplate(savedId, selectedTemplateId)
+
     setDialogOpen(false)
     loadEquipmentTypes()
   }
@@ -206,7 +223,28 @@ export default function EquipmentTypesPage() {
             fullWidth
             value={name}
             onChange={(e) => setName(e.target.value)}
+            sx={{ mb: 2 }}
           />
+
+          <FormControl fullWidth margin="dense">
+            <InputLabel id="template-select-label">Amazon Customization Template</InputLabel>
+            <Select
+              labelId="template-select-label"
+              value={selectedTemplateId || ''}
+              onChange={(e) => setSelectedTemplateId(e.target.value === '' ? null : Number(e.target.value))}
+              input={<OutlinedInput label="Amazon Customization Template" />}
+            >
+              <MenuItem value="">
+                <em>None</em>
+              </MenuItem>
+              {allCustomizationTemplates.map((template) => (
+                <MenuItem key={template.id} value={template.id}>
+                  {template.original_filename}
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setDialogOpen(false)}>Cancel</Button>

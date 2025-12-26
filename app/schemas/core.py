@@ -28,6 +28,15 @@ class SeriesResponse(SeriesBase):
     class Config:
         from_attributes = True
 
+class AmazonCustomizationTemplateResponse(BaseModel):
+    id: int
+    original_filename: str
+    class Config:
+        from_attributes = True
+
+class AmazonCustomizationTemplateAssignmentRequest(BaseModel):
+    template_id: Optional[int] = None
+
 class EquipmentTypeBase(BaseModel):
     name: str
 
@@ -36,7 +45,9 @@ class EquipmentTypeCreate(EquipmentTypeBase):
 
 class EquipmentTypeResponse(EquipmentTypeBase):
     id: int
-    
+    amazon_customization_template_id: Optional[int] = None
+    amazon_customization_template: Optional[AmazonCustomizationTemplateResponse] = None
+
     class Config:
         from_attributes = True
 
@@ -430,6 +441,7 @@ class VariantProfitSettingResponse(VariantProfitSettingCreate):
 
 class ExportSettingCreate(BaseModel):
     default_save_path_template: Optional[str] = None
+    amazon_customization_export_format: Optional[str] = "xlsx"
 
 class ExportSettingResponse(ExportSettingCreate):
     id: int
