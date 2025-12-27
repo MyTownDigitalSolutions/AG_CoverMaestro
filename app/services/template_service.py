@@ -10,6 +10,75 @@ from datetime import datetime
 from openpyxl import load_workbook
 from app.models.templates import AmazonProductType, ProductTypeKeyword, ProductTypeField, ProductTypeFieldValue
 from sqlalchemy import or_
+import re
+
+
+# ============================================================================
+# DIRECTORY CONSTANTS
+# ============================================================================
+TEMPLATE_DIR = "attached_assets/product_type_templates"
+EXPORT_DIR = "attached_assets/exports"
+DEV_DIR = "attached_assets/dev_artifacts"
+TMP_DIR = "attached_assets/tmp"
+
+
+# ============================================================================
+# NORMALIZATION HELPER
+# ============================================================================
+def normalize_product_type_key(raw: str) -> str:
+    """
+    Normalize product type key for filename generation.
+    Rules:
+    - Trim whitespace
+    - Replace spaces with underscores
+    - Remove characters not in [A-Za-z0-9_()-]
+    - Collapse multiple underscores to single underscore
+    """
+    # Trim
+    normalized = raw.strip()
+    
+    # Replace spaces with underscores
+    normalized = normalized.replace(" ", "_")
+    
+    # Remove invalid characters (keep only A-Z, a-z, 0-9, _, (), -)
+    normalized = re.sub(r'[^A-Za-z0-9_()-]', '', normalized)
+    
+    # Collapse multiple underscores
+    normalized = re.sub(r'_+', '_', normalized)
+    
+    return normalized
+
+
+# ============================================================================
+# PATH HELPERS
+# ============================================================================
+def get_template_paths(product_type_key: str) -> tuple[str, str]:
+    """
+    Get canonical and backup paths for a product type template.
+    Returns: (canonical_path, backup_path)
+    """
+    os.makedirs(TEMPLATE_DIR, exist_ok=True)
+    
+    normalized_key = normalize_product_type_key(product_type_key)
+    canonical_filename = f"{normalized_key}(Template).xlsx"
+    backup_filename = f"{normalized_key}(Template)_BACKUP.xlsx"
+    
+    canonical_path = os.path.join(TEMPLATE_DIR, canonical_filename)
+    backup_path = os.path.join(TEMPLATE_DIR, backup_filename)
+    
+    return canonical_path, backup_path
+
+
+def rotate_template_backup(canonical_path: str, backup_path: str):
+    """
+    Rotate template backup: move existing canonical to backup (overwriting old backup).
+    """
+    if os.path.exists(canonical_path):
+        # Move canonical to backup (overwrite existing backup)
+        if os.path.exists(backup_path):
+            os.remove(backup_path)
+        shutil.move(canonical_path, backup_path)
+        print(f"[TEMPLATE_ROTATION] Moved {canonical_path} -> {backup_path}")
 
 
 class TemplateService:
@@ -39,29 +108,28 @@ class TemplateService:
         
         STEP 4: TEMPLATE sheet - Get field order for export
         """
-        # Save raw file first (Source of Truth)
-        base_dir = "attached_assets/product_type_templates"
-        os.makedirs(base_dir, exist_ok=True)
+        # Save raw file using canonical + backup storage rule
+        os.makedirs(TEMPLATE_DIR, exist_ok=True)
         
-        timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
-        safe_filename = f"{product_code}_{timestamp}_{file.filename}"
-        file_path = os.path.join(base_dir, safe_filename)
+        # Get paths for this product type
+        canonical_path, backup_path = get_template_paths(product_code)
+        
+        # Rotate existing canonical to backup
+        rotate_template_backup(canonical_path, backup_path)
         
         # 1. Read into memory ONCE
         await file.seek(0)
         contents = await file.read()
         upload_sha256 = hashlib.sha256(contents).hexdigest()
         
-        # 2. Write to disk
-        # Using standard synchronous write since we have the full content in memory
-        # and want to avoid adding new dependencies (aiofiles)
-        with open(file_path, "wb") as out_file:
+        # 2. Write to canonical path
+        with open(canonical_path, "wb") as out_file:
             out_file.write(contents)
             
         # 3. Verify
-        file_size = os.path.getsize(file_path)
+        file_size = os.path.getsize(canonical_path)
         
-        with open(file_path, "rb") as f:
+        with open(canonical_path, "rb") as f:
             persisted_bytes = f.read()
             persisted_sha256 = hashlib.sha256(persisted_bytes).hexdigest()
 
@@ -120,9 +188,9 @@ class TemplateService:
             self.db.commit()
             self.db.refresh(product_type)
         
-        # Update metadata
+        # Update metadata (use canonical path)
         product_type.original_filename = file.filename
-        product_type.file_path = file_path
+        product_type.file_path = canonical_path
         product_type.file_size = file_size
         product_type.upload_date = datetime.utcnow()
         self.db.commit()
@@ -489,7 +557,7 @@ class TemplateService:
         print("=" * 60)
         
         # ADDITIVE: Run non-destructive field indexer to find sparse fields skipped by pandas
-        additive_fields = self._build_field_index(file_path, product_type)
+        additive_fields = self._build_field_index(canonical_path, product_type)
         fields_imported += additive_fields
         
         return {

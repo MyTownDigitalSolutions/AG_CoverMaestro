@@ -61,3 +61,8 @@ Thumbs.db
 
 # Alembic
 alembic/versions/*.pyc
+
+# File Storage - Generated and Temporary Files
+attached_assets/exports/
+attached_assets/dev_artifacts/
+attached_assets/tmp/
