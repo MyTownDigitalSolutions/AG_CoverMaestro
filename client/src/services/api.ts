@@ -225,6 +225,30 @@ export const templatesApi = {
     api.post<ProductTypeFieldValue>(`/templates/fields/${fieldId}/values`, { value }).then(r => r.data),
   deleteFieldValue: (fieldId: number, valueId: number) =>
     api.delete(`/templates/fields/${fieldId}/values/${valueId}`),
+  downloadProductTypeTemplateUrl: (code: string) => `/api/templates/product-types/${code}/download`,
+  previewProductTypeTemplate: (code: string) => api.get<AmazonProductTypeTemplatePreviewResponse>(`/templates/product-types/${code}/preview`).then(r => r.data),
+}
+
+export interface AmazonProductTypeTemplatePreviewResponse {
+  product_code: string
+  original_filename: string
+  sheet_name: string
+  max_row: number
+  max_column: number
+  preview_row_count: number
+  preview_column_count: number
+  grid: string[][]
+}
+
+export interface AmazonCustomizationTemplatePreviewResponse {
+  template_id: number
+  original_filename: string
+  sheet_name: string
+  max_row: number
+  max_column: number
+  preview_row_count: number
+  preview_column_count: number
+  grid: string[][]
 }
 
 export const enumsApi = {
@@ -299,6 +323,7 @@ export const settingsApi = {
 
   assignAmazonCustomizationTemplate: (equipmentTypeId: number, templateId: number | null) =>
     api.post<EquipmentType>(`/settings/equipment-types/${equipmentTypeId}/amazon-customization-template/assign`, { template_id: templateId }).then(r => r.data),
+  previewCustomizationTemplate: (id: number) => api.get<AmazonCustomizationTemplatePreviewResponse>(`/settings/amazon-customization-templates/${id}/preview`).then(r => r.data),
 }
 
 export interface ExportRowData {

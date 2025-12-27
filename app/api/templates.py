@@ -7,8 +7,11 @@ from app.models.templates import AmazonProductType, ProductTypeField, EquipmentT
 from app.schemas.templates import (
     AmazonProductTypeResponse, ProductTypeFieldResponse, TemplateImportResponse,
     EquipmentTypeProductTypeLinkCreate, EquipmentTypeProductTypeLinkResponse,
-    ProductTypeFieldUpdate, ProductTypeFieldValueCreate, ProductTypeFieldValueResponse
+    ProductTypeFieldUpdate, ProductTypeFieldValueCreate, ProductTypeFieldValueResponse,
+    AmazonProductTypeTemplatePreviewResponse
 )
+import os
+from fastapi.responses import FileResponse
 from app.services.template_service import TemplateService
 
 router = APIRouter(prefix="/templates", tags=["templates"])
@@ -77,6 +80,85 @@ def delete_equipment_type_link(link_id: int, db: Session = Depends(get_db)):
     db.delete(link)
     db.commit()
     return {"message": "Link deleted"}
+
+@router.get("/product-types/{product_code}/download")
+def download_product_type_template(product_code: str, db: Session = Depends(get_db)):
+    product_type = db.query(AmazonProductType).filter(AmazonProductType.code == product_code).first()
+    if not product_type:
+        raise HTTPException(status_code=404, detail="Product type not found")
+
+    # These columns are introduced by Option A (Phase 1)
+    if not getattr(product_type, "file_path", None):
+        raise HTTPException(status_code=404, detail="No template file stored for this product type")
+
+    if not os.path.exists(product_type.file_path):
+        raise HTTPException(status_code=404, detail="File missing on disk")
+
+    filename = getattr(product_type, "original_filename", None) or f"{product_code}.xlsx"
+    return FileResponse(product_type.file_path, filename=filename)
+
+
+@router.get("/product-types/{product_code}/preview", response_model=AmazonProductTypeTemplatePreviewResponse)
+def preview_product_type_template(product_code: str, db: Session = Depends(get_db)):
+    product_type = db.query(AmazonProductType).filter(AmazonProductType.code == product_code).first()
+    if not product_type:
+        raise HTTPException(status_code=404, detail="Product type not found")
+
+    if not getattr(product_type, "file_path", None):
+        raise HTTPException(status_code=404, detail="No template file stored for this product type")
+
+    if not os.path.exists(product_type.file_path):
+        raise HTTPException(status_code=404, detail="File missing on disk")
+
+    MAX_PREVIEW_ROWS = 50
+    MAX_PREVIEW_COLS = 50
+
+    try:
+        from openpyxl import load_workbook
+
+        wb = load_workbook(product_type.file_path, read_only=True, data_only=True)
+        
+        if "Template" in wb.sheetnames:
+            ws = wb["Template"]
+        else:
+            # Preview is allowed to fallback to first sheet for non-standard files
+            ws = wb.worksheets[0]
+
+        sheet_name = ws.title
+        print(f"[PT_PREVIEW] product_code={product_code} sheet={sheet_name}")
+
+        max_row = ws.max_row or 0
+        max_col = ws.max_column or 0
+
+        row_limit = min(max_row, MAX_PREVIEW_ROWS)
+        col_limit = min(max_col, MAX_PREVIEW_COLS)
+
+        grid: List[List[str]] = []
+        for r in range(1, row_limit + 1):
+            row_values: List[str] = []
+            for c in range(1, col_limit + 1):
+                v = ws.cell(row=r, column=c).value
+                row_values.append("" if v is None else str(v))
+            grid.append(row_values)
+
+        wb.close()
+
+        filename = getattr(product_type, "original_filename", None) or f"{product_code}.xlsx"
+
+        return AmazonProductTypeTemplatePreviewResponse(
+            product_code=product_code,
+            original_filename=filename,
+            sheet_name=sheet_name,
+            max_row=max_row,
+            max_column=max_col,
+            preview_row_count=row_limit,
+            preview_column_count=col_limit,
+            grid=grid,
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to preview product type template: {str(e)}")
 
 @router.get("/{product_code}", response_model=AmazonProductTypeResponse)
 def get_product_type(product_code: str, db: Session = Depends(get_db)):

@@ -2,8 +2,15 @@ import pandas as pd
 import json
 from io import BytesIO
 from sqlalchemy.orm import Session
-from fastapi import UploadFile
+from fastapi import UploadFile, HTTPException
+import os
+import hashlib
+import shutil
+from datetime import datetime
+from openpyxl import load_workbook
 from app.models.templates import AmazonProductType, ProductTypeKeyword, ProductTypeField, ProductTypeFieldValue
+from sqlalchemy import or_
+
 
 class TemplateService:
     def __init__(self, db: Session):
@@ -32,8 +39,46 @@ class TemplateService:
         
         STEP 4: TEMPLATE sheet - Get field order for export
         """
+        # Save raw file first (Source of Truth)
+        base_dir = "attached_assets/product_type_templates"
+        os.makedirs(base_dir, exist_ok=True)
+        
+        timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+        safe_filename = f"{product_code}_{timestamp}_{file.filename}"
+        file_path = os.path.join(base_dir, safe_filename)
+        
+        # 1. Read into memory ONCE
+        await file.seek(0)
         contents = await file.read()
-        excel_file = BytesIO(contents)
+        upload_sha256 = hashlib.sha256(contents).hexdigest()
+        
+        # 2. Write to disk
+        # Using standard synchronous write since we have the full content in memory
+        # and want to avoid adding new dependencies (aiofiles)
+        with open(file_path, "wb") as out_file:
+            out_file.write(contents)
+            
+        # 3. Verify
+        file_size = os.path.getsize(file_path)
+        
+        with open(file_path, "rb") as f:
+            persisted_bytes = f.read()
+            persisted_sha256 = hashlib.sha256(persisted_bytes).hexdigest()
+
+        print(f"[TEMPLATE_IMPORT] product_code={product_code} upload_sha256={upload_sha256} persisted_sha256={persisted_sha256} mem_size={len(contents)} disk_size={file_size}")
+
+        if upload_sha256 != persisted_sha256:
+             raise HTTPException(status_code=500, detail=f"Persisted file hash mismatch: mem={upload_sha256} disk={persisted_sha256}")
+
+        # 4. Use BytesIO for processing
+        try:
+            excel_file = BytesIO(contents)
+            print(f"[TEMPLATE_IMPORT] BytesIO created successfully, size={len(contents)}")
+        except Exception as e:
+            import traceback
+            print(f"[TEMPLATE_IMPORT] ERROR creating BytesIO: {e}")
+            traceback.print_exc()
+            raise HTTPException(status_code=500, detail=f"Failed to create BytesIO: {str(e)}")
         
         existing = self.db.query(AmazonProductType).filter(
             AmazonProductType.code == product_code
@@ -75,6 +120,13 @@ class TemplateService:
             self.db.commit()
             self.db.refresh(product_type)
         
+        # Update metadata
+        product_type.original_filename = file.filename
+        product_type.file_path = file_path
+        product_type.file_size = file_size
+        product_type.upload_date = datetime.utcnow()
+        self.db.commit()
+        
         fields_imported = 0
         keywords_imported = 0
         valid_values_imported = 0
@@ -89,6 +141,21 @@ class TemplateService:
         try:
             dd_df = pd.read_excel(excel_file, sheet_name="Data Definitions", header=None)
             excel_file.seek(0)
+        except ValueError as e:
+            # Missing sheet = client error (invalid template format)
+            if "Worksheet named" in str(e) or "not found" in str(e).lower():
+                raise HTTPException(status_code=400, detail="Invalid Amazon Product Type template: missing 'Data Definitions' sheet")
+            # Other ValueError = unexpected, treat as server error
+            import traceback
+            print(f"[TEMPLATE_IMPORT] ERROR reading Data Definitions sheet: {e}")
+            traceback.print_exc()
+            raise HTTPException(status_code=500, detail=f"Failed to read Data Definitions sheet: {str(e)}")
+        except Exception as e:
+            # Unexpected exception = server error
+            import traceback
+            print(f"[TEMPLATE_IMPORT] ERROR reading Data Definitions sheet: {e}")
+            traceback.print_exc()
+            raise HTTPException(status_code=500, detail=f"Failed to read Data Definitions sheet: {str(e)}")
             
             current_group = None
             
@@ -132,6 +199,21 @@ class TemplateService:
         try:
             vv_df = pd.read_excel(excel_file, sheet_name="Valid Values", header=None)
             excel_file.seek(0)
+        except ValueError as e:
+            # Missing sheet = client error (invalid template format)
+            if "Worksheet named" in str(e) or "not found" in str(e).lower():
+                raise HTTPException(status_code=400, detail="Invalid Amazon Product Type template: missing 'Valid Values' sheet")
+            # Other ValueError = unexpected, treat as server error
+            import traceback
+            print(f"[TEMPLATE_IMPORT] ERROR reading Valid Values sheet: {e}")
+            traceback.print_exc()
+            raise HTTPException(status_code=500, detail=f"Failed to read Valid Values sheet: {str(e)}")
+        except Exception as e:
+            # Unexpected exception = server error
+            import traceback
+            print(f"[TEMPLATE_IMPORT] ERROR reading Valid Values sheet: {e}")
+            traceback.print_exc()
+            raise HTTPException(status_code=500, detail=f"Failed to read Valid Values sheet: {str(e)}")
             
             current_vv_group = None
             
@@ -209,6 +291,23 @@ class TemplateService:
         
         try:
             template_df = pd.read_excel(excel_file, sheet_name="Template", header=None)
+        except ValueError as e:
+            # Missing sheet = client error (invalid template format)
+            if "Worksheet named" in str(e) or "not found" in str(e).lower():
+                raise HTTPException(status_code=400, detail="Invalid Amazon Product Type template: missing 'Template' sheet")
+            # Other ValueError = unexpected, treat as server error
+            import traceback
+            print(f"[TEMPLATE_IMPORT] ERROR reading Template sheet: {e}")
+            traceback.print_exc()
+            raise HTTPException(status_code=500, detail=f"Failed to read Template sheet: {str(e)}")
+        except Exception as e:
+            # Unexpected exception = server error
+            import traceback
+            print(f"[TEMPLATE_IMPORT] ERROR reading Template sheet: {e}")
+            traceback.print_exc()
+            raise HTTPException(status_code=500, detail=f"Failed to read Template sheet: {str(e)}")
+            
+        try:
             excel_file.seek(0)
             
             header_rows = []
@@ -370,12 +469,86 @@ class TemplateService:
         print(f"DONE: {fields_imported} fields, {keywords_imported} keywords, {valid_values_imported} valid values")
         print("=" * 60)
         
+        # ADDITIVE: Run non-destructive field indexer to find sparse fields skipped by pandas
+        additive_fields = self._build_field_index(file_path, product_type)
+        fields_imported += additive_fields
+        
         return {
             "product_code": product_code,
             "fields_imported": fields_imported,
             "keywords_imported": keywords_imported,
             "valid_values_imported": valid_values_imported
         }
+
+    def _build_field_index(self, file_path: str, product_type: AmazonProductType) -> int:
+        """
+        Additive field indexer using openpyxl.
+        Scans 'Template' sheet for columns that might have been skipped by pandas due to empty header rows.
+        Only adds NEW fields. Does NOT modify existing ones.
+        """
+        added_count = 0
+        try:
+            wb = load_workbook(file_path, read_only=True, data_only=True)
+            if "Template" not in wb.sheetnames:
+                return 0
+            
+            ws = wb["Template"]
+            
+            # Row 5 (1-based) is Field Names in standardized Amazon templates
+            # Row 3 is Group
+            # Row 4 is Display Name
+            
+            # Helper to safely get value
+            def get_val(r, c):
+                v = ws.cell(row=r, column=c).value
+                return str(v).strip() if v is not None else None
+
+            max_col = ws.max_column
+            
+            # Get existing fields to avoid duplicates
+            existing_fields = {
+                f.field_name for f in self.db.query(ProductTypeField).filter(
+                    ProductTypeField.product_type_id == product_type.id
+                ).all()
+            }
+            
+            # Scan all columns up to max_col
+            print(f"[FIELD_INDEX] product_code={product_type.code} max_col={max_col} existing_count={len(existing_fields)}")
+            
+            for col in range(1, max_col + 1):
+                field_name = get_val(5, col)
+                
+                if field_name and field_name not in existing_fields:
+                    # Found a field skipped by pandas!
+                    group_name = get_val(3, col)
+                    display_name = get_val(4, col) or field_name
+                    
+                    # Add it
+                    new_field = ProductTypeField(
+                        product_type_id=product_type.id,
+                        field_name=field_name,
+                        display_name=display_name,
+                        attribute_group=group_name,
+                        order_index=col - 1, # approximation
+                        required=False
+                    )
+                    self.db.add(new_field)
+                    existing_fields.add(field_name) # IMMEDIATE guard against duplicates in same pass
+                    added_count += 1
+                    print(f"  [Additive Index] Found sparse field: {field_name}")
+            
+            if added_count > 0:
+                self.db.commit()
+                print(f"[FIELD_INDEX] Successfully added {added_count} new fields")
+            else:
+                print("[FIELD_INDEX] No new fields found")
+                
+            wb.close()
+            
+        except Exception as e:
+            print(f"  [Additive Index] Error: {e}")
+            
+        return added_count
     
     def get_header_rows(self, product_code: str) -> list:
         product_type = self.db.query(AmazonProductType).filter(

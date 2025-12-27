@@ -5,7 +5,7 @@ import {
   Alert, CircularProgress, FormControl, InputLabel, Select, MenuItem,
   Chip, IconButton, Dialog, DialogTitle, DialogContent, DialogActions,
   ToggleButton, ToggleButtonGroup, Tooltip,
-  Accordion, AccordionSummary, AccordionDetails, Switch, FormControlLabel, Radio, RadioGroup, FormLabel
+  Accordion, AccordionSummary, AccordionDetails, Switch, FormControlLabel, Radio, RadioGroup, FormLabel, Stack
 } from '@mui/material'
 import { Link as RouterLink } from 'react-router-dom'
 import PreviewIcon from '@mui/icons-material/Preview'
@@ -92,7 +92,7 @@ export default function ExportPage() {
   const [templates, setTemplates] = useState<AmazonProductType[]>([])
   const [equipmentTypeLinks, setEquipmentTypeLinks] = useState<{ equipment_type_id: number, product_type_id: number }[]>([])
   // Phase 7: Export Settings
-  const [exportSettings, setExportSettings] = useState<{ id: number; default_save_path_template?: string } | null>(null)
+  const [exportSettings, setExportSettings] = useState<{ id: number; default_save_path_template?: string; amazon_customization_export_format?: string } | null>(null)
   const [localSavePathTemplate, setLocalSavePathTemplate] = useState('')
 
   const [selectedManufacturer, setSelectedManufacturer] = useState<number | ''>('')
@@ -139,6 +139,7 @@ export default function ExportPage() {
 
   // Customization Format State
   const [localCustomizationFormat, setLocalCustomizationFormat] = useState<string>('xlsx')
+  const [custCopyCopied, setCustCopyCopied] = useState(false)
 
   // Computed Status Logic (Phase 4 - Chunk 3)
   const missingTemplateNames = useMemo(() => {
@@ -763,7 +764,7 @@ export default function ExportPage() {
       // REGRESSION GUARD: XLSM/XLSX/CSV must NEVER reach this point.
       // If the above "return" is bypassed, we must fail loudly rather than trigger the Folder Picker.
       if (format === 'xlsm' || format === 'xlsx' || format === 'csv') {
-        throw new Error(`[EXPORT][${format.toUpperCase()}] Regression detected: File System API invoked for browser download`);
+        throw new Error(`[EXPORT][${(format as string).toUpperCase()}] Regression detected: File System API invoked for browser download`);
       }
 
       setError(null)
@@ -1220,22 +1221,22 @@ export default function ExportPage() {
             </Box>
           )}
 
-          {savePlan && (savePlan.type === 'single' ? (
+          {savePlan ? (savePlan!.type === 'single' ? (
             <Box>
-              <Typography variant="body2"><strong>Folder:</strong> {savePlan.plan!.folder}</Typography>
-              <Typography variant="body2"><strong>File:</strong> {savePlan.plan!.filename}</Typography>
+              <Typography variant="body2"><strong>Folder:</strong> {savePlan!.plan!.folder}</Typography>
+              <Typography variant="body2"><strong>File:</strong> {savePlan!.plan!.filename}</Typography>
             </Box>
           ) : (
             <Box>
               <Typography variant="body2" sx={{ mb: 1 }}><strong>Master File:</strong></Typography>
               <Box sx={{ pl: 2, mb: 2, borderLeft: '2px solid #ddd' }}>
-                <Typography variant="body2">Folder: {savePlan.master!.folder}</Typography>
-                <Typography variant="body2">File: {savePlan.master!.filename}</Typography>
+                <Typography variant="body2">Folder: {savePlan!.master!.folder}</Typography>
+                <Typography variant="body2">File: {savePlan!.master!.filename}</Typography>
               </Box>
 
-              <Typography variant="body2" sx={{ mb: 1 }}><strong>Per-Series Files ({savePlan.children!.length}):</strong></Typography>
+              <Typography variant="body2" sx={{ mb: 1 }}><strong>Per-Series Files ({savePlan!.children!.length}):</strong></Typography>
               <Box sx={{ pl: 2, maxHeight: 100, overflowY: 'auto', borderLeft: '2px solid #ddd' }}>
-                {savePlan.children!.map((child, i) => (
+                {savePlan!.children?.map((child, i) => (
                   <Box key={i} sx={{ mb: 1 }}>
                     <Typography variant="caption" display="block">Folder: {child.folder}</Typography>
                     <Typography variant="caption" display="block">File: {child.filename}</Typography>
@@ -1243,7 +1244,7 @@ export default function ExportPage() {
                 ))}
               </Box>
             </Box>
-          ))}
+          )) : null}
         </Paper>
       )}
 
@@ -1322,6 +1323,46 @@ export default function ExportPage() {
                     label={<Typography variant="body2">Unicode Text (.txt) — Legacy</Typography>}
                   />
                 </RadioGroup>
+                {includeCustomization && localCustomizationFormat === 'txt' ? (
+                  <Alert
+                    severity="warning"
+                    sx={{ mt: 1 }}
+                    action={
+                      <Button
+                        size="small"
+                        onClick={async () => {
+                          const text =
+                            "To avoid blank TXT exports:\n" +
+                            "1) Open the customization template in Excel\n" +
+                            "2) Force recalculation (Ctrl+Alt+F9)\n" +
+                            "3) Save the file\n"
+
+                          try {
+                            await navigator.clipboard.writeText(text)
+                            setCustCopyCopied(true)
+                            window.setTimeout(() => setCustCopyCopied(false), 1500)
+                          } catch {
+                            // Clipboard may be blocked in some environments; still no-op per guardrails.
+                          }
+                        }}
+                      >
+                        {custCopyCopied ? 'Copied!' : 'Copy steps'}
+                      </Button>
+                    }
+                  >
+                    <Stack spacing={0.5}>
+                      <Typography variant="body2">
+                        TXT generation reads cached cell values (formulas may export blank unless the template was recalculated and saved in Excel).
+                      </Typography>
+                      <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                        To avoid blanks:
+                      </Typography>
+                      <Typography variant="body2">1) Open the template in Excel</Typography>
+                      <Typography variant="body2">2) Force recalculation (Ctrl+Alt+F9)</Typography>
+                      <Typography variant="body2">3) Save the file</Typography>
+                    </Stack>
+                  </Alert>
+                ) : null}
               </FormControl>
             </Box>
             <Box sx={{ mt: 2, p: 2, bgcolor: '#f5f5f5', borderRadius: 1, border: '1px solid #e0e0e0' }}>

@@ -1026,10 +1026,20 @@ def download_zip(request: DownloadZipRequest, db: Session = Depends(get_db)):
 
                                  if fmt == 'xlsx':
                                      # --- XLSX Mode ---
-                                     # Read raw template file and write to ZIP
-                                     # Filename: ...-Customization-[Date].xlsx
+                                     # Read raw template file and write to ZIP (byte-identical preservation)
+                                     print(f"[EXPORT] Customization XLSX: template_id={template.id} path={template.file_path}")
+
+                                     if not template.file_path:
+                                         raise HTTPException(status_code=500, detail="Assigned customization template has no file_path")
+
+                                     if not os.path.exists(template.file_path):
+                                         raise HTTPException(status_code=500, detail=f"Assigned customization template file missing: {template.file_path}")
+
                                      with open(template.file_path, "rb") as f:
                                          cust_bytes = f.read()
+
+                                     if not cust_bytes:
+                                         raise HTTPException(status_code=500, detail=f"Assigned customization template is empty on disk: {template.file_path}")
                                      
                                      cust_filename = f"{request.marketplace_token}-{request.manufacturer_token}-{request.series_token}-Customization-{request.date_token}.xlsx"
                                      zf.writestr(cust_filename, cust_bytes)

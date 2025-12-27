@@ -18,7 +18,7 @@ import AddIcon from '@mui/icons-material/Add'
 import PreviewIcon from '@mui/icons-material/Preview'
 import CloseIcon from '@mui/icons-material/Close'
 import DownloadIcon from '@mui/icons-material/Download'
-import { templatesApi, equipmentTypesApi, settingsApi, type EquipmentTypeProductTypeLink } from '../services/api'
+import { templatesApi, equipmentTypesApi, settingsApi, type EquipmentTypeProductTypeLink, type AmazonProductTypeTemplatePreviewResponse, type AmazonCustomizationTemplatePreviewResponse } from '../services/api'
 import type { AmazonProductType, EquipmentType, ProductTypeField, AmazonCustomizationTemplate } from '../types'
 import FieldDetailsDialog from '../components/FieldDetailsDialog'
 
@@ -101,6 +101,197 @@ function TemplatePreview({ template, onClose }: TemplatePreviewProps) {
   )
 }
 
+
+interface ProductTypeFilePreviewProps {
+  open: boolean
+  onClose: () => void
+  loading: boolean
+  error: string | null
+  data: AmazonProductTypeTemplatePreviewResponse | null
+}
+
+function ProductTypeFilePreview({ open, onClose, loading, error, data }: ProductTypeFilePreviewProps) {
+  if (!open) return null
+
+  return (
+    <Dialog open={open} onClose={onClose} maxWidth={false} fullWidth PaperProps={{ sx: { maxWidth: '95vw', height: '80vh' } }}>
+      <DialogTitle sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <span>
+          Product Type File Preview
+          {data && <Typography variant="caption" sx={{ ml: 2, color: 'text.secondary' }}>{data.original_filename} ({data.sheet_name})</Typography>}
+        </span>
+        <IconButton onClick={onClose}><CloseIcon /></IconButton>
+      </DialogTitle>
+      <DialogContent sx={{ p: 0 }}>
+        {loading && (
+          <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%' }}>
+            <CircularProgress />
+          </Box>
+        )}
+
+        {error && (
+          <Box sx={{ p: 4 }}>
+            <Alert severity="error">
+              <Typography variant="subtitle1" gutterBottom>Failed to load preview</Typography>
+              {error}
+            </Alert>
+          </Box>
+        )}
+
+        {data && !loading && (
+          <>
+            <Box sx={{ overflowX: 'auto', overflowY: 'auto', maxHeight: 'calc(80vh - 100px)' }}>
+              <Table size="small" sx={{ minWidth: 600, borderCollapse: 'collapse' }}>
+                <TableBody>
+                  {data.grid.map((row, rowIndex) => (
+                    <TableRow key={rowIndex}>
+                      <TableCell
+                        component="th"
+                        variant="head"
+                        sx={{
+                          width: 40,
+                          backgroundColor: '#f5f5f5',
+                          borderRight: '1px solid #ddd',
+                          textAlign: 'center',
+                          color: '#888',
+                          fontSize: '11px',
+                          p: '4px'
+                        }}
+                      >
+                        {rowIndex + 1}
+                      </TableCell>
+                      {row.map((cell, colIndex) => (
+                        <TableCell
+                          key={colIndex}
+                          sx={{
+                            border: '1px solid #e0e0e0',
+                            maxWidth: 300,
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap',
+                            fontSize: '12px',
+                            p: '4px 8px'
+                          }}
+                          title={cell}
+                        >
+                          {cell}
+                        </TableCell>
+                      ))}
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </Box>
+            <Box sx={{ p: 1, borderTop: '1px solid #ccc', backgroundColor: '#f9f9f9', display: 'flex', justifyContent: 'space-between' }}>
+              <Typography variant="caption" color="text.secondary">
+                Original Sheet Dimensions: {data.max_row} rows x {data.max_column} columns
+              </Typography>
+              <Typography variant="caption" color="text.secondary">
+                Preview limited to first {data.preview_row_count} rows x {data.preview_column_count} columns
+              </Typography>
+            </Box>
+          </>
+        )}
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+interface CustomizationTemplateFilePreviewProps {
+  open: boolean
+  onClose: () => void
+  loading: boolean
+  error: string | null
+  data: AmazonCustomizationTemplatePreviewResponse | null
+}
+
+function CustomizationTemplateFilePreview({ open, onClose, loading, error, data }: CustomizationTemplateFilePreviewProps) {
+  if (!open) return null
+
+  return (
+    <Dialog open={open} onClose={onClose} maxWidth={false} fullWidth PaperProps={{ sx: { maxWidth: '95vw', height: '80vh' } }}>
+      <DialogTitle sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <span>
+          Customization Template Preview
+          {data && <Typography variant="caption" sx={{ ml: 2, color: 'text.secondary' }}>{data.original_filename} ({data.sheet_name})</Typography>}
+        </span>
+        <IconButton onClick={onClose}><CloseIcon /></IconButton>
+      </DialogTitle>
+      <DialogContent sx={{ p: 0 }}>
+        {loading && (
+          <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%' }}>
+            <CircularProgress />
+          </Box>
+        )}
+
+        {error && (
+          <Box sx={{ p: 4 }}>
+            <Alert severity="error">
+              <Typography variant="subtitle1" gutterBottom>Failed to load preview</Typography>
+              {error}
+            </Alert>
+          </Box>
+        )}
+
+        {data && !loading && (
+          <>
+            <Box sx={{ overflowX: 'auto', overflowY: 'auto', maxHeight: 'calc(80vh - 100px)' }}>
+              <Table size="small" sx={{ minWidth: 600, borderCollapse: 'collapse' }}>
+                <TableBody>
+                  {data.grid.map((row, rowIndex) => (
+                    <TableRow key={rowIndex}>
+                      <TableCell
+                        component="th"
+                        variant="head"
+                        sx={{
+                          width: 40,
+                          backgroundColor: '#f5f5f5',
+                          borderRight: '1px solid #ddd',
+                          textAlign: 'center',
+                          color: '#888',
+                          fontSize: '11px',
+                          p: '4px'
+                        }}
+                      >
+                        {rowIndex + 1}
+                      </TableCell>
+                      {row.map((cell, colIndex) => (
+                        <TableCell
+                          key={colIndex}
+                          sx={{
+                            border: '1px solid #e0e0e0',
+                            maxWidth: 300,
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap',
+                            fontSize: '12px',
+                            p: '4px 8px'
+                          }}
+                          title={cell}
+                        >
+                          {cell}
+                        </TableCell>
+                      ))}
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </Box>
+            <Box sx={{ p: 1, borderTop: '1px solid #ccc', backgroundColor: '#f9f9f9', display: 'flex', justifyContent: 'space-between' }}>
+              <Typography variant="caption" color="text.secondary">
+                Original Sheet Dimensions: {data.max_row} rows x {data.max_column} columns
+              </Typography>
+              <Typography variant="caption" color="text.secondary">
+                Preview limited to first {data.preview_row_count} rows x {data.preview_column_count} columns
+              </Typography>
+            </Box>
+          </>
+        )}
+      </DialogContent>
+    </Dialog>
+  )
+}
+
 const normalizeText = (text: string): string => {
   return text
     .toLowerCase()
@@ -139,6 +330,12 @@ export default function TemplatesPage() {
   // New state for Customization
   const [customizationTemplates, setCustomizationTemplates] = useState<AmazonCustomizationTemplate[]>([])
 
+  // Product Type File Preview State
+  const [isPtPreviewOpen, setIsPtPreviewOpen] = useState(false)
+  const [ptPreviewLoading, setPtPreviewLoading] = useState(false)
+  const [ptPreviewError, setPtPreviewError] = useState<string | null>(null)
+  const [ptPreviewData, setPtPreviewData] = useState<AmazonProductTypeTemplatePreviewResponse | null>(null)
+
   // UI State
   const [templateType, setTemplateType] = useState<'product' | 'customization'>('product')
   const [selectedTemplate, setSelectedTemplate] = useState<AmazonProductType | AmazonCustomizationTemplate | null>(null)
@@ -159,6 +356,12 @@ export default function TemplatesPage() {
   // Product Type Upload Confirmation
   const [pendingUpload, setPendingUpload] = useState<PendingUpload | null>(null)
   const [fileInputRef, setFileInputRef] = useState<HTMLInputElement | null>(null)
+
+  // Customization Template Preview State
+  const [isCustPreviewOpen, setIsCustPreviewOpen] = useState(false)
+  const [custPreviewLoading, setCustPreviewLoading] = useState(false)
+  const [custPreviewError, setCustPreviewError] = useState<string | null>(null)
+  const [custPreviewData, setCustPreviewData] = useState<AmazonCustomizationTemplatePreviewResponse | null>(null)
 
   // Linking State
   const [equipmentTypes, setEquipmentTypes] = useState<EquipmentType[]>([])
@@ -293,6 +496,23 @@ export default function TemplatesPage() {
     }
   }
 
+  const handlePreviewCustomizationTemplate = async (templateId: number) => {
+    setIsCustPreviewOpen(true)
+    setCustPreviewLoading(true)
+    setCustPreviewError(null)
+    setCustPreviewData(null)
+
+    try {
+      const data = await settingsApi.previewCustomizationTemplate(templateId)
+      setCustPreviewData(data)
+    } catch (e: unknown) {
+      const err = e as { response?: { data?: { detail?: string } } }
+      setCustPreviewError(err.response?.data?.detail || 'Failed to load preview')
+    } finally {
+      setCustPreviewLoading(false)
+    }
+  }
+
   // --- Handlers: Deletion ---
   const handleDeleteProductType = async (code: string) => {
     if (confirm('Are you sure you want to delete this Product Type template?')) {
@@ -373,6 +593,29 @@ export default function TemplatesPage() {
   const getCustomizationName = (id: number) => {
     const ct = customizationTemplates.find(c => c.id === id)
     return ct?.original_filename || `ID: ${id}`
+  }
+
+  const handlePreviewProductType = async (code: string) => {
+    setIsPtPreviewOpen(true)
+    setPtPreviewLoading(true)
+    setPtPreviewError(null)
+    setPtPreviewData(null)
+
+    try {
+      const data = await templatesApi.previewProductTypeTemplate(code)
+      setPtPreviewData(data)
+    } catch (e: unknown) {
+      const err = e as { response?: { data?: { detail?: string } } }
+      setPtPreviewError(err.response?.data?.detail || 'Failed to load preview. Ensure the file exists on the server.')
+    } finally {
+      setPtPreviewLoading(false)
+    }
+  }
+
+  const handleClosePtPreview = () => {
+    setIsPtPreviewOpen(false)
+    setPtPreviewData(null)
+    setPtPreviewError(null)
   }
 
   return (
@@ -556,6 +799,9 @@ export default function TemplatesPage() {
         {/* Product Type Links */}
         <Box sx={{ mb: 4 }}>
           <Typography variant="subtitle1" sx={{ fontWeight: 'bold', }} gutterBottom>Product Type Templates (for regular listing data)</Typography>
+          <Typography variant="body2" sx={{ mt: 0.5, opacity: 0.85 }}>
+            We store the original Amazon XLSX and extract fields for defaults. Preview/Download uses the stored file.
+          </Typography>
           <Grid container spacing={2} alignItems="center" sx={{ mb: 2 }}>
             <Grid item xs={12} md={4}>
               <FormControl fullWidth size="small">
@@ -616,6 +862,9 @@ export default function TemplatesPage() {
         {/* Customization Links */}
         <Box sx={{ mt: 3 }} ref={customLinkingRef} style={{ scrollMarginTop: '80px' }}>
           <Typography variant="subtitle1" sx={{ fontWeight: 'bold' }} gutterBottom>Customization Templates (for customization.txt)</Typography>
+          <Typography variant="body2" sx={{ mt: 0.5, opacity: 0.85 }}>
+            We store the original Amazon XLSX. In XLSX export mode, the file is included byte-for-byte.
+          </Typography>
           <Typography variant="caption" color="text.secondary" paragraph>
             Note: This assigns the template to the Equipment Type directly. Re-assign to change.
           </Typography>
@@ -695,10 +944,22 @@ export default function TemplatesPage() {
         </DialogActions>
       </Dialog>
 
+      {/* Product Type File Preview Modal */}
+      <ProductTypeFilePreview
+        open={isPtPreviewOpen}
+        onClose={handleClosePtPreview}
+        loading={ptPreviewLoading}
+        error={ptPreviewError}
+        data={ptPreviewData}
+      />
+
       <Grid container spacing={3}>
         <Grid item xs={12}>
           <Paper sx={{ p: 2 }}>
             <Typography variant="h6" gutterBottom>Imported Templates</Typography>
+            <Typography variant="caption" sx={{ display: 'block', mt: 1, opacity: 0.8 }}>
+              Preview is capped to 50×50 for performance.
+            </Typography>
             <TableContainer>
               <Table size="small">
                 <TableHead>
@@ -717,6 +978,8 @@ export default function TemplatesPage() {
                       <TableCell>{pt.fields?.length || 0} fields</TableCell>
                       <TableCell>
                         <IconButton size="small" onClick={(e) => { e.stopPropagation(); handleDeleteProductType(pt.code); }}><DeleteIcon /></IconButton>
+                        <IconButton size="small" onClick={(e) => { e.stopPropagation(); handlePreviewProductType(pt.code); }} title="Preview Original File"><PreviewIcon /></IconButton>
+                        <IconButton size="small" component="a" href={templatesApi.downloadProductTypeTemplateUrl(pt.code)} download target="_blank" onClick={(e) => e.stopPropagation()} title="Download Original File"><DownloadIcon /></IconButton>
                       </TableCell>
                     </TableRow>
                   ))}
@@ -726,8 +989,28 @@ export default function TemplatesPage() {
                       <TableCell><Chip label="Customization" size="small" color="secondary" variant="outlined" /></TableCell>
                       <TableCell>{Math.round(ct.file_size / 1024)} KB</TableCell>
                       <TableCell>
-                        <IconButton size="small" component="a" href={settingsApi.downloadAmazonCustomizationTemplateUrl(ct.id)} download onClick={(e) => e.stopPropagation()}><DownloadIcon /></IconButton>
-                        <IconButton size="small" onClick={(e) => { e.stopPropagation(); handleDeleteCustomization(ct.id); }}><DeleteIcon /></IconButton>
+                        <IconButton
+                          size="small"
+                          onClick={(e) => { e.stopPropagation(); setTemplateType('customization'); setSelectedTemplate(ct); handlePreviewCustomizationTemplate(ct.id); }}
+                          title="Preview File"
+                          sx={{ mr: 1 }}
+                        >
+                          <PreviewIcon />
+                        </IconButton>
+                        <IconButton
+                          size="small"
+                          component="a"
+                          href={settingsApi.downloadAmazonCustomizationTemplateUrl(ct.id)}
+                          download
+                          onClick={(e) => e.stopPropagation()}
+                          title="Download Original"
+                          sx={{ mr: 1 }}
+                        >
+                          <DownloadIcon />
+                        </IconButton>
+                        <IconButton size="small" onClick={(e) => { e.stopPropagation(); handleDeleteCustomization(ct.id); }} title="Delete">
+                          <DeleteIcon />
+                        </IconButton>
                       </TableCell>
                     </TableRow>
                   ))}
@@ -954,6 +1237,15 @@ export default function TemplatesPage() {
           }}
         />
       )}
+
+      {/* Customization Template Preview Modal */}
+      <CustomizationTemplateFilePreview
+        open={isCustPreviewOpen}
+        onClose={() => setIsCustPreviewOpen(false)}
+        loading={custPreviewLoading}
+        error={custPreviewError}
+        data={custPreviewData}
+      />
     </Box>
   )
 }

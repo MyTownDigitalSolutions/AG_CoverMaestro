@@ -8,6 +8,7 @@ import shutil
 import os
 from fastapi import File, UploadFile
 
+
 from app.database import get_db
 from app.models.enums import Carrier
 from app.models.core import (
@@ -29,7 +30,8 @@ from app.schemas.core import (
     ShippingZoneResponse,
     ShippingZoneRateNormalizedResponse, ShippingZoneRateUpsertRequest,
     ShippingDefaultSettingCreate, ShippingDefaultSettingResponse,
-    AmazonCustomizationTemplateAssignmentRequest, EquipmentTypeResponse
+    AmazonCustomizationTemplateAssignmentRequest, EquipmentTypeResponse,
+    AmazonCustomizationTemplatePreviewResponse
 )
 
 router = APIRouter(prefix="/settings", tags=["settings"])
@@ -684,6 +686,59 @@ def download_amazon_customization_template(id: int, db: Session = Depends(get_db
         
     from fastapi.responses import FileResponse
     return FileResponse(template.file_path, filename=template.original_filename)
+
+@router.get("/amazon-customization-templates/{id}/preview", response_model=AmazonCustomizationTemplatePreviewResponse)
+def preview_amazon_customization_template(id: int, db: Session = Depends(get_db)):
+    template = db.query(AmazonCustomizationTemplate).filter(AmazonCustomizationTemplate.id == id).first()
+    if not template:
+        raise HTTPException(status_code=404, detail="Template not found")
+
+    if not os.path.exists(template.file_path):
+        raise HTTPException(status_code=404, detail="File missing on disk")
+
+    MAX_PREVIEW_ROWS = 50
+    MAX_PREVIEW_COLS = 50
+
+    try:
+        from openpyxl import load_workbook
+
+        wb = load_workbook(template.file_path, read_only=True, data_only=True)
+        ws = wb.worksheets[0]
+        sheet_name = ws.title
+
+        max_row = ws.max_row or 0
+        max_col = ws.max_column or 0
+
+        row_limit = min(max_row, MAX_PREVIEW_ROWS)
+        col_limit = min(max_col, MAX_PREVIEW_COLS)
+
+        grid: List[List[str]] = []
+
+        # Use explicit bounds so we don't accidentally iterate huge sheets
+        for r in range(1, row_limit + 1):
+            row_values: List[str] = []
+            for c in range(1, col_limit + 1):
+                v = ws.cell(row=r, column=c).value
+                row_values.append("" if v is None else str(v))
+            grid.append(row_values)
+
+        wb.close()
+
+        return AmazonCustomizationTemplatePreviewResponse(
+            template_id=template.id,
+            original_filename=template.original_filename,
+            sheet_name=sheet_name,
+            max_row=max_row,
+            max_column=max_col,
+            preview_row_count=row_limit,
+            preview_column_count=col_limit,
+            grid=grid,
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        # Keep it consistent with existing patterns: return 500 with message
+        raise HTTPException(status_code=500, detail=f"Failed to preview customization template: {str(e)}")
 
 @router.post("/equipment-types/{id}/amazon-customization-template/assign", response_model=EquipmentTypeResponse)
 def assign_amazon_customization_template(id: int, data: AmazonCustomizationTemplateAssignmentRequest, db: Session = Depends(get_db)):

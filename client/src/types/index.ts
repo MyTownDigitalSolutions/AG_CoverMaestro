@@ -12,6 +12,9 @@ export interface Series {
 export interface AmazonCustomizationTemplate {
   id: number
   original_filename: string
+  file_path?: string
+  upload_date: string
+  file_size: number
 }
 
 export interface EquipmentType {
@@ -177,6 +180,10 @@ export interface AmazonProductType {
   header_rows?: (string | null)[][]
   keywords: { id: number; keyword: string }[]
   fields: ProductTypeField[]
+  original_filename?: string
+  file_path?: string
+  upload_date?: string
+  file_size?: number
 }
 
 export interface EnumValue {

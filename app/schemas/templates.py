@@ -66,3 +66,13 @@ class ProductTypeFieldUpdate(BaseModel):
 
 class ProductTypeFieldValueCreate(BaseModel):
     value: str
+
+class AmazonProductTypeTemplatePreviewResponse(BaseModel):
+    product_code: str
+    original_filename: str
+    sheet_name: str
+    max_row: int
+    max_column: int
+    preview_row_count: int
+    preview_column_count: int
+    grid: List[List[str]]

@@ -34,6 +34,19 @@ class AmazonCustomizationTemplateResponse(BaseModel):
     class Config:
         from_attributes = True
 
+class AmazonCustomizationTemplatePreviewResponse(BaseModel):
+    template_id: int
+    original_filename: str
+    sheet_name: str
+    max_row: int
+    max_column: int
+    preview_row_count: int
+    preview_column_count: int
+    grid: List[List[str]]
+
+    class Config:
+        from_attributes = True
+
 class AmazonCustomizationTemplateAssignmentRequest(BaseModel):
     template_id: Optional[int] = None
 

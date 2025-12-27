@@ -20,6 +20,10 @@ class AmazonProductType(Base):
     name = Column(String, nullable=True)
     description = Column(Text, nullable=True)
     header_rows = Column(JSON, nullable=True)
+    original_filename = Column(String, nullable=True)
+    file_path = Column(String, nullable=True)
+    upload_date = Column(DateTime, nullable=True)
+    file_size = Column(Integer, nullable=True)
     
     keywords = relationship("ProductTypeKeyword", back_populates="product_type", cascade="all, delete-orphan")
     fields = relationship("ProductTypeField", back_populates="product_type", cascade="all, delete-orphan")
