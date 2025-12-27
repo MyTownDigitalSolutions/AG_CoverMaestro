@@ -6,6 +6,7 @@ from app.api import (
     materials, suppliers, customers, orders,
     pricing, templates, enums, export, design_options, settings
 )
+from app.services.storage_policy import ensure_storage_dirs_exist, cleanup_tmp_dir
 
 Base.metadata.create_all(bind=engine)
 
@@ -27,6 +28,17 @@ try:
     print(f"Export module path: {os.path.abspath(exp_check.__file__)}")
 except Exception as e:
     print(f"Could not resolve export module path: {e}")
+
+# Storage Policy: Ensure directories exist and cleanup old temp files
+try:
+    ensure_storage_dirs_exist()
+    print("[STORAGE_POLICY] Storage directories verified/created")
+    
+    deleted_count = cleanup_tmp_dir(max_age_days=7)
+    if deleted_count > 0:
+        print(f"[STORAGE_POLICY] Cleaned up {deleted_count} old temp files")
+except Exception as e:
+    print(f"[STORAGE_POLICY] Warning: Storage policy initialization failed: {e}")
 
 app.add_middleware(
     CORSMiddleware,
