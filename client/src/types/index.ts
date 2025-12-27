@@ -48,6 +48,13 @@ export interface Model {
   image_url?: string
   parent_sku?: string
   surface_area_sq_in?: number
+  top_depth_in?: number
+  angle_drop_in?: number
+  handle_location_option_id?: number | null
+  angle_type_option_id?: number | null
+  top_handle_length_in?: number | null
+  top_handle_height_in?: number | null
+  top_handle_rear_edge_to_center_in?: number | null
 }
 
 export type MaterialType = 'fabric' | 'hardware' | 'packaging'
@@ -184,6 +191,9 @@ export interface AmazonProductType {
   file_path?: string
   upload_date?: string
   file_size?: number
+  export_sheet_name_override?: string | null
+  export_start_row_override?: number | null
+  export_force_exact_start_row?: boolean
 }
 
 export interface EnumValue {

@@ -766,17 +766,23 @@ export default function ModelsPage() {
     handle_length: 0,
     handle_width: 0,
     handle_location: 'none',
-    angle_type: 'none',
-    image_url: ''
+    angle_type: 'No Angle',
+    image_url: '',
+    top_depth_in: 0,
+    angle_drop_in: 0,
+    handle_location_option_id: null as number | null,
+    angle_type_option_id: null as number | null,
+    top_handle_length_in: null as number | null,
+    top_handle_height_in: null as number | null,
+    top_handle_rear_edge_to_center_in: null as number | null
   })
 
   const [textOptionValues, setTextOptionValues] = useState<Record<number, string>>({})
 
   // UI-Only Design Note States
-  // Top
-  const [topHandleLength, setTopHandleLength] = useState('')
-  const [topHandleHeight, setTopHandleHeight] = useState('')
-  const [topHandleRearOffset, setTopHandleRearOffset] = useState('')
+  // UI-Only Design Note States
+  // Top (REMOVED: now in formData)
+
   // Side
   const [sideHandleWidth, setSideHandleWidth] = useState('')
   const [sideHandleHeight, setSideHandleHeight] = useState('')
@@ -884,13 +890,31 @@ export default function ModelsPage() {
       ...formData,
       handle_length: formData.handle_length || undefined,
       handle_width: formData.handle_width || undefined,
-      image_url: formData.image_url || undefined
+      image_url: formData.image_url || undefined,
+      handle_location: formData.handle_location,
+      angle_type: formData.angle_type,
+      top_depth_in: formData.top_depth_in || undefined,
+      angle_drop_in: formData.angle_drop_in || undefined,
+      handle_location_option_id: formData.handle_location_option_id,
+      angle_type_option_id: formData.angle_type_option_id,
+      top_handle_length_in: formData.top_handle_length_in,
+      top_handle_height_in: formData.top_handle_height_in,
+      top_handle_rear_edge_to_center_in: formData.top_handle_rear_edge_to_center_in
     }
 
+    // Temporary logging for verification
+    console.log('[ModelsPage] FULL PAYLOAD:', JSON.stringify(data, null, 2))
+
+    let savedModel: Model
     if (editingModel) {
-      await modelsApi.update(editingModel.id, data)
+      savedModel = await modelsApi.update(editingModel.id, data)
+      console.log('[ModelsPage] After save refetch (update response):', savedModel)
+      setModels(prev => prev.map(m => m.id === savedModel.id ? savedModel : m))
+      setEditingModel(savedModel)
     } else {
-      await modelsApi.create(data)
+      savedModel = await modelsApi.create(data)
+      console.log('[ModelsPage] After save refetch (create response):', savedModel)
+      setModels(prev => [...prev, savedModel])
     }
     setDialogOpen(false)
     resetForm()
@@ -922,13 +946,18 @@ export default function ModelsPage() {
       handle_length: 0,
       handle_width: 0,
       handle_location: 'none',
-      angle_type: 'none',
-      image_url: ''
+      angle_type: 'No Angle',
+      image_url: '',
+      top_depth_in: 0,
+      angle_drop_in: 0,
+      handle_location_option_id: null,
+      angle_type_option_id: null,
+      top_handle_length_in: null,
+      top_handle_height_in: null,
+      top_handle_rear_edge_to_center_in: null
     })
     setTextOptionValues({})
-    setTopHandleLength('')
-    setTopHandleHeight('')
-    setTopHandleRearOffset('')
+    // Top handle fields now in formData
     setSideHandleWidth('')
     setSideHandleHeight('')
     setSideHandleDrop('')
@@ -951,7 +980,14 @@ export default function ModelsPage() {
       handle_width: model.handle_width || 0,
       handle_location: model.handle_location,
       angle_type: model.angle_type,
-      image_url: model.image_url || ''
+      image_url: model.image_url || '',
+      top_depth_in: model.top_depth_in || 0,
+      angle_drop_in: model.angle_drop_in || 0,
+      handle_location_option_id: model.handle_location_option_id || null,
+      angle_type_option_id: model.angle_type_option_id || null,
+      top_handle_length_in: model.top_handle_length_in || null,
+      top_handle_height_in: model.top_handle_height_in || null,
+      top_handle_rear_edge_to_center_in: model.top_handle_rear_edge_to_center_in || null
     })
     setDialogOpen(true)
   }
@@ -1223,18 +1259,39 @@ export default function ModelsPage() {
                 onChange={(e) => setFormData({ ...formData, height: parseFloat(e.target.value) })}
               />
             </Grid>
+            <Grid item xs={4}>
+              <TextField
+                fullWidth
+                type="number"
+                label="Top Depth (in)"
+                value={formData.top_depth_in}
+                onChange={(e) => setFormData({ ...formData, top_depth_in: parseFloat(e.target.value) || 0 })}
+                helperText="Designer measurement only"
+              />
+            </Grid>
+            <Grid item xs={4}>
+              <TextField
+                fullWidth
+                type="number"
+                label="Angle Drop (in)"
+                value={formData.angle_drop_in}
+                onChange={(e) => setFormData({ ...formData, angle_drop_in: parseFloat(e.target.value) || 0 })}
+                helperText="Designer measurement only"
+              />
+            </Grid>
+            <Grid item xs={4} />
             {showHandleFields && (
               <>
                 <Grid item xs={6}>
                   <FormControl fullWidth disabled={handleLocationOptions.length === 0}>
                     <InputLabel>Handle Location</InputLabel>
                     <Select
-                      value={formData.handle_location}
+                      value={formData.handle_location_option_id || ''}
                       label="Handle Location"
-                      onChange={(e) => setFormData({ ...formData, handle_location: e.target.value })}
+                      onChange={(e) => setFormData({ ...formData, handle_location_option_id: e.target.value ? Number(e.target.value) : null })}
                     >
                       {handleLocationOptions.map((opt) => (
-                        <MenuItem key={opt.id} value={opt.name}>{opt.name}</MenuItem>
+                        <MenuItem key={opt.id} value={opt.id}>{opt.name}</MenuItem>
                       ))}
                     </Select>
                   </FormControl>
@@ -1257,12 +1314,12 @@ export default function ModelsPage() {
                   <FormControl fullWidth disabled={angleTypeOptions.length === 0}>
                     <InputLabel>Angle Type</InputLabel>
                     <Select
-                      value={formData.angle_type}
+                      value={formData.angle_type_option_id || ''}
                       label="Angle Type"
-                      onChange={(e) => setFormData({ ...formData, angle_type: e.target.value })}
+                      onChange={(e) => setFormData({ ...formData, angle_type_option_id: e.target.value ? Number(e.target.value) : null })}
                     >
                       {angleTypeOptions.map((opt) => (
-                        <MenuItem key={opt.id} value={opt.name}>{opt.name}</MenuItem>
+                        <MenuItem key={opt.id} value={opt.id}>{opt.name}</MenuItem>
                       ))}
                     </Select>
                   </FormControl>
@@ -1305,13 +1362,31 @@ export default function ModelsPage() {
                       <Typography variant="caption" color="text.secondary">Used for sewing placement notes only.</Typography>
                     </Grid>
                     <Grid item xs={4}>
-                      <TextField fullWidth label="Length (in)" value={topHandleLength} onChange={(e) => setTopHandleLength(e.target.value)} />
+                      <TextField
+                        fullWidth
+                        label="Length (in)"
+                        type="number"
+                        value={formData.top_handle_length_in ?? ''}
+                        onChange={(e) => setFormData({ ...formData, top_handle_length_in: e.target.value === '' ? null : Number(e.target.value) })}
+                      />
                     </Grid>
                     <Grid item xs={4}>
-                      <TextField fullWidth label="Height (in)" value={topHandleHeight} onChange={(e) => setTopHandleHeight(e.target.value)} />
+                      <TextField
+                        fullWidth
+                        label="Height (in)"
+                        type="number"
+                        value={formData.top_handle_height_in ?? ''}
+                        onChange={(e) => setFormData({ ...formData, top_handle_height_in: e.target.value === '' ? null : Number(e.target.value) })}
+                      />
                     </Grid>
                     <Grid item xs={4}>
-                      <TextField fullWidth label="Rear Edge → Center (in)" value={topHandleRearOffset} onChange={(e) => setTopHandleRearOffset(e.target.value)} />
+                      <TextField
+                        fullWidth
+                        label="Rear Edge → Center (in)"
+                        type="number"
+                        value={formData.top_handle_rear_edge_to_center_in ?? ''}
+                        onChange={(e) => setFormData({ ...formData, top_handle_rear_edge_to_center_in: e.target.value === '' ? null : Number(e.target.value) })}
+                      />
                     </Grid>
                   </>
                 )}
@@ -1358,7 +1433,7 @@ export default function ModelsPage() {
           </Grid>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setDialogOpen(false)}>Cancel</Button>
+          <Button onClick={() => setDialogOpen(false)}>Close</Button>
           <Button onClick={handleSave} variant="contained">Save</Button>
         </DialogActions>
       </Dialog>

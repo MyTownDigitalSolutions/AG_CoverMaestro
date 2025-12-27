@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from typing import Optional, List
 
 class ProductTypeFieldValueResponse(BaseModel):
@@ -36,6 +36,9 @@ class AmazonProductTypeResponse(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = None
     header_rows: Optional[List[List[Optional[str]]]] = None
+    export_sheet_name_override: Optional[str] = None
+    export_start_row_override: Optional[int] = None
+    export_force_exact_start_row: bool = False
     keywords: List[ProductTypeKeywordResponse] = []
     fields: List[ProductTypeFieldResponse] = []
     
@@ -76,3 +79,21 @@ class AmazonProductTypeTemplatePreviewResponse(BaseModel):
     preview_row_count: int
     preview_column_count: int
     grid: List[List[str]]
+
+class ProductTypeExportConfigUpdate(BaseModel):
+    export_sheet_name_override: Optional[str] = None
+    export_start_row_override: Optional[int] = None
+    
+    @field_validator('export_start_row_override')
+    def validate_start_row(cls, v):
+        if v is not None and v < 1:
+            raise ValueError('Start row must be >= 1')
+        return v
+    
+    @field_validator('export_sheet_name_override')
+    def validate_sheet_name(cls, v):
+        if v is not None:
+            v = v.strip()
+            if len(v) == 0:
+                return None
+        return v

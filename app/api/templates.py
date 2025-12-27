@@ -8,13 +8,38 @@ from app.schemas.templates import (
     AmazonProductTypeResponse, ProductTypeFieldResponse, TemplateImportResponse,
     EquipmentTypeProductTypeLinkCreate, EquipmentTypeProductTypeLinkResponse,
     ProductTypeFieldUpdate, ProductTypeFieldValueCreate, ProductTypeFieldValueResponse,
-    AmazonProductTypeTemplatePreviewResponse
+    AmazonProductTypeTemplatePreviewResponse, ProductTypeExportConfigUpdate
 )
 import os
 from fastapi.responses import FileResponse
 from app.services.template_service import TemplateService
 
 router = APIRouter(prefix="/templates", tags=["templates"])
+
+
+# PATCH Endpoint to update export configuration
+
+@router.patch("/{product_code}/export-config", response_model=AmazonProductTypeResponse)
+def update_product_type_export_config(
+    product_code: str, 
+    config: ProductTypeExportConfigUpdate, 
+    db: Session = Depends(get_db)
+):
+    product_type = db.query(AmazonProductType).filter(AmazonProductType.code == product_code).first()
+    if not product_type:
+        raise HTTPException(status_code=404, detail="Product type not found")
+        
+    update_data = config.model_dump(exclude_unset=True)
+    
+    if "export_sheet_name_override" in update_data:
+        product_type.export_sheet_name_override = update_data["export_sheet_name_override"]
+        
+    if "export_start_row_override" in update_data:
+        product_type.export_start_row_override = update_data["export_start_row_override"]
+        
+    db.commit()
+    db.refresh(product_type)
+    return product_type
 
 @router.post("/import", response_model=TemplateImportResponse)
 async def import_template(
@@ -44,11 +69,13 @@ def link_equipment_type_to_product_type(
         raise HTTPException(status_code=404, detail="Product type not found")
     
     existing = db.query(EquipmentTypeProductType).filter(
-        EquipmentTypeProductType.equipment_type_id == link.equipment_type_id,
-        EquipmentTypeProductType.product_type_id == link.product_type_id
+        EquipmentTypeProductType.equipment_type_id == link.equipment_type_id
     ).first()
     if existing:
-        raise HTTPException(status_code=400, detail="Link already exists")
+        if existing.product_type_id == link.product_type_id:
+            raise HTTPException(status_code=400, detail="Link already exists")
+        else:
+            raise HTTPException(status_code=400, detail="An Amazon template is already assigned to this equipment type. Only one template is allowed.")
     
     new_link = EquipmentTypeProductType(
         equipment_type_id=link.equipment_type_id,
@@ -61,7 +88,14 @@ def link_equipment_type_to_product_type(
 
 @router.get("/equipment-type-links", response_model=List[EquipmentTypeProductTypeLinkResponse])
 def list_equipment_type_links(db: Session = Depends(get_db)):
-    return db.query(EquipmentTypeProductType).all()
+    # Step 1: Filter at DB level
+    links = db.query(EquipmentTypeProductType).filter(
+        EquipmentTypeProductType.equipment_type_id.isnot(None)
+    ).all()
+    
+    # Step 2: Defensive fallback (extra safety)
+    valid_links = [l for l in links if l.equipment_type_id is not None]
+    return valid_links
 
 @router.get("/equipment-type/{equipment_type_id}/product-type", response_model=AmazonProductTypeResponse | None)
 def get_product_type_for_equipment_type(equipment_type_id: int, db: Session = Depends(get_db)):

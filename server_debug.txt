@@ -1,0 +1,27 @@
+INFO:     Started server process [17764]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:8001 (Press CTRL+C to quit)
+ERROR:root:[XLSM][STEP] write_cells failed
+Traceback (most recent call last):
+  File "C:\Users\ksmar\Proton Drive\ksmartz7072\My files\Code Repositories\GGC\Antigravity\AG_CoverMaestro\app\api\export.py", line 723, in download_xlsm
+    ws.cell(row=current_row, column=col_idx + 1, value=value or '')
+    ~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ksmar\AppData\Roaming\Python\Python314\site-packages\openpyxl\worksheet\worksheet.py", line 246, in cell
+    cell.value = value
+    ^^^^^^^^^^
+AttributeError: 'MergedCell' object attribute 'value' is read-only
+ERROR:root:[XLSM] UNHANDLED ERROR
+Traceback (most recent call last):
+  File "C:\Users\ksmar\Proton Drive\ksmartz7072\My files\Code Repositories\GGC\Antigravity\AG_CoverMaestro\app\api\export.py", line 723, in download_xlsm
+    ws.cell(row=current_row, column=col_idx + 1, value=value or '')
+    ~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ksmar\AppData\Roaming\Python\Python314\site-packages\openpyxl\worksheet\worksheet.py", line 246, in cell
+    cell.value = value
+    ^^^^^^^^^^
+AttributeError: 'MergedCell' object attribute 'value' is read-only
+INFO:     127.0.0.1:59759 - "POST /export/download/xlsm HTTP/1.1" 500 Internal Server Error
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [17764]

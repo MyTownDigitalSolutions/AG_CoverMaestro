@@ -138,25 +138,37 @@ class TemplateService:
         print("STEP 1: Parsing DATA DEFINITIONS sheet")
         print("=" * 60)
         
+        dd_df = None
         try:
+            # ✅ CRITICAL: rewind BEFORE every read
+            excel_file.seek(0)
             dd_df = pd.read_excel(excel_file, sheet_name="Data Definitions", header=None)
             excel_file.seek(0)
+
+            # Minimal diagnostics
+            print(f"[TEMPLATE_IMPORT] Data Definitions shape={dd_df.shape}")
+            try:
+                a0 = dd_df.iat[0, 0] if dd_df.shape[0] > 0 and dd_df.shape[1] > 0 else None
+                b0 = dd_df.iat[0, 1] if dd_df.shape[0] > 0 and dd_df.shape[1] > 1 else None
+                print(f"[TEMPLATE_IMPORT] Data Definitions top-left A1={a0} B1={b0}")
+            except Exception:
+                pass
+
         except ValueError as e:
-            # Missing sheet = client error (invalid template format)
             if "Worksheet named" in str(e) or "not found" in str(e).lower():
                 raise HTTPException(status_code=400, detail="Invalid Amazon Product Type template: missing 'Data Definitions' sheet")
-            # Other ValueError = unexpected, treat as server error
             import traceback
             print(f"[TEMPLATE_IMPORT] ERROR reading Data Definitions sheet: {e}")
             traceback.print_exc()
             raise HTTPException(status_code=500, detail=f"Failed to read Data Definitions sheet: {str(e)}")
         except Exception as e:
-            # Unexpected exception = server error
             import traceback
             print(f"[TEMPLATE_IMPORT] ERROR reading Data Definitions sheet: {e}")
             traceback.print_exc()
             raise HTTPException(status_code=500, detail=f"Failed to read Data Definitions sheet: {str(e)}")
-            
+        
+        # ✅ Parse AFTER successful read
+        try:
             current_group = None
             
             for row_idx in range(2, len(dd_df)):
@@ -168,7 +180,7 @@ class TemplateService:
                 
                 if col_a and not col_b:
                     current_group = col_a
-                    print(f"  GROUP: {current_group}")
+                    # print(f"  GROUP: {current_group}")
                     continue
                 
                 if col_b:
@@ -182,13 +194,11 @@ class TemplateService:
                     
                     if local_label:
                         local_label_to_field[local_label] = field_name
-                    
-                    print(f"    Field: {field_name[:40]}... | Label: {local_label}")
             
             print(f"  TOTAL: {len(field_definitions)} fields from Data Definitions")
-            
+            print(f"  TOTAL: {len(local_label_to_field)} local labels mapped")
         except Exception as e:
-            print(f"  ERROR: {e}")
+            print(f"  ERROR parsing Data Definitions: {e}")
         
         valid_values_by_field = {}
         
@@ -196,25 +206,37 @@ class TemplateService:
         print("STEP 2: Parsing VALID VALUES sheet")
         print("=" * 60)
         
+        vv_df = None
         try:
+            # ✅ CRITICAL: rewind BEFORE every read
+            excel_file.seek(0)
             vv_df = pd.read_excel(excel_file, sheet_name="Valid Values", header=None)
             excel_file.seek(0)
+
+            # Minimal diagnostics
+            print(f"[TEMPLATE_IMPORT] Valid Values shape={vv_df.shape}")
+            try:
+                a0 = vv_df.iat[0, 0] if vv_df.shape[0] > 0 and vv_df.shape[1] > 0 else None
+                b0 = vv_df.iat[0, 1] if vv_df.shape[0] > 0 and vv_df.shape[1] > 1 else None
+                print(f"[TEMPLATE_IMPORT] Valid Values top-left A1={a0} B1={b0}")
+            except Exception:
+                pass
+
         except ValueError as e:
-            # Missing sheet = client error (invalid template format)
             if "Worksheet named" in str(e) or "not found" in str(e).lower():
                 raise HTTPException(status_code=400, detail="Invalid Amazon Product Type template: missing 'Valid Values' sheet")
-            # Other ValueError = unexpected, treat as server error
             import traceback
             print(f"[TEMPLATE_IMPORT] ERROR reading Valid Values sheet: {e}")
             traceback.print_exc()
             raise HTTPException(status_code=500, detail=f"Failed to read Valid Values sheet: {str(e)}")
         except Exception as e:
-            # Unexpected exception = server error
             import traceback
             print(f"[TEMPLATE_IMPORT] ERROR reading Valid Values sheet: {e}")
             traceback.print_exc()
             raise HTTPException(status_code=500, detail=f"Failed to read Valid Values sheet: {str(e)}")
-            
+        
+        # ✅ Parse AFTER successful read
+        try:
             current_vv_group = None
             
             for row_idx in range(len(vv_df)):
@@ -225,7 +247,6 @@ class TemplateService:
                 
                 if col_a and not col_b:
                     current_vv_group = col_a
-                    print(f"  GROUP: {current_vv_group}")
                     continue
                 
                 if col_b:
@@ -264,7 +285,6 @@ class TemplateService:
                             valid_values_by_field[matched_field] = []
                         valid_values_by_field[matched_field].extend(values)
                         valid_values_imported += len(values)
-                        print(f"    Matched '{local_label_part}' -> {len(values)} values")
                         
                         if local_label_part == "Item Type Keyword":
                             for value in values:
@@ -274,14 +294,13 @@ class TemplateService:
                                 )
                                 self.db.add(kw)
                                 keywords_imported += 1
-                    else:
-                        print(f"    NO MATCH: {local_label_part}")
-            
+                    # else: (leave silent; too noisy)
+
             self.db.commit()
             print(f"  TOTAL: {valid_values_imported} valid values")
-            
+            print(f"  TOTAL: {len(valid_values_by_field)} fields with valid values")
         except Exception as e:
-            print(f"  ERROR: {e}")
+            print(f"  ERROR parsing Valid Values: {e}")
         
         template_field_order = {}
         
@@ -289,27 +308,28 @@ class TemplateService:
         print("STEP 3: Parsing TEMPLATE sheet")
         print("=" * 60)
         
+        template_df = None
         try:
+            # ✅ CRITICAL: rewind BEFORE read
+            excel_file.seek(0)
             template_df = pd.read_excel(excel_file, sheet_name="Template", header=None)
+            excel_file.seek(0)
+
+            print(f"[TEMPLATE_IMPORT] Template shape={template_df.shape}")
         except ValueError as e:
-            # Missing sheet = client error (invalid template format)
             if "Worksheet named" in str(e) or "not found" in str(e).lower():
                 raise HTTPException(status_code=400, detail="Invalid Amazon Product Type template: missing 'Template' sheet")
-            # Other ValueError = unexpected, treat as server error
             import traceback
             print(f"[TEMPLATE_IMPORT] ERROR reading Template sheet: {e}")
             traceback.print_exc()
             raise HTTPException(status_code=500, detail=f"Failed to read Template sheet: {str(e)}")
         except Exception as e:
-            # Unexpected exception = server error
             import traceback
             print(f"[TEMPLATE_IMPORT] ERROR reading Template sheet: {e}")
             traceback.print_exc()
             raise HTTPException(status_code=500, detail=f"Failed to read Template sheet: {str(e)}")
             
         try:
-            excel_file.seek(0)
-            
             header_rows = []
             for i in range(min(6, len(template_df))):
                 row_data = []
@@ -361,8 +381,12 @@ class TemplateService:
         print("=" * 60)
         
         try:
+            # ✅ CRITICAL: rewind BEFORE read
+            excel_file.seek(0)
             dv_df = pd.read_excel(excel_file, sheet_name="Default Values", header=None)
             excel_file.seek(0)
+
+            print(f"[TEMPLATE_IMPORT] Default Values shape={dv_df.shape}")
             
             for row_idx in range(1, len(dv_df)):
                 row = dv_df.iloc[row_idx]
@@ -390,18 +414,13 @@ class TemplateService:
                 if matched_field:
                     if col_c_default:
                         default_values_by_field[matched_field] = col_c_default
-                        print(f"    Default: {col_a_local_label} = {col_c_default[:30]}...")
                     
                     other_values = [str(v).strip() for v in row.iloc[3:] if pd.notna(v)]
                     if other_values:
                         if matched_field not in other_values_by_field:
                             other_values_by_field[matched_field] = []
                         other_values_by_field[matched_field].extend(other_values)
-                        print(f"    Other values: {col_a_local_label} +{len(other_values)}")
-                else:
-                    if col_b_field_name:
-                        print(f"    NO MATCH: {col_a_local_label} | {col_b_field_name[:40]}...")
-            
+
             print(f"  TOTAL: {len(default_values_by_field)} defaults, {len(other_values_by_field)} with other values")
             
         except Exception as e:
@@ -558,3 +577,4 @@ class TemplateService:
         if product_type and product_type.header_rows:
             return product_type.header_rows
         return []
+

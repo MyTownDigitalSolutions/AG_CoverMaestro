@@ -1,0 +1,13 @@
+CWD: C:\Users\ksmar\Proton Drive\ksmartz7072\My files\Code Repositories\GGC\Antigravity\AG_CoverMaestro
+
+--- Path Resolution ---
+Raw: attached_assets/product_type_templates\SOUND_AND_RECORDING_EQUIPMENT_20251227_041547_SOUND_AND_RECORDING_EQUIPMENT(ALLKEYWORDS).xlsm
+Norm: attached_assets\product_type_templates\SOUND_AND_RECORDING_EQUIPMENT_20251227_041547_SOUND_AND_RECORDING_EQUIPMENT(ALLKEYWORDS).xlsm
+Abs: C:\Users\ksmar\Proton Drive\ksmartz7072\My files\Code Repositories\GGC\Antigravity\AG_CoverMaestro\attached_assets\product_type_templates\SOUND_AND_RECORDING_EQUIPMENT_20251227_041547_SOUND_AND_RECORDING_EQUIPMENT(ALLKEYWORDS).xlsm
+Exists: True
+Size: 1194629 bytes
+
+--- Directory Listing ---
+Listing attached_assets: ['CARRIER_BAG_CASE(ALLKEYWORDS)_1766004879652.xlsx', 'CARRIER_BAG_CASE(ALLKEYWORDS)_1766004992859.xlsx', 'customization_templates', 'image_1766005964439.png', 'image_1766005987414.png', 'image_1766005994524.png', 'image_1766005999685.png', 'image_1766013361082.png', 'image_1766014033677.png', 'image_1766014041532.png', 'image_1766015633279.png', 'image_1766024250835.png', 'image_1766024586509.png', 'image_1766025655175.png', 'image_1766034285307.png', 'image_1766034366450.png', 'image_1766035354343.png', 'image_1766035643574.png', 'image_1766035671920.png', 'image_1766035906498.png', 'image_1766035934567.png', 'image_1766036361113.png', 'image_1766036406960.png', 'image_1766036455968.png', 'image_1766036469141.png', 'image_1766036777039.png', 'image_1766037460542.png', 'image_1766037479618.png', 'image_1766038992634.png', 'image_1766039497321.png', 'image_1766039512198.png', 'image_1766039515566.png', 'image_1766042324046.png', 'image_1766042412132.png', 'image_1766042448569.png', 'image_1766043926291.png', 'image_1766364423499.png', 'image_1766369388659.png', 'image_1766369495785.png', 'Pasted-Detailed-Development-Structure-Prompts-for-the-Cover-Ma_1766002444242.txt', 'Pasted-Lets-try-it-this-way-Parse-the-Data-Definitions-Sheet-f_1766033275041.txt', 'Pasted-Lets-try-it-this-way-Parse-the-Data-Definitions-Sheet-f_1766034111101.txt', 'Pasted-Replit-Implementation-Prompt-Role-Senior-Full-Stack-Dev_1766365066607.txt', 'Pasted-Role-Senior-Full-Stack-Developer-Task-Implement-Supplie_1766368560177.txt', 'product_type_templates']
+Listing attached_assets\product_type_templates:
+  MATCH: SOUND_AND_RECORDING_EQUIPMENT_20251227_041547_SOUND_AND_RECORDING_EQUIPMENT(ALLKEYWORDS).xlsm

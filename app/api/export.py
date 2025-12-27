@@ -9,6 +9,7 @@ import hashlib
 import requests # Added for image validation
 import concurrent.futures
 import time
+import traceback
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
@@ -17,6 +18,7 @@ from pydantic import BaseModel
 from app.schemas.core import ModelPricingSnapshotResponse
 from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Font, PatternFill, Alignment
+from openpyxl.cell.cell import MergedCell
 from app.database import get_db
 from app.models.core import Model, Series, Manufacturer, EquipmentType, ModelPricingSnapshot
 from app.models.templates import AmazonProductType, ProductTypeField, EquipmentTypeProductType
@@ -24,6 +26,8 @@ from app.models.templates import AmazonProductType, ProductTypeField, EquipmentT
 from app.schemas.core import ModelPricingSnapshotResponse
 from app.api.pricing import recalculate_targeted, PricingRecalculateRequest
 from app.services.pricing_calculator import PricingConfigError
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/export", tags=["export"])
 
@@ -528,16 +532,24 @@ def build_export_data(request: ExportPreviewRequest, db: Session):
     
     equipment_type_id = list(equipment_type_ids)[0]
     
-    link = db.query(EquipmentTypeProductType).filter(
+    links = db.query(EquipmentTypeProductType).filter(
         EquipmentTypeProductType.equipment_type_id == equipment_type_id
-    ).first()
+    ).all()
     
-    if not link:
+    if len(links) == 0:
         equipment_type = db.query(EquipmentType).filter(EquipmentType.id == equipment_type_id).first()
         raise HTTPException(
-            status_code=400, 
+            status_code=404, 
             detail=f"No Amazon template linked to equipment type: {equipment_type.name if equipment_type else 'Unknown'}"
         )
+        
+    if len(links) > 1:
+        raise HTTPException(
+            status_code=500,
+            detail="Configuration error: multiple templates assigned to equipment type. Please resolve uniqueness constraint."
+        )
+        
+    link = links[0]
     
     product_type = db.query(AmazonProductType).filter(
         AmazonProductType.id == link.product_type_id
@@ -647,67 +659,254 @@ def download_xlsx(request: ExportPreviewRequest, db: Session = Depends(get_db)):
     return response
 
 
+# Helper functions for XLSM export logic
+def is_anchor_row(ws, row_idx):
+    row_vals = []
+    # Check first 50 columns for anchor signals
+    for c in range(1, 51):
+        try:
+            cell = ws.cell(row=row_idx, column=c)
+            if isinstance(cell, MergedCell):
+                continue
+            v = cell.value
+            if v and isinstance(v, str):
+                row_vals.append(str(v).lower())
+        except Exception:
+            continue
+            
+    txt = " ".join(row_vals)
+    # 1. contribution_sku / item_sku
+    if "contribution_sku" in txt or "item_sku" in txt:
+        return True
+    
+    # 2. sku + context
+    if "sku" in txt:
+        if any(x in txt for x in ["listing action", "update delete", "feed_product_type"]):
+            return True
+        if "sku" in row_vals: # Explicit exact match cell
+            return True
+            
+    # 3. #.value pattern
+    for val in row_vals:
+        if ".value" in val and "#" in val:
+            return True
+            
+    return False
+
+def is_row_empty(ws, row_idx, check_cols_count):
+    if check_cols_count < 1: 
+        check_cols_count = 1 # Safety
+        
+    for c in range(1, check_cols_count + 1):
+        cell = ws.cell(row=row_idx, column=c)
+        if isinstance(cell, MergedCell):
+            # Safe rule: merged cell means not writable/not empty context
+            return False
+            
+        val = cell.value
+        if val is not None and str(val).strip() != "":
+            return False
+    return True
+
+
 @router.post("/download/xlsm")
 def download_xlsm(request: ExportPreviewRequest, db: Session = Depends(get_db)):
-    """Download export as XLSM file (macro-enabled workbook)."""
-    ensure_models_fresh_for_export(request, db)
-    header_rows, data_rows, filename_base, template_code, _, _, _ = build_export_data(request, db)
+    """Download export as XLSM file (macro-enabled workbook) preserving original macros."""
+    import os
+    print(f"!!! [XLSM][HIT][PID={os.getpid()}][CWD={os.getcwd()}] !!!", flush=True)
+    logger.warning(f"[XLSM][HIT][PID={os.getpid()}][CWD={os.getcwd()}]")
+    logger.warning(f"[XLSM] HIT download_xlsm model_ids={request.model_ids} listing_type={request.listing_type}")
+    
+    try:
+        # Resolve Data
+        try:
+            ensure_models_fresh_for_export(request, db)
+            header_rows, data_rows, filename_base, template_code, models, _, _ = build_export_data(request, db)
 
-    sig = compute_export_signature(template_code, header_rows, data_rows)
-    
-    wb = Workbook()
-    ws = wb.active
-    ws.title = "Template"
-    
-    row_styles = [
-        (Font(bold=True, color="FFFFFF"), PatternFill(start_color="1976D2", end_color="1976D2", fill_type="solid")),
-        (Font(color="FFFFFF"), PatternFill(start_color="2196F3", end_color="2196F3", fill_type="solid")),
-        (Font(bold=True, color="FFFFFF"), PatternFill(start_color="4CAF50", end_color="4CAF50", fill_type="solid")),
-        (Font(bold=True), PatternFill(start_color="8BC34A", end_color="8BC34A", fill_type="solid")),
-        (Font(size=9), PatternFill(start_color="C8E6C9", end_color="C8E6C9", fill_type="solid")),
-        (Font(italic=True, size=9), PatternFill(start_color="FFF9C4", end_color="FFF9C4", fill_type="solid")),
-    ]
-    
-    current_row = 1
-    for row_idx, header_row in enumerate(header_rows):
-        for col_idx, value in enumerate(header_row):
-            cell = ws.cell(row=current_row, column=col_idx + 1, value=value or '')
-            if row_idx < len(row_styles):
-                cell.font = row_styles[row_idx][0]
-                cell.fill = row_styles[row_idx][1]
-            cell.alignment = Alignment(horizontal='left', vertical='center')
-        current_row += 1
-    
-    for data_row in data_rows:
-        for col_idx, value in enumerate(data_row):
-            ws.cell(row=current_row, column=col_idx + 1, value=value or '')
-        current_row += 1
-    
-    for col in ws.columns:
-        max_length = 0
-        column = col[0].column_letter
-        for cell in col:
-            try:
-                if len(str(cell.value)) > max_length:
-                    max_length = min(len(str(cell.value)), 50)
-            except:
-                pass
-        adjusted_width = max_length + 2
-        ws.column_dimensions[column].width = adjusted_width
-    
-    output = io.BytesIO()
-    wb.save(output)
-    output.seek(0)
-    
-    filename = f"{filename_base}.xlsm"
-    response = StreamingResponse(
-        output,
-        media_type="application/vnd.ms-excel.sheet.macroEnabled.12",
-        headers={"Content-Disposition": f"attachment; filename={filename}"}
-    )
-    response.headers["X-Export-Signature"] = sig
-    response.headers["X-Export-Template-Code"] = template_code
-    return response
+            equipment_type_id = models[0].equipment_type_id
+            product_type = db.query(AmazonProductType).filter(AmazonProductType.code == template_code).first()
+            
+            if not product_type:
+                raise HTTPException(404, detail="No product type template linked for this equipment type.")
+                
+            file_path = product_type.file_path
+            logger.warning(f"[XLSM] resolved equipment_type_id={equipment_type_id} template_id={product_type.id} file_path={file_path}")
+            
+            if not file_path or not os.path.exists(file_path):
+                 raise HTTPException(404, detail=f"Original XLSM template file missing: {file_path}")
+                 
+        except Exception:
+            logger.exception("[XLSM][STEP] resolve_template failed")
+            raise
+
+        # Load Workbook (MACROS DISABLED)
+        try:
+            logger.warning(f"[XLSM-BTN] Returning XLSX output (macros disabled)")
+            logger.warning(f"[XLSM] Loading workbook from {file_path}")
+            wb = load_workbook(file_path)
+            logger.warning(f"[XLSM] template_sheetnames={wb.sheetnames}")
+        except Exception:
+            logger.exception("[XLSM][STEP] load_workbook failed")
+            raise HTTPException(422, detail="Could not open XLSM template. File may be corrupt.")
+            
+        # Determine Eligible Sheets
+        eligible_sheets = []
+        override_sheet_name = product_type.export_sheet_name_override
+        override_start_row = product_type.export_start_row_override
+        
+        if override_sheet_name:
+            # MODE 1: Override
+            if override_sheet_name in wb.sheetnames:
+                ws = wb[override_sheet_name]
+                # Scan anchor anyway to help start row logic
+                anchor_row = None
+                for r in range(1, 51):
+                    if is_anchor_row(ws, r):
+                        anchor_row = r
+                        break
+                setattr(ws, "_anchor_row", anchor_row)
+                eligible_sheets.append(ws)
+            else:
+                raise HTTPException(422, detail=f"Export sheet '{override_sheet_name}' not found in template.")
+        else:
+            # MODE 2: Auto-detect
+            blacklist = ["data definitions", "data definition", "instructions", "readme", "example", "sample", "notes"]
+            
+            for sheet_name in wb.sheetnames:
+                ws = wb[sheet_name]
+                if ws.sheet_state != "visible":
+                    continue
+                
+                s_lower = sheet_name.lower()
+                if any(b in s_lower for b in blacklist):
+                    continue
+                
+                anchor_row = None
+                try:
+                    for r in range(1, 51):
+                        if is_anchor_row(ws, r):
+                            anchor_row = r
+                            break
+                except Exception as e:
+                    logger.warning(f"[TPL][SHEET][SKIP] name='{sheet_name}' reason='anchor detection crash: {e}'")
+                    continue
+                
+                logger.warning(f"[TPL][SHEET] name='{sheet_name}' eligible={bool(anchor_row)} reason={'anchor found' if anchor_row else 'no anchor'} anchor_row={anchor_row}")
+                
+                if anchor_row:
+                    setattr(ws, "_anchor_row", anchor_row)
+                    eligible_sheets.append(ws)
+                    
+        if not eligible_sheets:
+             # Fallback: if no override and no auto-detect, try 'Template' default?
+             # User says: "If missing... return 422".
+             # But "Use sheet name 'Template' as DEFAULT preference" in prompt text?
+             # "MODE 1... MODE 2... If no anchor found, mark NOT eligible."
+             # It implies strictness.
+             # However, "DO NOT hardcode sheet name 'Template' except as DEFAULT preference."
+             # I'll check 'Template' if NO sheets eligible?
+             # Actually, if auto-detect fails, maybe I should check 'Template' specifically?
+             # But if 'Template' has no anchor, it's risky.
+             # I will stick to "return 422" per "If still missing, return a user-visible 422".
+             raise HTTPException(422, detail="No eligible export sheet detected (no anchor row found). Please configure an Export Sheet Override.")
+
+        # Write Data
+        written_sheets = []
+        total_rows_written = 0
+        cols_to_write = len(data_rows[0]) if data_rows else 1
+        
+        for ws in eligible_sheets:
+            anchor_row = getattr(ws, "_anchor_row", None)
+            
+            # Determine Start Scan
+            start_scan = 1
+            if override_start_row and override_start_row > 0:
+                start_scan = override_start_row
+                logger.warning(f"[TPL][ANCHOR] sheet='{ws.title}' anchor_row={anchor_row} start_scan={start_scan} override_start_row={override_start_row}")
+            elif anchor_row:
+                start_scan = anchor_row + 1
+                logger.warning(f"[TPL][ANCHOR] sheet='{ws.title}' anchor_row={anchor_row} start_scan={start_scan}")
+            else:
+                start_scan = 1
+                logger.warning(f"[TPL][ANCHOR] sheet='{ws.title}' anchor_row={anchor_row} start_scan={start_scan} (default)")
+                
+            # Find First Writable Row
+            first_writable = None
+            max_search = max(start_scan + 5000, ws.max_row + 5000)
+            
+            for r in range(start_scan, max_search):
+                if is_row_empty(ws, r, cols_to_write):
+                    first_writable = r
+                    break
+            
+            if not first_writable:
+                 raise HTTPException(422, detail=f"No empty row found to write export data on sheet '{ws.title}'. Template appears fully populated.")
+            
+            logger.warning(f"[TPL][ROW] sheet='{ws.title}' first_writable_row={first_writable}")
+            
+            # Write Data Rows (NO Header)
+            rows_written = 0
+            merged_skips = 0
+            current_r = first_writable
+            
+            for data_row in data_rows:
+                for col_idx, value in enumerate(data_row):
+                    try:
+                        cell = ws.cell(row=current_r, column=col_idx + 1)
+                        if isinstance(cell, MergedCell):
+                            merged_skips += 1
+                            continue
+                        cell.value = value or ''
+                    except Exception as e:
+                        c_type = "None"
+                        try:
+                             if 'cell' in locals() and cell: c_type = type(cell).__name__
+                        except: pass
+                        logger.error(f"[XLSM][CRASH]\nsheet={ws.title}\nrow={current_r}\ncol={col_idx+1}\ncell_type={c_type}\nexception={e}", exc_info=True)
+                        continue
+                current_r += 1
+                rows_written += 1
+                
+            logger.warning(f"[TPL][WRITE] sheet='{ws.title}' merged_skips={merged_skips} rows_written={rows_written}")
+            written_sheets.append(ws.title)
+            total_rows_written += rows_written
+            
+        logger.warning(f"[TPL][SUMMARY] model_ids={request.model_ids} eligible_sheets={[s.title for s in eligible_sheets]} written_sheets={written_sheets} rows_written_total={total_rows_written}")
+
+        # Save and Verify
+        try:
+            logger.warning(f"[XLSM] output_sheetnames={wb.sheetnames}")
+            bio = io.BytesIO()
+            wb.save(bio)
+            output_size = bio.tell()
+            bio.seek(0)
+            
+        except Exception:
+             logger.exception("[XLSM][STEP] save failed")
+             raise
+             
+        # Final Response
+        bio.seek(0)
+        sig = compute_export_signature(template_code, header_rows, data_rows)
+        filename = f"{filename_base}.xlsx"
+        
+        response = StreamingResponse(
+            bio,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": f"attachment; filename={filename}"}
+        )
+        response.headers["X-Export-Signature"] = sig
+        response.headers["X-Export-Template-Code"] = template_code
+        return response
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"[XLSM] UNHANDLED ERROR: {e}")
+        raise HTTPException(
+            status_code=422,
+            detail=f"XLSM export failed due to invalid template structure or unexpected error: {str(e)}"
+        )
 
 
 @router.post("/download/csv")

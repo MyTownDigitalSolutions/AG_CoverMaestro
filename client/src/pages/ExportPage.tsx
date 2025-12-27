@@ -596,17 +596,22 @@ export default function ExportPage() {
           if (tCode) setLastDownloadTemplateCode(tCode);
 
           // Trigger Download
-          const blob = new Blob([response.data], { type: 'application/vnd.ms-excel.sheet.macroEnabled.12' });
+          const contentType = response.headers['content-type'] || 'application/vnd.ms-excel.sheet.macroEnabled.12';
+          const blob = new Blob([response.data], { type: contentType });
 
           // Safety: If blob is JSON, it means backend errored despite 200 (or axios logic mishandled)
-          if (response.headers['content-type']?.includes('application/json')) {
+          if (contentType.includes('application/json')) {
             const text = await response.data.text();
             throw new Error(`Server returned JSON instead of file: ${text.substring(0, 100)}`);
           }
 
-          if (!filename.toLowerCase().endsWith('.xlsm')) {
-            filename += '.xlsm';
-          }
+          // Fix extension based on content type (Backend may return XLSX now)
+          const isXlsx = contentType.includes('spreadsheetml.sheet');
+          const targetExt = isXlsx ? '.xlsx' : '.xlsm';
+
+          // Remove potential existing extension to avoid duplication (e.g. .xlsx.xlsm)
+          filename = filename.replace(/\.(xlsx|xlsm)$/i, '');
+          filename += targetExt;
 
           const url = window.URL.createObjectURL(blob);
           const link = document.createElement('a');
@@ -1921,15 +1926,7 @@ export default function ExportPage() {
                   onClick={() => handleFileSystemDownload('xlsm')}
                   disabled={downloading !== null}
                 >
-                  {downloading === 'xlsm' ? 'Downloading...' : 'XLSM'}
-                </Button>
-                <Button
-                  variant="outlined" // Changed to outlined to emphasize ZIP as primary
-                  startIcon={<DownloadIcon />}
-                  onClick={() => handleFileSystemDownload('xlsx')}
-                  disabled={downloading !== null}
-                >
-                  {downloading === 'xlsx' ? 'Downloading...' : 'XLSX'}
+                  {downloading === 'xlsm' ? 'Downloading...' : 'XLSX'}
                 </Button>
               </>
             ) : (

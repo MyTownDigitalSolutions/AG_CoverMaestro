@@ -17,6 +17,17 @@ app = FastAPI(
     version="1.0.0"
 )
 
+# Phase 0 Diagnostics
+import os
+import sys
+print(f"PID: {os.getpid()}")
+print(f"CWD: {os.getcwd()}")
+try:
+    import app.api.export as exp_check
+    print(f"Export module path: {os.path.abspath(exp_check.__file__)}")
+except Exception as e:
+    print(f"Could not resolve export module path: {e}")
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],

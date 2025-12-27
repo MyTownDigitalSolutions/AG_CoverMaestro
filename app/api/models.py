@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 from typing import List, Optional
 from app.database import get_db
-from app.models.core import Model, Series, Manufacturer, ModelPricingSnapshot, ModelPricingHistory
+from app.models.core import Model, Series, Manufacturer, ModelPricingSnapshot, ModelPricingHistory, DesignOption
 from app.schemas.core import ModelCreate, ModelResponse, ModelPricingSnapshotResponse, ModelPricingHistoryResponse
 from app.schemas.pricing_diff import PricingDiffResponse
 
@@ -64,6 +64,21 @@ def generate_parent_sku(manufacturer_name: str, series_name: str, model_name: st
     
     return sku
 
+def validate_design_option(option_id: Optional[int], expected_type: str, db: Session) -> None:
+    """Validate that a design option exists and has the correct type."""
+    if option_id is not None:
+        option = db.query(DesignOption).filter(DesignOption.id == option_id).first()
+        if not option:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Design option with id {option_id} not found"
+            )
+        if option.option_type != expected_type:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Design option {option_id} has type '{option.option_type}', expected '{expected_type}'"
+            )
+
 @router.get("", response_model=List[ModelResponse])
 def list_models(series_id: Optional[int] = Query(None), db: Session = Depends(get_db)):
     query = db.query(Model)
@@ -89,6 +104,10 @@ def create_model(data: ModelCreate, db: Session = Depends(get_db)):
         if not manufacturer:
             raise HTTPException(status_code=400, detail="Manufacturer not found")
         
+        # Validate design option selections
+        validate_design_option(data.handle_location_option_id, "handle_location", db)
+        validate_design_option(data.angle_type_option_id, "angle_type", db)
+        
         # Generate parent SKU
         parent_sku = generate_parent_sku(manufacturer.name, series.name, data.name)
         
@@ -108,7 +127,14 @@ def create_model(data: ModelCreate, db: Session = Depends(get_db)):
             angle_type=data.angle_type,
             image_url=data.image_url,
             parent_sku=parent_sku,
-            surface_area_sq_in=surface_area
+            surface_area_sq_in=surface_area,
+            top_depth_in=data.top_depth_in,
+            angle_drop_in=data.angle_drop_in,
+            handle_location_option_id=data.handle_location_option_id,
+            angle_type_option_id=data.angle_type_option_id,
+            top_handle_length_in=data.top_handle_length_in,
+            top_handle_height_in=data.top_handle_height_in,
+            top_handle_rear_edge_to_center_in=data.top_handle_rear_edge_to_center_in
         )
         db.add(model)
         db.flush() # Get ID for pricing
@@ -141,11 +167,21 @@ def update_model(id: int, data: ModelCreate, db: Session = Depends(get_db)):
         if not manufacturer:
             raise HTTPException(status_code=400, detail="Manufacturer not found")
         
+        # Validate design option selections
+        validate_design_option(data.handle_location_option_id, "handle_location", db)
+        validate_design_option(data.angle_type_option_id, "angle_type", db)
+        
         # Regenerate parent SKU if name, series, or manufacturer changed
         parent_sku = generate_parent_sku(manufacturer.name, series.name, data.name)
         
         # Recalculate surface area
         surface_area = calculate_surface_area(data.width, data.depth, data.height)
+        
+        # Temporary logging for verification
+        print(f"[models.py] Updating Model ID: {id}")
+        print(f"[models.py] Update payload fields: {list(data.dict().keys())}")
+        print(f"[models.py] Received enum values - handle_location: {data.handle_location}, angle_type: {data.angle_type}")
+        print(f"[models.py] Received FK IDs - handle_location_option_id: {data.handle_location_option_id}, angle_type_option_id: {data.angle_type_option_id}")
         
         model.name = data.name
         model.series_id = data.series_id
@@ -155,11 +191,34 @@ def update_model(id: int, data: ModelCreate, db: Session = Depends(get_db)):
         model.height = data.height
         model.handle_length = data.handle_length
         model.handle_width = data.handle_width
+        # Always assign enums explicitly - they have defaults so never None from schema
         model.handle_location = data.handle_location
         model.angle_type = data.angle_type
         model.image_url = data.image_url
         model.parent_sku = parent_sku
         model.surface_area_sq_in = surface_area
+        model.top_depth_in = data.top_depth_in
+        model.angle_drop_in = data.angle_drop_in
+        
+        # Assign FK-based design option selections
+        if data.handle_location_option_id is not None:
+            model.handle_location_option_id = data.handle_location_option_id
+        if data.angle_type_option_id is not None:
+            model.angle_type_option_id = data.angle_type_option_id
+        
+        # Assign top handle measurements (check presence to allow clearing to None)
+        # Using model_fields_set (Pydantic v2) or __fields_set__ (v1)
+        fields_set = getattr(data, 'model_fields_set', getattr(data, '__fields_set__', set()))
+        
+        print(f"[models.py] Top Handle Update - Provided fields: {fields_set}")
+        print(f"[models.py] Top Handle Update - Values: length={data.top_handle_length_in}, height={data.top_handle_height_in}, rear={data.top_handle_rear_edge_to_center_in}")
+
+        if 'top_handle_length_in' in fields_set:
+            model.top_handle_length_in = data.top_handle_length_in
+        if 'top_handle_height_in' in fields_set:
+            model.top_handle_height_in = data.top_handle_height_in
+        if 'top_handle_rear_edge_to_center_in' in fields_set:
+            model.top_handle_rear_edge_to_center_in = data.top_handle_rear_edge_to_center_in
         
         db.flush() # Flush changes for pricing
 
@@ -168,6 +227,11 @@ def update_model(id: int, data: ModelCreate, db: Session = Depends(get_db)):
             PricingCalculator(db).calculate_model_prices(model.id, marketplace="DEFAULT")
             db.commit()
             db.refresh(model)
+            
+            # Log what was actually saved
+            print(f"[models.py] After save - handle_location: {model.handle_location}, angle_type: {model.angle_type}")
+            print(f"[models.py] After save - handle_location_option_id: {model.handle_location_option_id}, angle_type_option_id: {model.angle_type_option_id}")
+            print(f"[models.py] After save - top_handle measurements: length={model.top_handle_length_in}, height={model.top_handle_height_in}, rear_edge={model.top_handle_rear_edge_to_center_in}")
         except Exception as e:
             db.rollback()
             raise HTTPException(status_code=400, detail=f"Pricing Calculation Failed: {str(e)}")

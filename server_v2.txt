@@ -1,0 +1,15 @@
+INFO:     Started server process [26384]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:8001 (Press CTRL+C to quit)
+ERROR:root:[XLSM] validation failed: vbaProject.bin missing
+ERROR:root:[XLSM][STEP] validate_vba_bin failed
+Traceback (most recent call last):
+  File "C:\Users\ksmar\Proton Drive\ksmartz7072\My files\Code Repositories\GGC\Antigravity\AG_CoverMaestro\app\api\export.py", line 766, in download_xlsm
+    raise HTTPException(422, detail="XLSM export failed: macro payload missing (vbaProject.bin not found).")
+fastapi.exceptions.HTTPException: 422: XLSM export failed: macro payload missing (vbaProject.bin not found).
+INFO:     127.0.0.1:56396 - "POST /export/download/xlsm HTTP/1.1" 422 Unprocessable Content
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [26384]

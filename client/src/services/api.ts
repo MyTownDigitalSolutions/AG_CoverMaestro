@@ -227,6 +227,10 @@ export const templatesApi = {
     api.delete(`/templates/fields/${fieldId}/values/${valueId}`),
   downloadProductTypeTemplateUrl: (code: string) => `/api/templates/product-types/${code}/download`,
   previewProductTypeTemplate: (code: string) => api.get<AmazonProductTypeTemplatePreviewResponse>(`/templates/product-types/${code}/preview`).then(r => r.data),
+  updateExportConfig: async (code: string, payload: { export_sheet_name_override?: string | null, export_start_row_override?: number | null }) => {
+    const response = await api.patch<AmazonProductType>(`/templates/${code}/export-config`, payload)
+    return response.data
+  },
 }
 
 export interface AmazonProductTypeTemplatePreviewResponse {

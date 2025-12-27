@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Boolean, ForeignKey, Text, JSON, DateTime
+from sqlalchemy import Column, Integer, String, Boolean, ForeignKey, Text, JSON, DateTime, UniqueConstraint
 from sqlalchemy.orm import relationship
 from app.database import Base
 from datetime import datetime
@@ -25,6 +25,11 @@ class AmazonProductType(Base):
     upload_date = Column(DateTime, nullable=True)
     file_size = Column(Integer, nullable=True)
     
+    # Export Configuration
+    export_sheet_name_override = Column(String, nullable=True)
+    export_start_row_override = Column(Integer, nullable=True)
+    export_force_exact_start_row = Column(Boolean, nullable=False, default=False, server_default="0")
+    
     keywords = relationship("ProductTypeKeyword", back_populates="product_type", cascade="all, delete-orphan")
     fields = relationship("ProductTypeField", back_populates="product_type", cascade="all, delete-orphan")
     equipment_types = relationship("EquipmentTypeProductType", back_populates="product_type", cascade="all, delete-orphan")
@@ -39,6 +44,10 @@ class EquipmentTypeProductType(Base):
     
     equipment_type = relationship("EquipmentType")
     product_type = relationship("AmazonProductType", back_populates="equipment_types")
+    
+    __table_args__ = (
+        UniqueConstraint('equipment_type_id', name='uq_equipment_type_product_types_equipment_type_id'),
+    )
 
 class ProductTypeKeyword(Base):
     __tablename__ = "product_type_keywords"

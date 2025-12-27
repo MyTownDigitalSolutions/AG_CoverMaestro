@@ -8,6 +8,7 @@ class HandleLocation(str, enum.Enum):
     TOP_AND_SIDE_AMP_HANDLES = "Top & Side Amp Handles"
 
 class AngleType(str, enum.Enum):
+    NO_ANGLE = "No Angle"
     TOP_ANGLE = "Top Angle"
     MID_ANGLE = "Mid Angle"
     FULL_ANGLE = "Full Angle"

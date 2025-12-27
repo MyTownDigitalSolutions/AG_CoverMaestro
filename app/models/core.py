@@ -56,14 +56,29 @@ class Model(Base):
     handle_length = Column(Float, nullable=True)
     handle_width = Column(Float, nullable=True)
     handle_location = Column(Enum(HandleLocation), default=HandleLocation.NO_AMP_HANDLE)
-    angle_type = Column(Enum(AngleType), default=AngleType.TOP_ANGLE)
+    angle_type = Column(Enum(AngleType), default=AngleType.NO_ANGLE)
     image_url = Column(String, nullable=True)
     parent_sku = Column(String(40), nullable=True)
     surface_area_sq_in = Column(Float, nullable=True)
+    top_depth_in = Column(Float, nullable=True)
+    angle_drop_in = Column(Float, nullable=True)
+    
+    # FK-based design option selection (replaces enum-based selection in UI)
+    handle_location_option_id = Column(Integer, ForeignKey("design_options.id", ondelete="SET NULL"), nullable=True)
+    angle_type_option_id = Column(Integer, ForeignKey("design_options.id", ondelete="SET NULL"), nullable=True)
+    
+    # Top handle measurements for design notes
+    top_handle_length_in = Column(Float, nullable=True)
+    top_handle_height_in = Column(Float, nullable=True)
+    top_handle_rear_edge_to_center_in = Column(Float, nullable=True)
     
     series = relationship("Series", back_populates="models")
     equipment_type = relationship("EquipmentType", back_populates="models")
     order_lines = relationship("OrderLine", back_populates="model")
+    
+    # Relationships to design options for dynamic handle/angle selection
+    handle_location_option = relationship("DesignOption", foreign_keys=[handle_location_option_id])
+    angle_type_option = relationship("DesignOption", foreign_keys=[angle_type_option_id])
     
     __table_args__ = (UniqueConstraint('series_id', 'name', name='uq_model_series_name'),)
 

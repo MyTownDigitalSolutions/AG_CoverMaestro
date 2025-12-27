@@ -1,0 +1,18 @@
+DB Path: C:\Users\ksmar\Proton Drive\ksmartz7072\My files\Code Repositories\GGC\Antigravity\AG_CoverMaestro\cover_app.db
+
+--- Query A: Model 3 Info ---
+{'model_id': 3, 'name': '10G', 'equipment_type_id': 1, 'equipment_type_name': 'Guitar Amplifier'}
+
+--- Query B: Links for EqType 1 ---
+{'equipment_type_id': 1, 'equipment_type_name': 'Guitar Amplifier', 'product_type_id': 2, 'code': 'SOUND_AND_RECORDING_EQUIPMENT'}
+
+--- Query C: Tables with file_path ---
+Tables with file_path: ['amazon_product_types', 'amazon_customization_templates']
+
+--- Table: amazon_product_types (Last 10) ---
+{'id': 3, 'original_filename': 'SOUND_AND_RECORDING_EQUIPMENT(ALLKEYWORDS).xlsm', 'file_path': 'attached_assets/product_type_templates\\Test_20251227_040321_SOUND_AND_RECORDING_EQUIPMENT(ALLKEYWORDS).xlsm', 'upload_date': '2025-12-27 04:03:21.219634', 'file_size': 1194629}
+{'id': 2, 'original_filename': 'SOUND_AND_RECORDING_EQUIPMENT(ALLKEYWORDS).xlsm', 'file_path': 'attached_assets/product_type_templates\\SOUND_AND_RECORDING_EQUIPMENT_20251227_041547_SOUND_AND_RECORDING_EQUIPMENT(ALLKEYWORDS).xlsm', 'upload_date': '2025-12-27 04:15:47.841839', 'file_size': 1194629}
+{'id': 1, 'original_filename': None, 'file_path': None, 'upload_date': None, 'file_size': None}
+
+--- Table: amazon_customization_templates (Last 10) ---
+{'id': 1, 'original_filename': 'GAC_Current_c_pbkOnly_pslAll.xlsx', 'file_path': 'attached_assets/customization_templates\\GAC_Current_c_pbkOnly_pslAll.xlsx', 'upload_date': '2025-12-26 06:32:59.186834', 'file_size': 14865}

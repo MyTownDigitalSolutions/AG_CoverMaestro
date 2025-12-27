@@ -377,6 +377,71 @@ export default function TemplatesPage() {
   const [selectedField, setSelectedField] = useState<ProductTypeField | null>(null)
   const [showOnlyRequired, setShowOnlyRequired] = useState(false)
 
+  // Export Override State
+  const [overrideSheetName, setOverrideSheetName] = useState('')
+  const [overrideStartRow, setOverrideStartRow] = useState('')
+  const [overrideSaving, setOverrideSaving] = useState(false)
+
+  useEffect(() => {
+    if (selectedTemplate && templateType === 'product') {
+      const pt = selectedTemplate as AmazonProductType
+      setOverrideSheetName(pt.export_sheet_name_override || '')
+      setOverrideStartRow(pt.export_start_row_override?.toString() || '')
+    }
+  }, [selectedTemplate, templateType])
+
+  const handleSaveOverrides = async () => {
+    if (!selectedTemplate || templateType !== 'product') return
+    setOverrideSaving(true)
+    setError(null)
+    setSuccess(null)
+    try {
+      const pt = selectedTemplate as AmazonProductType
+      // If empty string, send null
+      const startRow = overrideStartRow.trim() ? parseInt(overrideStartRow.trim()) : null
+      const sheetName = overrideSheetName.trim() || null
+
+      const updated = await templatesApi.updateExportConfig(pt.code, {
+        export_sheet_name_override: sheetName,
+        export_start_row_override: startRow
+      })
+
+      setSelectedTemplate(updated)
+      setProductTypeTemplates(prev => prev.map(p => p.id === updated.id ? updated : p))
+      setSuccess('Export overrides saved successfully')
+    } catch (e: unknown) {
+      const err = e as { response?: { data?: { detail?: string } } }
+      setError(err.response?.data?.detail || 'Failed to save export overrides')
+    } finally {
+      setOverrideSaving(false)
+    }
+  }
+
+  const handleClearOverrides = async () => {
+    if (!selectedTemplate || templateType !== 'product') return
+    setOverrideSaving(true)
+    setError(null)
+    setSuccess(null)
+    try {
+      const pt = selectedTemplate as AmazonProductType
+      const updated = await templatesApi.updateExportConfig(pt.code, {
+        export_sheet_name_override: null,
+        export_start_row_override: null
+      })
+
+      setSelectedTemplate(updated)
+      setProductTypeTemplates(prev => prev.map(p => p.id === updated.id ? updated : p))
+      setOverrideSheetName('')
+      setOverrideStartRow('')
+      setSuccess('Export overrides cleared')
+    } catch (e: unknown) {
+      const err = e as { response?: { data?: { detail?: string } } }
+      setError(err.response?.data?.detail || 'Failed to clear export overrides')
+    } finally {
+      setOverrideSaving(false)
+    }
+  }
+
   const loadData = async () => {
     const [pts, custs, ets, links] = await Promise.all([
       templatesApi.list(),
@@ -802,21 +867,9 @@ export default function TemplatesPage() {
           <Typography variant="body2" sx={{ mt: 0.5, opacity: 0.85 }}>
             We store the original Amazon XLSX and extract fields for defaults. Preview/Download uses the stored file.
           </Typography>
+
+          {/* ✅ UI CHANGE: Template dropdown first, then Equipment Type */}
           <Grid container spacing={2} alignItems="center" sx={{ mb: 2 }}>
-            <Grid item xs={12} md={4}>
-              <FormControl fullWidth size="small">
-                <InputLabel>Equipment Type</InputLabel>
-                <Select
-                  value={ptLinkEquipId}
-                  label="Equipment Type"
-                  onChange={(e) => setPtLinkEquipId(e.target.value as number)}
-                >
-                  {equipmentTypes.map((et) => (
-                    <MenuItem key={et.id} value={et.id}>{et.name}</MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
-            </Grid>
             <Grid item xs={12} md={4}>
               <FormControl fullWidth size="small">
                 <InputLabel>Product Type Template</InputLabel>
@@ -831,21 +884,38 @@ export default function TemplatesPage() {
                 </Select>
               </FormControl>
             </Grid>
+
+            <Grid item xs={12} md={4}>
+              <FormControl fullWidth size="small">
+                <InputLabel>Equipment Type</InputLabel>
+                <Select
+                  value={ptLinkEquipId}
+                  label="Equipment Type"
+                  onChange={(e) => setPtLinkEquipId(e.target.value as number)}
+                >
+                  {equipmentTypes.map((et) => (
+                    <MenuItem key={et.id} value={et.id}>{et.name}</MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            </Grid>
+
             <Grid item xs={12} md={4}>
               <Button variant="contained" startIcon={<AddIcon />} onClick={handleCreateProductTypeLink} disabled={ptLinkEquipId === '' || ptLinkTemplateId === ''}>
                 Link Product Type
               </Button>
             </Grid>
           </Grid>
+
           {equipmentTypeLinks.length > 0 && (
             <TableContainer>
               <Table size="small">
-                <TableHead><TableRow><TableCell>Equipment Type</TableCell><TableCell>Template</TableCell><TableCell>Actions</TableCell></TableRow></TableHead>
+                <TableHead><TableRow><TableCell>Template</TableCell><TableCell>Equipment Type</TableCell><TableCell>Actions</TableCell></TableRow></TableHead>
                 <TableBody>
                   {equipmentTypeLinks.map((link) => (
                     <TableRow key={link.id}>
-                      <TableCell>{getEquipmentTypeName(link.equipment_type_id)}</TableCell>
                       <TableCell>{getProductTypeCode(link.product_type_id)}</TableCell>
+                      <TableCell>{getEquipmentTypeName(link.equipment_type_id)}</TableCell>
                       <TableCell>
                         <IconButton size="small" onClick={() => handleDeleteProductTypeLink(link.id)}><DeleteIcon /></IconButton>
                       </TableCell>
@@ -868,21 +938,9 @@ export default function TemplatesPage() {
           <Typography variant="caption" color="text.secondary" paragraph>
             Note: This assigns the template to the Equipment Type directly. Re-assign to change.
           </Typography>
+
+          {/* ✅ UI CHANGE: Template dropdown first, then Equipment Type */}
           <Grid container spacing={2} alignItems="center" sx={{ mb: 2 }}>
-            <Grid item xs={12} md={4}>
-              <FormControl fullWidth size="small">
-                <InputLabel>Equipment Type</InputLabel>
-                <Select
-                  value={custLinkEquipId}
-                  label="Equipment Type"
-                  onChange={(e) => setCustLinkEquipId(e.target.value as number)}
-                >
-                  {equipmentTypes.map((et) => (
-                    <MenuItem key={et.id} value={et.id}>{et.name}</MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
-            </Grid>
             <Grid item xs={12} md={4}>
               <FormControl fullWidth size="small">
                 <InputLabel>Customization Template</InputLabel>
@@ -897,6 +955,22 @@ export default function TemplatesPage() {
                 </Select>
               </FormControl>
             </Grid>
+
+            <Grid item xs={12} md={4}>
+              <FormControl fullWidth size="small">
+                <InputLabel>Equipment Type</InputLabel>
+                <Select
+                  value={custLinkEquipId}
+                  label="Equipment Type"
+                  onChange={(e) => setCustLinkEquipId(e.target.value as number)}
+                >
+                  {equipmentTypes.map((et) => (
+                    <MenuItem key={et.id} value={et.id}>{et.name}</MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            </Grid>
+
             <Grid item xs={12} md={4}>
               <Button variant="contained" startIcon={<AddIcon />} onClick={handleCreateCustomizationLink} disabled={custLinkEquipId === '' || custLinkTemplateId === ''}>
                 Assign Template
@@ -906,13 +980,14 @@ export default function TemplatesPage() {
 
           <TableContainer>
             <Table size="small">
-              <TableHead><TableRow><TableCell>Equipment Type</TableCell><TableCell>Assigned Template</TableCell></TableRow></TableHead>
+              <TableHead><TableRow><TableCell>Assigned Template</TableCell><TableCell>Equipment Type</TableCell></TableRow></TableHead>
               <TableBody>
                 {equipmentTypes.filter(et => et.amazon_customization_template_id).map((et) => (
                   <TableRow key={et.id}>
-                    <TableCell>{et.name}</TableCell>
                     <TableCell>
                       {getCustomizationName(et.amazon_customization_template_id!)}
+                    </TableCell>
+                    <TableCell>{et.name}
                     </TableCell>
                   </TableRow>
                 ))}
@@ -1026,6 +1101,62 @@ export default function TemplatesPage() {
               {templateType === 'product' ? (
                 // PRODUCT TYPE DETAILS (Existing Logic)
                 <>
+                  {/* Export Overrides Section */}
+                  <Accordion defaultExpanded={(selectedTemplate as AmazonProductType).export_sheet_name_override || (selectedTemplate as AmazonProductType).export_start_row_override ? true : false} sx={{ mb: 2, border: '1px solid #e0e0e0', boxShadow: 'none' }}>
+                    <AccordionSummary expandIcon={<ExpandMoreIcon />} sx={{ backgroundColor: '#fff8e1' }}>
+                      <Typography variant="subtitle1" sx={{ fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: 1 }}>
+                        <WarningIcon fontSize="small" color="warning" /> Export Overrides (Fallback)
+                      </Typography>
+                    </AccordionSummary>
+                    <AccordionDetails>
+                      <Typography variant="body2" color="text.secondary" paragraph>
+                        Only use these settings if the automatic export fails to detect the correct sheet or start row.
+                      </Typography>
+                      <Grid container spacing={2} alignItems="flex-start">
+                        <Grid item xs={12} md={5}>
+                          <TextField
+                            fullWidth
+                            size="small"
+                            label="Export Sheet Name"
+                            value={overrideSheetName}
+                            onChange={(e) => setOverrideSheetName(e.target.value)}
+                            helperText="Optional. If the export sheet isn't named 'Template', enter the exact sheet name here."
+                          />
+                        </Grid>
+                        <Grid item xs={12} md={3}>
+                          <TextField
+                            fullWidth
+                            size="small"
+                            label="Export Start Row"
+                            type="number"
+                            value={overrideStartRow}
+                            onChange={(e) => setOverrideStartRow(e.target.value)}
+                            helperText="Optional. Forces the first write row."
+                            InputProps={{ inputProps: { min: 1 } }}
+                          />
+                        </Grid>
+                        <Grid item xs={12} md={4} sx={{ display: 'flex', gap: 1, mt: 0.5 }}>
+                          <Button
+                            variant="contained"
+                            color="primary"
+                            onClick={handleSaveOverrides}
+                            disabled={overrideSaving}
+                          >
+                            Save Overrides
+                          </Button>
+                          <Button
+                            variant="outlined"
+                            color="error"
+                            onClick={handleClearOverrides}
+                            disabled={overrideSaving}
+                          >
+                            Clear
+                          </Button>
+                        </Grid>
+                      </Grid>
+                    </AccordionDetails>
+                  </Accordion>
+
                   <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
                     <Typography variant="h6">Template Fields - {(selectedTemplate as AmazonProductType).code}</Typography>
                     <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
