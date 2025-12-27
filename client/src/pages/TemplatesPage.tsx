@@ -762,6 +762,30 @@ export default function TemplatesPage() {
               </Grid>
             </Grid>
 
+            {/* Naming Convention Helper */}
+            {productCode && (
+              <Box sx={{ mt: 2, p: 2, backgroundColor: '#f5f5f5', borderRadius: 1, border: '1px solid #e0e0e0' }}>
+                <Typography variant="subtitle2" gutterBottom sx={{ fontWeight: 'bold', color: '#1976d2' }}>
+                  📝 Template Storage Info
+                </Typography>
+                <Typography variant="body2" color="text.secondary" paragraph sx={{ mb: 1 }}>
+                  Your uploaded file will be stored as:
+                </Typography>
+                <Box sx={{ p: 1, backgroundColor: '#fff', borderRadius: 1, border: '1px solid #ccc', mb: 1.5 }}>
+                  <Typography variant="body2" sx={{ fontFamily: 'monospace', fontSize: '13px' }}>
+                    {productCode.trim().replace(' ', '_').replace(/[^A-Za-z0-9_()-]/g, '').replace(/_+/g, '_')}(Template).xlsx
+                  </Typography>
+                </Box>
+                <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 0.5 }}>
+                  • Uploading a new template replaces the current template and moves the previous version to _BACKUP
+                </Typography>
+                <Typography variant="caption" color="text.secondary" display="block">
+                  • Only the latest template and one backup are kept (no timestamped duplicates)
+                </Typography>
+              </Box>
+            )}
+
+
             {productTypeTemplates.length > 0 && (
               <>
                 <Divider sx={{ my: 3 }} />
