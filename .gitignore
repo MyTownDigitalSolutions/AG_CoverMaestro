@@ -67,3 +67,10 @@ attached_assets/exports/
 attached_assets/dev_artifacts/
 attached_assets/tmp/
 attached_assets/customization_templates/
+
+# Runtime templates (ignore contents, keep placeholder)
+attached_assets/product_type_templates/*
+!attached_assets/product_type_templates/.gitkeep
+
+
+

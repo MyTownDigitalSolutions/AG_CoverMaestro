@@ -11,15 +11,11 @@ from openpyxl import load_workbook
 from app.models.templates import AmazonProductType, ProductTypeKeyword, ProductTypeField, ProductTypeFieldValue
 from sqlalchemy import or_
 import re
-
-
-# ============================================================================
-# DIRECTORY CONSTANTS
-# ============================================================================
-TEMPLATE_DIR = "attached_assets/product_type_templates"
-EXPORT_DIR = "attached_assets/exports"
-DEV_DIR = "attached_assets/dev_artifacts"
-TMP_DIR = "attached_assets/tmp"
+from app.services.storage_policy import (
+    ensure_storage_dirs_exist,
+    assert_allowed_write_path,
+    TEMPLATE_DIR,
+)
 
 
 # ============================================================================
@@ -57,8 +53,6 @@ def get_template_paths(product_type_key: str) -> tuple[str, str]:
     Get canonical and backup paths for a product type template.
     Returns: (canonical_path, backup_path)
     """
-    os.makedirs(TEMPLATE_DIR, exist_ok=True)
-    
     normalized_key = normalize_product_type_key(product_type_key)
     canonical_filename = f"{normalized_key}(Template).xlsx"
     backup_filename = f"{normalized_key}(Template)_BACKUP.xlsx"
@@ -108,11 +102,15 @@ class TemplateService:
         
         STEP 4: TEMPLATE sheet - Get field order for export
         """
-        # Save raw file using canonical + backup storage rule
-        os.makedirs(TEMPLATE_DIR, exist_ok=True)
+        # Ensure storage directories exist
+        ensure_storage_dirs_exist()
         
         # Get paths for this product type
         canonical_path, backup_path = get_template_paths(product_code)
+        
+        # Validate write paths
+        assert_allowed_write_path(canonical_path)
+        assert_allowed_write_path(backup_path)
         
         # Rotate existing canonical to backup
         rotate_template_backup(canonical_path, backup_path)
@@ -645,4 +643,3 @@ class TemplateService:
         if product_type and product_type.header_rows:
             return product_type.header_rows
         return []
-
