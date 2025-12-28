@@ -84,6 +84,7 @@ class ModelBase(BaseModel):
     top_handle_length_in: Optional[float] = None
     top_handle_height_in: Optional[float] = None
     top_handle_rear_edge_to_center_in: Optional[float] = None
+    model_notes: Optional[str] = None
 
 class ModelCreate(ModelBase):
     pass
@@ -545,3 +546,4 @@ class PricingRecalculateBulkResponse(BaseModel):
     resolved_model_count: int
     results: Dict[str, Dict[str, List[Union[int, PricingRecalculateResult]]]] 
     # structure: { "amazon": { "succeeded": [1, 2], "failed": [{ "model_id": 3, "error": "msg" }] } }
+

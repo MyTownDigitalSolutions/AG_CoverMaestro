@@ -770,29 +770,15 @@ export default function ModelsPage() {
     image_url: '',
     parent_sku: '',
     sku_override: '',
-    top_depth_in: 0,
-    angle_drop_in: 0,
     handle_location_option_id: null as number | null,
     angle_type_option_id: null as number | null,
     top_handle_length_in: null as number | null,
     top_handle_height_in: null as number | null,
-    top_handle_rear_edge_to_center_in: null as number | null
+    top_handle_rear_edge_to_center_in: null as number | null,
+    model_notes: ''  // PART B: Universal model notes field
   })
 
   const [textOptionValues, setTextOptionValues] = useState<Record<number, string>>({})
-
-  // UI-Only Design Note States
-  // UI-Only Design Note States
-  // Top (REMOVED: now in formData)
-
-  // Side
-  const [sideHandleWidth, setSideHandleWidth] = useState('')
-  const [sideHandleHeight, setSideHandleHeight] = useState('')
-  const [sideHandleDrop, setSideHandleDrop] = useState('')
-  const [sideHandleRearOffset, setSideHandleRearOffset] = useState('')
-  // Rear
-  const [rearHandleLength, setRearHandleLength] = useState('')
-  const [rearHandleHeight, setRearHandleHeight] = useState('')
 
   const ALLOWED_HANDLE_TYPES = new Set([
     'guitar amplifier',
@@ -805,11 +791,41 @@ export default function ModelsPage() {
 
   const [availableDesignOptions, setAvailableDesignOptions] = useState<DesignOption[]>([])
 
+  // STEP 1: Handle Measurement Option Lookup (Runtime, NO hardcoded IDs)
+  const handleMeasurementOptions = useMemo(() => {
+    const lookup: Record<string, DesignOption | undefined> = {}
+
+    // Top Handle - EXACT names
+    lookup['Top Handle Length'] = availableDesignOptions.find(o => o.name === 'Top Handle Length')
+    lookup['Top Handle Height'] = availableDesignOptions.find(o => o.name === 'Top Handle Height')
+    lookup['Top Handle: Rear Edge to Center'] = availableDesignOptions.find(o => o.name === 'Top Handle: Rear Edge to Center')
+
+    // Side Handle - EXACT names
+    lookup['Side Handle Width'] = availableDesignOptions.find(o => o.name === 'Side Handle Width')
+    lookup['Side Handle Height'] = availableDesignOptions.find(o => o.name === 'Side Handle Height')
+    lookup['Side Handle Top Edge to Center'] = availableDesignOptions.find(o => o.name === 'Side Handle Top Edge to Center')
+    lookup['Side Handle Rear Edge to Center'] = availableDesignOptions.find(o => o.name === 'Side Handle Rear Edge to Center')
+
+    return lookup
+  }, [availableDesignOptions])
+
   useEffect(() => {
     setTextOptionValues({})
     if (formData.equipment_type_id) {
       equipmentTypesApi.getDesignOptions(formData.equipment_type_id)
-        .then(setAvailableDesignOptions)
+        .then(options => {
+          setAvailableDesignOptions(options)
+
+          // STEP 1: Default Angle Type to "No Angle" if not already set
+          if (!formData.angle_type_option_id) {
+            const noAngleOption = options.find(o =>
+              o.option_type === 'angle_type' && o.name === 'No Angle'
+            )
+            if (noAngleOption) {
+              setFormData(prev => ({ ...prev, angle_type_option_id: noAngleOption.id }))
+            }
+          }
+        })
         .catch(err => {
           console.error("Failed to load design options", err)
           setAvailableDesignOptions([])
@@ -888,6 +904,16 @@ export default function ModelsPage() {
   }
 
   const handleSave = async () => {
+    // STEP 4: SAVE PAYLOAD - Include design_option_values
+    const design_option_values: Record<number, string> = {}
+
+    // Convert textOptionValues to the format backend expects
+    Object.entries(textOptionValues).forEach(([id, value]) => {
+      if (value && value.trim() !== '') {
+        design_option_values[Number(id)] = value
+      }
+    })
+
     const data = {
       ...formData,
       handle_length: formData.handle_length || undefined,
@@ -896,16 +922,17 @@ export default function ModelsPage() {
       sku_override: formData.sku_override.trim() !== '' ? formData.sku_override.trim() : null,
       handle_location: formData.handle_location,
       angle_type: formData.angle_type,
-      top_depth_in: formData.top_depth_in || undefined,
-      angle_drop_in: formData.angle_drop_in || undefined,
       handle_location_option_id: formData.handle_location_option_id,
       angle_type_option_id: formData.angle_type_option_id,
       top_handle_length_in: formData.top_handle_length_in,
       top_handle_height_in: formData.top_handle_height_in,
-      top_handle_rear_edge_to_center_in: formData.top_handle_rear_edge_to_center_in
+      top_handle_rear_edge_to_center_in: formData.top_handle_rear_edge_to_center_in,
+      model_notes: formData.model_notes || null,  // PART B: Include model notes
+      design_option_values: design_option_values
     } as any
 
-    // Temporary logging for verification
+    // STEP 4: Temporary logging for verification
+    console.log('[SAVE] design_option_values', data.design_option_values)
     console.log('[ModelsPage] FULL PAYLOAD:', JSON.stringify(data, null, 2))
 
     let savedModel: Model
@@ -953,22 +980,15 @@ export default function ModelsPage() {
       image_url: '',
       parent_sku: '',
       sku_override: '',
-      top_depth_in: 0,
-      angle_drop_in: 0,
       handle_location_option_id: null,
       angle_type_option_id: null,
       top_handle_length_in: null,
       top_handle_height_in: null,
-      top_handle_rear_edge_to_center_in: null
+      top_handle_rear_edge_to_center_in: null,
+      model_notes: ''  // PART B: Reset model notes
     })
     setTextOptionValues({})
-    // Top handle fields now in formData
-    setSideHandleWidth('')
-    setSideHandleHeight('')
-    setSideHandleDrop('')
-    setSideHandleRearOffset('')
-    setRearHandleLength('')
-    setRearHandleHeight('')
+    // Clear textOptionValues on reset
     setEditingModel(null)
   }
 
@@ -988,14 +1008,27 @@ export default function ModelsPage() {
       image_url: model.image_url || '',
       parent_sku: model.parent_sku || '',
       sku_override: model.sku_override || '',
-      top_depth_in: model.top_depth_in || 0,
-      angle_drop_in: model.angle_drop_in || 0,
       handle_location_option_id: model.handle_location_option_id || null,
       angle_type_option_id: model.angle_type_option_id || null,
       top_handle_length_in: model.top_handle_length_in || null,
       top_handle_height_in: model.top_handle_height_in || null,
-      top_handle_rear_edge_to_center_in: model.top_handle_rear_edge_to_center_in || null
+      top_handle_rear_edge_to_center_in: model.top_handle_rear_edge_to_center_in || null,
+      model_notes: model.model_notes || ''  // PART B: Load model notes
     })
+
+    // STEP 5: LOAD / EDIT - Populate textOptionValues from design_option_values
+    const loadedTextOptions: Record<number, string> = {}
+    if ((model as any).design_option_values) {
+      console.log('[LOAD] design_option_values', (model as any).design_option_values)
+      const optionValues = (model as any).design_option_values
+      if (typeof optionValues === 'object') {
+        Object.entries(optionValues).forEach(([key, value]) => {
+          loadedTextOptions[Number(key)] = String(value)
+        })
+      }
+    }
+    setTextOptionValues(loadedTextOptions)
+
     setDialogOpen(true)
   }
 
@@ -1015,16 +1048,71 @@ export default function ModelsPage() {
       .sort((a, b) => a.name.localeCompare(b.name))
   }, [availableDesignOptions])
 
+  // STEP 2: Progressive Disclosure - Visibility Conditions
+  const hasHandleLocation = !!formData.handle_location_option_id
+
+  const selectedAngleTypeOption = useMemo(() => {
+    return angleTypeOptions.find(o => o.id === formData.angle_type_option_id)
+  }, [angleTypeOptions, formData.angle_type_option_id])
+
+  const angleTypeName = selectedAngleTypeOption?.name ?? 'No Angle'
+  const hasAngle = angleTypeName !== 'No Angle'
+
+  // Separate Angle Drop and Top Depth from generic text options
+  const angleDropOption = useMemo(() =>
+    availableDesignOptions.find(o => o.option_type === 'text_option' && o.name === 'Angle Drop'),
+    [availableDesignOptions]
+  )
+
+  const topDepthOption = useMemo(() =>
+    availableDesignOptions.find(o => o.option_type === 'text_option' && o.name === 'Top Depth'),
+    [availableDesignOptions]
+  )
+
+  // Filter generic text options (exclude handle measurements AND angle-related fields)
   const textOptions = useMemo(() => {
+    const excludedNames = new Set([
+      'Top Handle Length',
+      'Top Handle Height',
+      'Top Handle: Rear Edge to Center',
+      'Side Handle Width',
+      'Side Handle Height',
+      'Side Handle Top Edge to Center',
+      'Side Handle Rear Edge to Center',
+      'Angle Drop',  // These now have dedicated UI
+      'Top Depth'    // These now have dedicated UI
+    ])
+
     return availableDesignOptions
-      .filter(o => o.option_type === 'text_option')
+      .filter(o => o.option_type === 'text_option' && !excludedNames.has(o.name))
       .sort((a, b) => a.name.localeCompare(b.name))
   }, [availableDesignOptions])
 
-  const currentHandle = formData.handle_location || ''
-  const showTopHandle = currentHandle.includes('Top')
-  const showSideHandle = currentHandle.includes('Side')
-  const showRearHandle = currentHandle.includes('Rear')
+  // STEP 2: Visibility Logic - Based on handle location selection + option existence
+  const selectedHandleLocationOption = useMemo(() => {
+    return handleLocationOptions.find(o => o.id === formData.handle_location_option_id)
+  }, [handleLocationOptions, formData.handle_location_option_id])
+
+  const selectedHandleLocationName = selectedHandleLocationOption?.name || ''
+
+  // Top Handle block renders when: handle location includes "Top" AND at least one Top option exists
+  const showTopHandleBlock = useMemo(() => {
+    if (!selectedHandleLocationName.includes('Top')) return false
+    const hasAnyTopOption = handleMeasurementOptions['Top Handle Length'] ||
+      handleMeasurementOptions['Top Handle Height'] ||
+      handleMeasurementOptions['Top Handle: Rear Edge to Center']
+    return !!hasAnyTopOption
+  }, [selectedHandleLocationName, handleMeasurementOptions])
+
+  // Side Handle block renders when: handle location includes "Side" AND at least one Side option exists
+  const showSideHandleBlock = useMemo(() => {
+    if (!selectedHandleLocationName.includes('Side')) return false
+    const hasAnySideOption = handleMeasurementOptions['Side Handle Width'] ||
+      handleMeasurementOptions['Side Handle Height'] ||
+      handleMeasurementOptions['Side Handle Top Edge to Center'] ||
+      handleMeasurementOptions['Side Handle Rear Edge to Center']
+    return !!hasAnySideOption
+  }, [selectedHandleLocationName, handleMeasurementOptions])
 
   return (
     <Box>
@@ -1284,27 +1372,6 @@ export default function ModelsPage() {
                 onChange={(e) => setFormData({ ...formData, height: parseFloat(e.target.value) })}
               />
             </Grid>
-            <Grid item xs={4}>
-              <TextField
-                fullWidth
-                type="number"
-                label="Top Depth (in)"
-                value={formData.top_depth_in}
-                onChange={(e) => setFormData({ ...formData, top_depth_in: parseFloat(e.target.value) || 0 })}
-                helperText="Designer measurement only"
-              />
-            </Grid>
-            <Grid item xs={4}>
-              <TextField
-                fullWidth
-                type="number"
-                label="Angle Drop (in)"
-                value={formData.angle_drop_in}
-                onChange={(e) => setFormData({ ...formData, angle_drop_in: parseFloat(e.target.value) || 0 })}
-                helperText="Designer measurement only"
-              />
-            </Grid>
-            <Grid item xs={4} />
             {showHandleFields && (
               <>
                 <Grid item xs={6}>
@@ -1335,36 +1402,165 @@ export default function ModelsPage() {
                     </Box>
                   )}
                 </Grid>
-                <Grid item xs={6}>
-                  <FormControl fullWidth disabled={angleTypeOptions.length === 0}>
-                    <InputLabel>Angle Type</InputLabel>
-                    <Select
-                      value={formData.angle_type_option_id || ''}
-                      label="Angle Type"
-                      onChange={(e) => setFormData({ ...formData, angle_type_option_id: e.target.value ? Number(e.target.value) : null })}
-                    >
-                      {angleTypeOptions.map((opt) => (
-                        <MenuItem key={opt.id} value={opt.id}>{opt.name}</MenuItem>
-                      ))}
-                    </Select>
-                  </FormControl>
-                  {angleTypeOptions.length === 0 && (
-                    <Box sx={{ ml: 1, display: 'flex', alignItems: 'center', gap: 1 }}>
-                      <Typography variant="caption" color="text.secondary">
-                        No angle options configured for this equipment type.
-                      </Typography>
-                      <Button
-                        size="small"
-                        sx={{ fontSize: '0.7rem', p: 0, minWidth: 'auto', textTransform: 'none' }}
-                        onClick={() => navigate('/design-options')}
-                      >
-                        Configure
-                      </Button>
-                    </Box>
-                  )}
-                </Grid>
 
-                {/* Dynamic Text Options */}
+                {/* STEP 3: Handle Details - Show after Handle Location selected */}
+                {hasHandleLocation && (
+                  <>
+                    {/* STEP 3: Top Handle Fields - Bind to textOptionValues */}
+                    {showTopHandleBlock && (
+                      <>
+                        <Grid item xs={12} sx={{ mt: 1 }}>
+                          <Typography variant="subtitle2" color="primary">Top Handle Details (Design Note)</Typography>
+                          <Typography variant="caption" color="text.secondary">Used for sewing placement notes only.</Typography>
+                        </Grid>
+                        {handleMeasurementOptions['Top Handle Length'] && (
+                          <Grid item xs={4}>
+                            <TextField
+                              fullWidth
+                              label="Length (in)"
+                              value={textOptionValues[handleMeasurementOptions['Top Handle Length'].id] ?? ''}
+                              onChange={(e) => setTextOptionValues(prev => ({ ...prev, [handleMeasurementOptions['Top Handle Length']!.id]: e.target.value }))}
+                            />
+                          </Grid>
+                        )}
+                        {handleMeasurementOptions['Top Handle Height'] && (
+                          <Grid item xs={4}>
+                            <TextField
+                              fullWidth
+                              label="Height (in)"
+                              value={textOptionValues[handleMeasurementOptions['Top Handle Height'].id] ?? ''}
+                              onChange={(e) => setTextOptionValues(prev => ({ ...prev, [handleMeasurementOptions['Top Handle Height']!.id]: e.target.value }))}
+                            />
+                          </Grid>
+                        )}
+                        {handleMeasurementOptions['Top Handle: Rear Edge to Center'] && (
+                          <Grid item xs={4}>
+                            <TextField
+                              fullWidth
+                              label="Rear Edge → Center (in)"
+                              value={textOptionValues[handleMeasurementOptions['Top Handle: Rear Edge to Center'].id] ?? ''}
+                              onChange={(e) => setTextOptionValues(prev => ({ ...prev, [handleMeasurementOptions['Top Handle: Rear Edge to Center']!.id]: e.target.value }))}
+                            />
+                          </Grid>
+                        )}
+                      </>
+                    )}
+
+                    {/* STEP 3: Side Handle Fields - Bind to textOptionValues */}
+                    {showSideHandleBlock && (
+                      <>
+                        <Grid item xs={12} sx={{ mt: 1 }}>
+                          <Typography variant="subtitle2" color="primary">Side Handle Details (Design Note)</Typography>
+                          <Typography variant="caption" color="text.secondary">Used for sewing placement notes only.</Typography>
+                        </Grid>
+                        {handleMeasurementOptions['Side Handle Width'] && (
+                          <Grid item xs={3}>
+                            <TextField
+                              fullWidth
+                              label="Width (in)"
+                              value={textOptionValues[handleMeasurementOptions['Side Handle Width'].id] ?? ''}
+                              onChange={(e) => setTextOptionValues(prev => ({ ...prev, [handleMeasurementOptions['Side Handle Width']!.id]: e.target.value }))}
+                            />
+                          </Grid>
+                        )}
+                        {handleMeasurementOptions['Side Handle Height'] && (
+                          <Grid item xs={3}>
+                            <TextField
+                              fullWidth
+                              label="Height (in)"
+                              value={textOptionValues[handleMeasurementOptions['Side Handle Height'].id] ?? ''}
+                              onChange={(e) => setTextOptionValues(prev => ({ ...prev, [handleMeasurementOptions['Side Handle Height']!.id]: e.target.value }))}
+                            />
+                          </Grid>
+                        )}
+                        {handleMeasurementOptions['Side Handle Top Edge to Center'] && (
+                          <Grid item xs={3}>
+                            <TextField
+                              fullWidth
+                              label="Top Edge → Center (in)"
+                              value={textOptionValues[handleMeasurementOptions['Side Handle Top Edge to Center'].id] ?? ''}
+                              onChange={(e) => setTextOptionValues(prev => ({ ...prev, [handleMeasurementOptions['Side Handle Top Edge to Center']!.id]: e.target.value }))}
+                            />
+                          </Grid>
+                        )}
+                        {handleMeasurementOptions['Side Handle Rear Edge to Center'] && (
+                          <Grid item xs={3}>
+                            <TextField
+                              fullWidth
+                              label="Rear Edge → Center (in)"
+                              value={textOptionValues[handleMeasurementOptions['Side Handle Rear Edge to Center'].id] ?? ''}
+                              onChange={(e) => setTextOptionValues(prev => ({ ...prev, [handleMeasurementOptions['Side Handle Rear Edge to Center']!.id]: e.target.value }))}
+                            />
+                          </Grid>
+                        )}
+                      </>
+                    )}
+
+                    {/* STEP 3: Angle Type - Show after Handle Location selected */}
+                    <Grid item xs={12} sx={{ mt: 2 }}>
+                      <FormControl fullWidth disabled={angleTypeOptions.length === 0}>
+                        <InputLabel>Angle Type</InputLabel>
+                        <Select
+                          value={formData.angle_type_option_id || ''}
+                          label="Angle Type"
+                          onChange={(e) => setFormData({ ...formData, angle_type_option_id: e.target.value ? Number(e.target.value) : null })}
+                        >
+                          {angleTypeOptions.map((opt) => (
+                            <MenuItem key={opt.id} value={opt.id}>{opt.name}</MenuItem>
+                          ))}
+                        </Select>
+                      </FormControl>
+                      {angleTypeOptions.length === 0 && (
+                        <Box sx={{ ml: 1, display: 'flex', alignItems: 'center', gap: 1 }}>
+                          <Typography variant="caption" color="text.secondary">
+                            No angle options configured for this equipment type.
+                          </Typography>
+                          <Button
+                            size="small"
+                            sx={{ fontSize: '0.7rem', p: 0, minWidth: 'auto', textTransform: 'none' }}
+                            onClick={() => navigate('/design-options')}
+                          >
+                            Configure
+                          </Button>
+                        </Box>
+                      )}
+                    </Grid>
+                  </>
+                )}
+
+                {/* STEP 3: Angle Drop & Top Depth - Show ONLY if hasAngle */}
+                {hasHandleLocation && hasAngle && (
+                  <>
+                    {angleDropOption && (
+                      <Grid item xs={12} sx={{ mt: 1 }}>
+                        <TextField
+                          fullWidth
+                          label="Angle Drop"
+                          multiline
+                          minRows={2}
+                          value={textOptionValues[angleDropOption.id] || ''}
+                          onChange={(e) => setTextOptionValues(prev => ({ ...prev, [angleDropOption.id]: e.target.value }))}
+                          helperText="Design notes only (not used for pricing)."
+                        />
+                      </Grid>
+                    )}
+                    {topDepthOption && (
+                      <Grid item xs={12}>
+                        <TextField
+                          fullWidth
+                          label="Top Depth"
+                          multiline
+                          minRows={2}
+                          value={textOptionValues[topDepthOption.id] || ''}
+                          onChange={(e) => setTextOptionValues(prev => ({ ...prev, [topDepthOption.id]: e.target.value }))}
+                          helperText="Design notes only (not used for pricing)."
+                        />
+                      </Grid>
+                    )}
+                  </>
+                )}
+
+                {/* Generic Text Options - Remaining fields */}
                 {textOptions.map(option => (
                   <Grid item xs={12} key={option.id} sx={{ mt: 1 }}>
                     <TextField
@@ -1379,80 +1575,18 @@ export default function ModelsPage() {
                   </Grid>
                 ))}
 
-                {/* Top Handle Fields */}
-                {showTopHandle && (
-                  <>
-                    <Grid item xs={12} sx={{ mt: 1 }}>
-                      <Typography variant="subtitle2" color="primary">Top Handle Details (Design Note)</Typography>
-                      <Typography variant="caption" color="text.secondary">Used for sewing placement notes only.</Typography>
-                    </Grid>
-                    <Grid item xs={4}>
-                      <TextField
-                        fullWidth
-                        label="Length (in)"
-                        type="number"
-                        value={formData.top_handle_length_in ?? ''}
-                        onChange={(e) => setFormData({ ...formData, top_handle_length_in: e.target.value === '' ? null : Number(e.target.value) })}
-                      />
-                    </Grid>
-                    <Grid item xs={4}>
-                      <TextField
-                        fullWidth
-                        label="Height (in)"
-                        type="number"
-                        value={formData.top_handle_height_in ?? ''}
-                        onChange={(e) => setFormData({ ...formData, top_handle_height_in: e.target.value === '' ? null : Number(e.target.value) })}
-                      />
-                    </Grid>
-                    <Grid item xs={4}>
-                      <TextField
-                        fullWidth
-                        label="Rear Edge → Center (in)"
-                        type="number"
-                        value={formData.top_handle_rear_edge_to_center_in ?? ''}
-                        onChange={(e) => setFormData({ ...formData, top_handle_rear_edge_to_center_in: e.target.value === '' ? null : Number(e.target.value) })}
-                      />
-                    </Grid>
-                  </>
-                )}
-
-                {/* Side Handle Fields */}
-                {showSideHandle && (
-                  <>
-                    <Grid item xs={12} sx={{ mt: 1 }}>
-                      <Typography variant="subtitle2" color="primary">Side Handle Details (Design Note)</Typography>
-                      <Typography variant="caption" color="text.secondary">Used for sewing placement notes only.</Typography>
-                    </Grid>
-                    <Grid item xs={3}>
-                      <TextField fullWidth label="Width (in)" value={sideHandleWidth} onChange={(e) => setSideHandleWidth(e.target.value)} />
-                    </Grid>
-                    <Grid item xs={3}>
-                      <TextField fullWidth label="Height (in)" value={sideHandleHeight} onChange={(e) => setSideHandleHeight(e.target.value)} />
-                    </Grid>
-                    <Grid item xs={3}>
-                      <TextField fullWidth label="Top Edge → Center (in)" value={sideHandleDrop} onChange={(e) => setSideHandleDrop(e.target.value)} />
-                    </Grid>
-                    <Grid item xs={3}>
-                      <TextField fullWidth label="Rear Edge → Center (in)" value={sideHandleRearOffset} onChange={(e) => setSideHandleRearOffset(e.target.value)} />
-                    </Grid>
-                  </>
-                )}
-
-                {/* Rear Handle Fields */}
-                {showRearHandle && (
-                  <>
-                    <Grid item xs={12} sx={{ mt: 1 }}>
-                      <Typography variant="subtitle2" color="primary">Rear Handle Details (Design Note)</Typography>
-                      <Typography variant="caption" color="text.secondary">Used for sewing placement notes only.</Typography>
-                    </Grid>
-                    <Grid item xs={6}>
-                      <TextField fullWidth label="Length (in)" value={rearHandleLength} onChange={(e) => setRearHandleLength(e.target.value)} />
-                    </Grid>
-                    <Grid item xs={6}>
-                      <TextField fullWidth label="Height (in)" value={rearHandleHeight} onChange={(e) => setRearHandleHeight(e.target.value)} />
-                    </Grid>
-                  </>
-                )}
+                {/* PART B: Universal Model Notes - Always visible */}
+                <Grid item xs={12} sx={{ mt: 2 }}>
+                  <TextField
+                    fullWidth
+                    label="Model Notes"
+                    multiline
+                    minRows={3}
+                    value={formData.model_notes}
+                    onChange={(e) => setFormData({ ...formData, model_notes: e.target.value })}
+                    helperText="General notes for this model (fabrication, handling, or special considerations)."
+                  />
+                </Grid>
               </>
             )}
           </Grid>

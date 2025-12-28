@@ -1,0 +1,241 @@
+[
+  {
+    "name": "Rear-Amp Handle",
+    "description": null,
+    "option_type": "handle_location",
+    "is_pricing_relevant": false,
+    "equipment_type_ids": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6
+    ],
+    "id": 2
+  },
+  {
+    "name": "Top-Amp-Handle",
+    "description": null,
+    "option_type": "handle_location",
+    "is_pricing_relevant": false,
+    "equipment_type_ids": [
+      1,
+      2,
+      3,
+      4,
+      5
+    ],
+    "id": 3
+  },
+  {
+    "name": "No-Amp-Handle",
+    "description": null,
+    "option_type": "handle_location",
+    "is_pricing_relevant": false,
+    "equipment_type_ids": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6
+    ],
+    "id": 4
+  },
+  {
+    "name": "Side-Amp-Handles",
+    "description": null,
+    "option_type": "handle_location",
+    "is_pricing_relevant": false,
+    "equipment_type_ids": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6
+    ],
+    "id": 5
+  },
+  {
+    "name": "Top-Amp-Handle & Side-Amp-Handles",
+    "description": null,
+    "option_type": "handle_location",
+    "is_pricing_relevant": false,
+    "equipment_type_ids": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6
+    ],
+    "id": 6
+  },
+  {
+    "name": "Top-Angle",
+    "description": null,
+    "option_type": "angle_type",
+    "is_pricing_relevant": false,
+    "equipment_type_ids": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6
+    ],
+    "id": 7
+  },
+  {
+    "name": "Mid-Angle",
+    "description": null,
+    "option_type": "angle_type",
+    "is_pricing_relevant": false,
+    "equipment_type_ids": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6
+    ],
+    "id": 8
+  },
+  {
+    "name": "Full-Angle",
+    "description": null,
+    "option_type": "angle_type",
+    "is_pricing_relevant": false,
+    "equipment_type_ids": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6
+    ],
+    "id": 9
+  },
+  {
+    "name": "Full-Curve",
+    "description": null,
+    "option_type": "angle_type",
+    "is_pricing_relevant": false,
+    "equipment_type_ids": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6
+    ],
+    "id": 10
+  },
+  {
+    "name": "Mid-Curve",
+    "description": null,
+    "option_type": "angle_type",
+    "is_pricing_relevant": false,
+    "equipment_type_ids": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6
+    ],
+    "id": 11
+  },
+  {
+    "name": "Top-Curve",
+    "description": null,
+    "option_type": "angle_type",
+    "is_pricing_relevant": false,
+    "equipment_type_ids": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6
+    ],
+    "id": 12
+  },
+  {
+    "name": "2-in-1 Pocket",
+    "description": null,
+    "option_type": "no_user_input_required",
+    "is_pricing_relevant": true,
+    "equipment_type_ids": [
+      1,
+      2,
+      3,
+      4,
+      5
+    ],
+    "id": 14
+  },
+  {
+    "name": "Zipperized Top Amp Handle",
+    "description": null,
+    "option_type": "no_user_input_required",
+    "is_pricing_relevant": true,
+    "equipment_type_ids": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6
+    ],
+    "id": 15
+  },
+  {
+    "name": "No Angle",
+    "description": null,
+    "option_type": "angle_type",
+    "is_pricing_relevant": false,
+    "equipment_type_ids": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      8
+    ],
+    "id": 16
+  },
+  {
+    "name": "Top Depth",
+    "description": "Needs to me a numerical value.",
+    "option_type": "text_option",
+    "is_pricing_relevant": false,
+    "equipment_type_ids": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6
+    ],
+    "id": 17
+  },
+  {
+    "name": "Angle Drop",
+    "description": "Measure from top of amplifier to where angle ends or starts.",
+    "option_type": "text_option",
+    "is_pricing_relevant": false,
+    "equipment_type_ids": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6
+    ],
+    "id": 18
+  }
+]

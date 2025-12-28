@@ -73,6 +73,9 @@ class Model(Base):
     top_handle_height_in = Column(Float, nullable=True)
     top_handle_rear_edge_to_center_in = Column(Float, nullable=True)
     
+    # Universal model notes field (not a design option)
+    model_notes = Column(String, nullable=True)
+    
     series = relationship("Series", back_populates="models")
     equipment_type = relationship("EquipmentType", back_populates="models")
     order_lines = relationship("OrderLine", back_populates="model")

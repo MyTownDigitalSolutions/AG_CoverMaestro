@@ -56,6 +56,7 @@ export interface Model {
   top_handle_length_in?: number | null
   top_handle_height_in?: number | null
   top_handle_rear_edge_to_center_in?: number | null
+  model_notes?: string | null
 }
 
 export type MaterialType = 'fabric' | 'hardware' | 'packaging'
@@ -381,4 +382,5 @@ export interface ExportSetting {
   id: number
   default_save_path_template?: string
 }
+
 
