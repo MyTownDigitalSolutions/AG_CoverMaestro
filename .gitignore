@@ -68,9 +68,14 @@ attached_assets/dev_artifacts/
 attached_assets/tmp/
 attached_assets/customization_templates/
 
-# Runtime templates (ignore contents, keep placeholder)
+# Product type templates:
+# - Track ONLY canonical "(Template).xlsx" files (optional baseline)
+# - Ignore backups and anything else
 attached_assets/product_type_templates/*
 !attached_assets/product_type_templates/.gitkeep
+!attached_assets/product_type_templates/*(Template).xlsx
+attached_assets/product_type_templates/*(Template)_BACKUP.xlsx
+
 
 
 
