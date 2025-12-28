@@ -59,6 +59,7 @@ class Model(Base):
     angle_type = Column(Enum(AngleType), default=AngleType.NO_ANGLE)
     image_url = Column(String, nullable=True)
     parent_sku = Column(String(40), nullable=True)
+    sku_override = Column(String, nullable=True)
     surface_area_sq_in = Column(Float, nullable=True)
     top_depth_in = Column(Float, nullable=True)
     angle_drop_in = Column(Float, nullable=True)

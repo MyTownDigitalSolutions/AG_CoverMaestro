@@ -1394,7 +1394,9 @@ def get_field_value(field: ProductTypeField, model: Model, series, manufacturer,
         raise HTTPException(status_code=500, detail="Database session missing in export logic.")
     
     if 'contribution_sku' in field_name_lower and listing_type == 'individual':
-        return model.parent_sku if model.parent_sku else None
+        # Effective SKU: use override if present, otherwise use generated parent_sku
+        effective_sku = model.sku_override if model.sku_override else model.parent_sku
+        return effective_sku if effective_sku else None
     
     # Only include custom_value or selected_value if field is marked as required
     if field.required:

@@ -768,6 +768,8 @@ export default function ModelsPage() {
     handle_location: 'none',
     angle_type: 'No Angle',
     image_url: '',
+    parent_sku: '',
+    sku_override: '',
     top_depth_in: 0,
     angle_drop_in: 0,
     handle_location_option_id: null as number | null,
@@ -891,6 +893,7 @@ export default function ModelsPage() {
       handle_length: formData.handle_length || undefined,
       handle_width: formData.handle_width || undefined,
       image_url: formData.image_url || undefined,
+      sku_override: formData.sku_override.trim() !== '' ? formData.sku_override.trim() : null,
       handle_location: formData.handle_location,
       angle_type: formData.angle_type,
       top_depth_in: formData.top_depth_in || undefined,
@@ -900,7 +903,7 @@ export default function ModelsPage() {
       top_handle_length_in: formData.top_handle_length_in,
       top_handle_height_in: formData.top_handle_height_in,
       top_handle_rear_edge_to_center_in: formData.top_handle_rear_edge_to_center_in
-    }
+    } as any
 
     // Temporary logging for verification
     console.log('[ModelsPage] FULL PAYLOAD:', JSON.stringify(data, null, 2))
@@ -948,6 +951,8 @@ export default function ModelsPage() {
       handle_location: 'none',
       angle_type: 'No Angle',
       image_url: '',
+      parent_sku: '',
+      sku_override: '',
       top_depth_in: 0,
       angle_drop_in: 0,
       handle_location_option_id: null,
@@ -981,6 +986,8 @@ export default function ModelsPage() {
       handle_location: model.handle_location,
       angle_type: model.angle_type,
       image_url: model.image_url || '',
+      parent_sku: model.parent_sku || '',
+      sku_override: model.sku_override || '',
       top_depth_in: model.top_depth_in || 0,
       angle_drop_in: model.angle_drop_in || 0,
       handle_location_option_id: model.handle_location_option_id || null,
@@ -1215,6 +1222,24 @@ export default function ModelsPage() {
                 label="Model Name"
                 value={formData.name}
                 onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+              />
+            </Grid>
+            <Grid item xs={12}>
+              <TextField
+                fullWidth
+                label="Base SKU (Generated)"
+                value={formData.parent_sku}
+                disabled
+                helperText="Auto-generated. Used as the base SKU for single listings and as the parent SKU for variations. Not editable."
+              />
+            </Grid>
+            <Grid item xs={12}>
+              <TextField
+                fullWidth
+                label="SKU Override (optional)"
+                value={formData.sku_override}
+                onChange={(e) => setFormData({ ...formData, sku_override: e.target.value })}
+                helperText="If set, exports will use this SKU instead of the generated SKU."
               />
             </Grid>
             <Grid item xs={6}>

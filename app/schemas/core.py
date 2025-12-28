@@ -76,6 +76,7 @@ class ModelBase(BaseModel):
     handle_location: HandleLocation = HandleLocation.NO_AMP_HANDLE
     angle_type: AngleType = AngleType.NO_ANGLE
     image_url: Optional[str] = None
+    sku_override: Optional[str] = None
     top_depth_in: Optional[float] = None
     angle_drop_in: Optional[float] = None
     handle_location_option_id: Optional[int] = None

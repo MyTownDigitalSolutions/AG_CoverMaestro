@@ -47,6 +47,7 @@ export interface Model {
   angle_type: string
   image_url?: string
   parent_sku?: string
+  sku_override?: string
   surface_area_sq_in?: number
   top_depth_in?: number
   angle_drop_in?: number

@@ -127,6 +127,7 @@ def create_model(data: ModelCreate, db: Session = Depends(get_db)):
             angle_type=data.angle_type,
             image_url=data.image_url,
             parent_sku=parent_sku,
+            sku_override=data.sku_override,
             surface_area_sq_in=surface_area,
             top_depth_in=data.top_depth_in,
             angle_drop_in=data.angle_drop_in,
@@ -199,6 +200,11 @@ def update_model(id: int, data: ModelCreate, db: Session = Depends(get_db)):
         model.surface_area_sq_in = surface_area
         model.top_depth_in = data.top_depth_in
         model.angle_drop_in = data.angle_drop_in
+        
+        # Update sku_override if provided in fields_set
+        fields_set = getattr(data, 'model_fields_set', getattr(data, '__fields_set__', set()))
+        if 'sku_override' in fields_set:
+            model.sku_override = data.sku_override
         
         # Assign FK-based design option selections
         if data.handle_location_option_id is not None:
