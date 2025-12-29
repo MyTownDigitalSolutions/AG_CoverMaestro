@@ -1884,12 +1884,46 @@ export default function ExportPage() {
               </Table>
             </Box>
           </DialogContent>
-          <DialogActions sx={{ px: 3, py: 2, gap: 1 }}>
-            <Button onClick={() => setPreviewOpen(false)}>Close</Button>
-            <Box sx={{ flex: 1 }} />
+          <DialogActions sx={{
+            px: 3,
+            py: 3,
+            display: 'grid',
+            gridTemplateColumns: '1fr auto 1fr',
+            gap: 4,
+            borderTop: '1px solid #ddd',
+            bgcolor: '#f8f9fa'
+          }}>
             {!validationReport || validationReport.status !== 'errors' ? (
               <>
-                <Box sx={{ display: 'flex', alignItems: 'center', mr: 2, borderRight: '1px solid #ddd', pr: 2 }}>
+                {/* LEFT: Customization */}
+                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1, alignItems: 'flex-start' }}>
+                  <Typography variant="caption" sx={{ fontWeight: 'bold', color: 'text.secondary', textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                    Customization Template Export
+                  </Typography>
+                  <Box sx={{ display: 'flex', gap: 1 }}>
+                    <Button
+                      variant="outlined"
+                      size="small"
+                      startIcon={<DownloadIcon />}
+                      onClick={() => alert("Customization export will be wired next.")}
+                      disabled={downloading !== null}
+                    >
+                      TXT
+                    </Button>
+                    <Button
+                      variant="outlined"
+                      size="small"
+                      startIcon={<DownloadIcon />}
+                      onClick={() => alert("Customization export will be wired next.")}
+                      disabled={downloading !== null}
+                    >
+                      XLSX
+                    </Button>
+                  </Box>
+                </Box>
+
+                {/* CENTER: Zip Package */}
+                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1, alignItems: 'center' }}>
                   <FormControlLabel
                     control={
                       <Switch
@@ -1898,41 +1932,54 @@ export default function ExportPage() {
                         onChange={(e) => setIncludeCustomization(e.target.checked)}
                       />
                     }
-                    label={<Typography variant="caption">Include Customization</Typography>}
+                    label={<Typography variant="caption" sx={{ fontWeight: 500 }}>Include Customization in ZIP</Typography>}
                   />
+                  <Button
+                    variant="contained"
+                    color="primary"
+                    size="large"
+                    startIcon={<DownloadIcon />}
+                    onClick={handleZipDownload}
+                    disabled={downloading !== null}
+                    sx={{ px: 4, py: 1, fontWeight: 'bold' }}
+                  >
+                    {downloading === 'zip' ? 'Zipping...' : 'DOWNLOAD ZIP PACKAGE'}
+                  </Button>
                 </Box>
-                <Button
-                  variant="contained"
-                  color="primary"
-                  startIcon={<DownloadIcon />}
-                  onClick={handleZipDownload}
-                  disabled={downloading !== null}
-                  sx={{ mr: 2 }}
-                >
-                  {downloading === 'zip' ? 'Zipping...' : 'Download ZIP Package'}
-                </Button>
 
-                <Button
-                  variant="outlined"
-                  startIcon={<DownloadIcon />}
-                  onClick={() => handleFileSystemDownload('csv')}
-                  disabled={downloading !== null}
-                >
-                  {downloading === 'csv' ? 'Downloading...' : 'CSV'}
-                </Button>
-                <Button
-                  variant="outlined"
-                  startIcon={<DownloadIcon />}
-                  onClick={() => handleFileSystemDownload('xlsm')}
-                  disabled={downloading !== null}
-                >
-                  {downloading === 'xlsm' ? 'Downloading...' : 'XLSX'}
-                </Button>
+                {/* RIGHT: Product Template */}
+                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1, alignItems: 'flex-end' }}>
+                  <Typography variant="caption" sx={{ fontWeight: 'bold', color: 'text.secondary', textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                    Product Template Export
+                  </Typography>
+                  <Box sx={{ display: 'flex', gap: 1 }}>
+                    <Button
+                      variant="outlined"
+                      size="small"
+                      startIcon={<DownloadIcon />}
+                      onClick={() => handleFileSystemDownload('csv')}
+                      disabled={downloading !== null}
+                    >
+                      {downloading === 'csv' ? '...' : 'CSV'}
+                    </Button>
+                    <Button
+                      variant="outlined"
+                      size="small"
+                      startIcon={<DownloadIcon />}
+                      onClick={() => handleFileSystemDownload('xlsm')} // Using existing XLSM logic as requested
+                      disabled={downloading !== null}
+                    >
+                      {downloading === 'xlsm' ? '...' : 'XLSX'}
+                    </Button>
+                  </Box>
+                </Box>
               </>
             ) : (
-              <Button disabled color="error" variant="contained">
-                Fix Export Errors to Download
-              </Button>
+              <Box sx={{ gridColumn: '1 / -1', display: 'flex', justifyContent: 'center' }}>
+                <Button disabled color="error" variant="contained">
+                  Fix Export Errors to Download
+                </Button>
+              </Box>
             )}
           </DialogActions>
         </Dialog>
