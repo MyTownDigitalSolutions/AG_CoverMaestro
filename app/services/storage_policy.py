@@ -81,6 +81,49 @@ def assert_allowed_write_path(path: str) -> None:
 
 
 # ============================================================================
+# CUSTOMIZATION TEMPLATE PATH HELPERS
+# ============================================================================
+def get_customization_template_paths(template_id: int) -> tuple[str, str]:
+    """
+    Return canonical and backup paths for an Amazon Customization Template.
+
+    Canonical format mirrors product type templates (deterministic, collision-safe):
+      Customization_<template_id>(Template).xlsx
+
+    Args:
+        template_id: AmazonCustomizationTemplate.id
+
+    Returns:
+        (canonical_path, backup_path)
+    """
+    canonical_filename = f"Customization_{template_id}(Template).xlsx"
+    backup_filename = f"Customization_{template_id}(Template)_BACKUP.xlsx"
+    canonical_path = os.path.join(CUSTOMIZATION_DIR, canonical_filename)
+    backup_path = os.path.join(CUSTOMIZATION_DIR, backup_filename)
+    return canonical_path, backup_path
+
+
+def rotate_customization_template_backup(canonical_path: str, backup_path: str) -> None:
+    """
+    Rotate an existing canonical customization template into a single backup copy.
+
+    Behavior:
+    - If canonical exists, move it to backup (overwriting any existing backup).
+    - If canonical does not exist, do nothing.
+    """
+    try:
+        if os.path.exists(canonical_path):
+            # Remove old backup first so os.replace is deterministic across platforms
+            if os.path.exists(backup_path):
+                os.remove(backup_path)
+            os.replace(canonical_path, backup_path)
+            print(f"[CUSTOMIZATION_ROTATION] Moved {canonical_path} -> {backup_path}")
+    except Exception as e:
+        # Do not crash API calls; log and continue (mirrors existing cleanup approach)
+        print(f"[CUSTOMIZATION_ROTATION] Error rotating backup: {e}")
+
+
+# ============================================================================
 # TEMPORARY FILE CLEANUP
 # ============================================================================
 def cleanup_tmp_dir(max_age_days: int = 7) -> int:

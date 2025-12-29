@@ -1009,7 +1009,6 @@ class DownloadZipRequest(BaseModel):
     marketplace_token: str
     manufacturer_token: str
     series_token: str
-    series_token: str
     date_token: str  # YYYY-MM-DD
     customization_format: Optional[str] = "xlsx" # "xlsx" or "txt"
 

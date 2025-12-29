@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useState, useRef, type CSSProperties, type ChangeEvent } from 'react'
 import { useSearchParams, Link as RouterLink } from 'react-router-dom'
 import {
   Box, Typography, Paper, Button, TextField, Grid, IconButton,
@@ -18,11 +18,20 @@ import AddIcon from '@mui/icons-material/Add'
 import PreviewIcon from '@mui/icons-material/Preview'
 import CloseIcon from '@mui/icons-material/Close'
 import DownloadIcon from '@mui/icons-material/Download'
-import { templatesApi, equipmentTypesApi, settingsApi, type EquipmentTypeProductTypeLink, type AmazonProductTypeTemplatePreviewResponse, type AmazonCustomizationTemplatePreviewResponse } from '../services/api'
+
+import {
+  templatesApi,
+  equipmentTypesApi,
+  settingsApi,
+  type EquipmentTypeProductTypeLink,
+  type AmazonProductTypeTemplatePreviewResponse,
+  type AmazonCustomizationTemplatePreviewResponse
+} from '../services/api'
+
 import type { AmazonProductType, EquipmentType, ProductTypeField, AmazonCustomizationTemplate } from '../types'
 import FieldDetailsDialog from '../components/FieldDetailsDialog'
 
-const rowStyles: Record<number, React.CSSProperties> = {
+const rowStyles: Record<number, CSSProperties> = {
   0: { backgroundColor: '#1976d2', color: 'white', fontWeight: 'bold', fontSize: '11px' },
   1: { backgroundColor: '#2196f3', color: 'white', fontSize: '11px' },
   2: { backgroundColor: '#4caf50', color: 'white', fontWeight: 'bold', fontSize: '11px' },
@@ -38,8 +47,9 @@ interface TemplatePreviewProps {
 
 function TemplatePreview({ template, onClose }: TemplatePreviewProps) {
   const headerRows = template.header_rows || []
-  const maxCols = Math.max(...headerRows.map(r => r?.length || 0), template.fields?.length || 0)
 
+  // IMPORTANT: do NOT compute Math.max(...) until after we know headerRows isn't empty,
+  // otherwise Math.max(...[]) -> -Infinity and blows up sizing/render logic.
   if (headerRows.length === 0) {
     return (
       <Dialog open onClose={onClose} maxWidth="md" fullWidth>
@@ -53,6 +63,11 @@ function TemplatePreview({ template, onClose }: TemplatePreviewProps) {
       </Dialog>
     )
   }
+
+  const maxCols = Math.max(
+    ...headerRows.map(r => r?.length || 0),
+    template.fields?.length || 0
+  )
 
   return (
     <Dialog open onClose={onClose} maxWidth={false} fullWidth PaperProps={{ sx: { maxWidth: '95vw', height: '80vh' } }}>
@@ -70,7 +85,7 @@ function TemplatePreview({ template, onClose }: TemplatePreviewProps) {
                     <TableCell
                       key={colIdx}
                       sx={{
-                        ...rowStyles[rowIdx],
+                        ...(rowStyles[rowIdx] || {}),
                         border: '1px solid #ccc',
                         padding: '4px 8px',
                         width: 140,
@@ -101,7 +116,6 @@ function TemplatePreview({ template, onClose }: TemplatePreviewProps) {
   )
 }
 
-
 interface ProductTypeFilePreviewProps {
   open: boolean
   onClose: () => void
@@ -118,7 +132,11 @@ function ProductTypeFilePreview({ open, onClose, loading, error, data }: Product
       <DialogTitle sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <span>
           Product Type File Preview
-          {data && <Typography variant="caption" sx={{ ml: 2, color: 'text.secondary' }}>{data.original_filename} ({data.sheet_name})</Typography>}
+          {data && (
+            <Typography variant="caption" sx={{ ml: 2, color: 'text.secondary' }}>
+              {data.original_filename} ({data.sheet_name})
+            </Typography>
+          )}
         </span>
         <IconButton onClick={onClose}><CloseIcon /></IconButton>
       </DialogTitle>
@@ -172,9 +190,9 @@ function ProductTypeFilePreview({ open, onClose, loading, error, data }: Product
                             fontSize: '12px',
                             p: '4px 8px'
                           }}
-                          title={cell}
+                          title={String(cell ?? '')}
                         >
-                          {cell}
+                          {String(cell ?? '')}
                         </TableCell>
                       ))}
                     </TableRow>
@@ -213,7 +231,11 @@ function CustomizationTemplateFilePreview({ open, onClose, loading, error, data 
       <DialogTitle sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <span>
           Customization Template Preview
-          {data && <Typography variant="caption" sx={{ ml: 2, color: 'text.secondary' }}>{data.original_filename} ({data.sheet_name})</Typography>}
+          {data && (
+            <Typography variant="caption" sx={{ ml: 2, color: 'text.secondary' }}>
+              {data.original_filename} ({data.sheet_name})
+            </Typography>
+          )}
         </span>
         <IconButton onClick={onClose}><CloseIcon /></IconButton>
       </DialogTitle>
@@ -267,9 +289,9 @@ function CustomizationTemplateFilePreview({ open, onClose, loading, error, data 
                             fontSize: '12px',
                             p: '4px 8px'
                           }}
-                          title={cell}
+                          title={String(cell ?? '')}
                         >
-                          {cell}
+                          {String(cell ?? '')}
                         </TableCell>
                       ))}
                     </TableRow>
@@ -293,9 +315,7 @@ function CustomizationTemplateFilePreview({ open, onClose, loading, error, data 
 }
 
 const normalizeText = (text: string): string => {
-  return text
-    .toLowerCase()
-    .replace(/[^a-z0-9]/g, '')
+  return text.toLowerCase().replace(/[^a-z0-9]/g, '')
 }
 
 const checkFileMatch = (filename: string, productCode: string): 'match' | 'mismatch' => {
@@ -365,7 +385,7 @@ export default function TemplatesPage() {
 
   // Linking State
   const [equipmentTypes, setEquipmentTypes] = useState<EquipmentType[]>([])
-  const [equipmentTypeLinks, setEquipmentTypeLinks] = useState<EquipmentTypeProductTypeLink[]>([]) // For Product Types
+  const [equipmentTypeLinks, setEquipmentTypeLinks] = useState<EquipmentTypeProductTypeLink[]>([]) // product-type links
 
   const [ptLinkEquipId, setPtLinkEquipId] = useState<number | ''>('')
   const [ptLinkTemplateId, setPtLinkTemplateId] = useState<number | ''>('')
@@ -377,7 +397,7 @@ export default function TemplatesPage() {
   const [selectedField, setSelectedField] = useState<ProductTypeField | null>(null)
   const [showOnlyRequired, setShowOnlyRequired] = useState(false)
 
-  // Export Override State
+  // Export Override State (Product Type)
   const [overrideSheetName, setOverrideSheetName] = useState('')
   const [overrideStartRow, setOverrideStartRow] = useState('')
   const [overrideSaving, setOverrideSaving] = useState(false)
@@ -395,10 +415,10 @@ export default function TemplatesPage() {
     setOverrideSaving(true)
     setError(null)
     setSuccess(null)
+
     try {
       const pt = selectedTemplate as AmazonProductType
-      // If empty string, send null
-      const startRow = overrideStartRow.trim() ? parseInt(overrideStartRow.trim()) : null
+      const startRow = overrideStartRow.trim() ? parseInt(overrideStartRow.trim(), 10) : null
       const sheetName = overrideSheetName.trim() || null
 
       const updated = await templatesApi.updateExportConfig(pt.code, {
@@ -407,7 +427,7 @@ export default function TemplatesPage() {
       })
 
       setSelectedTemplate(updated)
-      setProductTypeTemplates(prev => prev.map(p => p.id === updated.id ? updated : p))
+      setProductTypeTemplates(prev => prev.map(p => (p.id === updated.id ? updated : p)))
       setSuccess('Export overrides saved successfully')
     } catch (e: unknown) {
       const err = e as { response?: { data?: { detail?: string } } }
@@ -422,6 +442,7 @@ export default function TemplatesPage() {
     setOverrideSaving(true)
     setError(null)
     setSuccess(null)
+
     try {
       const pt = selectedTemplate as AmazonProductType
       const updated = await templatesApi.updateExportConfig(pt.code, {
@@ -430,7 +451,7 @@ export default function TemplatesPage() {
       })
 
       setSelectedTemplate(updated)
-      setProductTypeTemplates(prev => prev.map(p => p.id === updated.id ? updated : p))
+      setProductTypeTemplates(prev => prev.map(p => (p.id === updated.id ? updated : p)))
       setOverrideSheetName('')
       setOverrideStartRow('')
       setSuccess('Export overrides cleared')
@@ -442,21 +463,32 @@ export default function TemplatesPage() {
     }
   }
 
+  // ✅ FIXED: Promise.all is now safe, and will not hang the page if one endpoint fails.
   const loadData = async () => {
-    const [pts, custs, ets, links] = await Promise.all([
-      templatesApi.list(),
-      settingsApi.listAmazonCustomizationTemplates(),
-      equipmentTypesApi.list(),
-      templatesApi.listEquipmentTypeLinks()
-    ])
-    setProductTypeTemplates(pts)
-    setCustomizationTemplates(custs)
-    setEquipmentTypes(ets)
-    setEquipmentTypeLinks(links)
+    try {
+      setError(null)
+
+      const [pts, custs, ets, links] = await Promise.all([
+        templatesApi.list(),
+        settingsApi.listAmazonCustomizationTemplates(),
+        equipmentTypesApi.list(),
+        templatesApi.listEquipmentTypeLinks().catch(() => [])
+      ])
+
+      setProductTypeTemplates(pts)
+      setCustomizationTemplates(custs)
+      setEquipmentTypes(ets)
+      setEquipmentTypeLinks(links)
+    } catch (err) {
+      // This ensures you SEE an error instead of a silent spinner
+      console.error('[TemplatesPage] loadData failed', err)
+      setError('Failed to load template data. Check backend logs.')
+    }
   }
 
   useEffect(() => {
-    loadData()
+    void loadData()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   // Handle Query Params for Auto-Focus
@@ -469,7 +501,6 @@ export default function TemplatesPage() {
     }
 
     if (scroll === 'linking') {
-      // Small delay to ensure render is settled
       setTimeout(() => {
         customLinkingRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
       }, 100)
@@ -479,7 +510,7 @@ export default function TemplatesPage() {
   const isFixMissingFlow = searchParams.get('focus') === 'customization' && searchParams.get('scroll') === 'linking'
 
   // --- Handlers: Product Type Upload ---
-  const handleProductTypeFileSelect = (event: React.ChangeEvent<HTMLInputElement>, isUpdate: boolean) => {
+  const handleProductTypeFileSelect = (event: ChangeEvent<HTMLInputElement>, isUpdate: boolean) => {
     const file = event.target.files?.[0]
     const codeToUse = isUpdate ? selectedExistingCode : productCode
 
@@ -505,15 +536,17 @@ export default function TemplatesPage() {
     setUploading(true)
     setError(null)
     setSuccess(null)
+
+    const local = pendingUpload
     setPendingUpload(null)
 
     try {
-      const result = await templatesApi.import(pendingUpload.file, pendingUpload.productCode)
-      const action = pendingUpload.isUpdate ? 'Updated' : 'Imported'
+      const result = await templatesApi.import(local.file, local.productCode)
+      const action = local.isUpdate ? 'Updated' : 'Imported'
       setSuccess(`${action} ${result.fields_imported} fields, ${result.keywords_imported} keywords, ${result.valid_values_imported} valid values`)
       setProductCode('')
       setSelectedExistingCode('')
-      loadData()
+      await loadData()
     } catch (e: unknown) {
       const err = e as { response?: { data?: { detail?: string } } }
       setError(err.response?.data?.detail || 'Failed to import template')
@@ -529,7 +562,7 @@ export default function TemplatesPage() {
   }
 
   // --- Handlers: Customization Upload ---
-  const handleCustomizationFileSelect = async (event: React.ChangeEvent<HTMLInputElement>, isUpdate: boolean) => {
+  const handleCustomizationFileSelect = async (event: ChangeEvent<HTMLInputElement>, isUpdate: boolean) => {
     const file = event.target.files?.[0]
     if (!file) return
 
@@ -540,7 +573,7 @@ export default function TemplatesPage() {
     try {
       if (isUpdate) {
         if (!selectedCustomizationId) {
-          setError("No template selected for update")
+          setError('No template selected for update')
           return
         }
         await settingsApi.updateAmazonCustomizationTemplate(selectedCustomizationId as number, file)
@@ -551,13 +584,14 @@ export default function TemplatesPage() {
         await settingsApi.uploadAmazonCustomizationTemplate(file)
         setSuccess('Customization template uploaded successfully')
       }
-      loadData()
+
+      await loadData()
     } catch (e: unknown) {
       const err = e as { response?: { data?: { detail?: string } } }
       setError(err.response?.data?.detail || 'Failed to upload customization template')
     } finally {
       setUploading(false)
-      event.target.value = '' // Reset input
+      event.target.value = ''
     }
   }
 
@@ -580,22 +614,32 @@ export default function TemplatesPage() {
 
   // --- Handlers: Deletion ---
   const handleDeleteProductType = async (code: string) => {
-    if (confirm('Are you sure you want to delete this Product Type template?')) {
+    if (!window.confirm('Are you sure you want to delete this Product Type template?')) return
+
+    try {
       await templatesApi.delete(code)
-      loadData()
-      if ((selectedTemplate as AmazonProductType)?.code === code) {
+      await loadData()
+      if ((selectedTemplate as AmazonProductType | null)?.code === code) {
         setSelectedTemplate(null)
       }
+    } catch (e: unknown) {
+      const err = e as { response?: { data?: { detail?: string } } }
+      setError(err.response?.data?.detail || 'Failed to delete Product Type template')
     }
   }
 
   const handleDeleteCustomization = async (id: number) => {
-    if (confirm('Are you sure you want to delete this Customization template?')) {
+    if (!window.confirm('Are you sure you want to delete this Customization template?')) return
+
+    try {
       await settingsApi.deleteAmazonCustomizationTemplate(id)
-      loadData()
-      if ((selectedTemplate as AmazonCustomizationTemplate)?.id === id) {
+      await loadData()
+      if ((selectedTemplate as AmazonCustomizationTemplate | null)?.id === id) {
         setSelectedTemplate(null)
       }
+    } catch (e: unknown) {
+      const err = e as { response?: { data?: { detail?: string } } }
+      setError(err.response?.data?.detail || 'Failed to delete customization template')
     }
   }
 
@@ -605,12 +649,13 @@ export default function TemplatesPage() {
       setError('Please select both an Equipment Type and a Product Type')
       return
     }
+
     try {
       await templatesApi.createEquipmentTypeLink(ptLinkEquipId as number, ptLinkTemplateId as number)
       setSuccess('Equipment Type linked to Product Type successfully')
       setPtLinkEquipId('')
       setPtLinkTemplateId('')
-      loadData()
+      await loadData()
     } catch (e: unknown) {
       const err = e as { response?: { data?: { detail?: string } } }
       setError(err.response?.data?.detail || 'Failed to create link')
@@ -620,7 +665,7 @@ export default function TemplatesPage() {
   const handleDeleteProductTypeLink = async (linkId: number) => {
     try {
       await templatesApi.deleteEquipmentTypeLink(linkId)
-      loadData()
+      await loadData()
     } catch (e: unknown) {
       const err = e as { response?: { data?: { detail?: string } } }
       setError(err.response?.data?.detail || 'Failed to delete link')
@@ -638,7 +683,7 @@ export default function TemplatesPage() {
       setSuccess('Equipment Type linked to Customization Template successfully')
       setCustLinkEquipId('')
       setCustLinkTemplateId('')
-      loadData()
+      await loadData()
     } catch (e: unknown) {
       const err = e as { response?: { data?: { detail?: string } } }
       setError(err.response?.data?.detail || 'Failed to link customization template')
@@ -736,7 +781,6 @@ export default function TemplatesPage() {
         </Box>
 
         {templateType === 'product' ? (
-          // PRODUCT TYPE IMPORT UI
           <>
             <Grid container spacing={2} alignItems="center">
               <Grid item xs={12} md={4}>
@@ -762,7 +806,6 @@ export default function TemplatesPage() {
               </Grid>
             </Grid>
 
-            {/* Naming Convention Helper */}
             {productCode && (
               <Box sx={{ mt: 2, p: 2, backgroundColor: '#f5f5f5', borderRadius: 1, border: '1px solid #e0e0e0' }}>
                 <Typography variant="subtitle2" gutterBottom sx={{ fontWeight: 'bold', color: '#1976d2' }}>
@@ -784,7 +827,6 @@ export default function TemplatesPage() {
                 </Typography>
               </Box>
             )}
-
 
             {productTypeTemplates.length > 0 && (
               <>
@@ -822,7 +864,6 @@ export default function TemplatesPage() {
             )}
           </>
         ) : (
-          // CUSTOMIZATION IMPORT UI
           <>
             <Grid container spacing={2} alignItems="center">
               <Grid item xs={12} md={4}>
@@ -887,12 +928,13 @@ export default function TemplatesPage() {
 
         {/* Product Type Links */}
         <Box sx={{ mb: 4 }}>
-          <Typography variant="subtitle1" sx={{ fontWeight: 'bold', }} gutterBottom>Product Type Templates (for regular listing data)</Typography>
+          <Typography variant="subtitle1" sx={{ fontWeight: 'bold' }} gutterBottom>
+            Product Type Templates (for regular listing data)
+          </Typography>
           <Typography variant="body2" sx={{ mt: 0.5, opacity: 0.85 }}>
             We store the original Amazon XLSX and extract fields for defaults. Preview/Download uses the stored file.
           </Typography>
 
-          {/* ✅ UI CHANGE: Template dropdown first, then Equipment Type */}
           <Grid container spacing={2} alignItems="center" sx={{ mb: 2 }}>
             <Grid item xs={12} md={4}>
               <FormControl fullWidth size="small">
@@ -925,7 +967,12 @@ export default function TemplatesPage() {
             </Grid>
 
             <Grid item xs={12} md={4}>
-              <Button variant="contained" startIcon={<AddIcon />} onClick={handleCreateProductTypeLink} disabled={ptLinkEquipId === '' || ptLinkTemplateId === ''}>
+              <Button
+                variant="contained"
+                startIcon={<AddIcon />}
+                onClick={handleCreateProductTypeLink}
+                disabled={ptLinkEquipId === '' || ptLinkTemplateId === ''}
+              >
                 Link Product Type
               </Button>
             </Grid>
@@ -934,14 +981,22 @@ export default function TemplatesPage() {
           {equipmentTypeLinks.length > 0 && (
             <TableContainer>
               <Table size="small">
-                <TableHead><TableRow><TableCell>Template</TableCell><TableCell>Equipment Type</TableCell><TableCell>Actions</TableCell></TableRow></TableHead>
+                <TableHead>
+                  <TableRow>
+                    <TableCell>Template</TableCell>
+                    <TableCell>Equipment Type</TableCell>
+                    <TableCell>Actions</TableCell>
+                  </TableRow>
+                </TableHead>
                 <TableBody>
                   {equipmentTypeLinks.map((link) => (
                     <TableRow key={link.id}>
                       <TableCell>{getProductTypeCode(link.product_type_id)}</TableCell>
                       <TableCell>{getEquipmentTypeName(link.equipment_type_id)}</TableCell>
                       <TableCell>
-                        <IconButton size="small" onClick={() => handleDeleteProductTypeLink(link.id)}><DeleteIcon /></IconButton>
+                        <IconButton size="small" onClick={() => handleDeleteProductTypeLink(link.id)}>
+                          <DeleteIcon />
+                        </IconButton>
                       </TableCell>
                     </TableRow>
                   ))}
@@ -955,7 +1010,9 @@ export default function TemplatesPage() {
 
         {/* Customization Links */}
         <Box sx={{ mt: 3 }} ref={customLinkingRef} style={{ scrollMarginTop: '80px' }}>
-          <Typography variant="subtitle1" sx={{ fontWeight: 'bold' }} gutterBottom>Customization Templates (for customization.txt)</Typography>
+          <Typography variant="subtitle1" sx={{ fontWeight: 'bold' }} gutterBottom>
+            Customization Templates (for customization.txt)
+          </Typography>
           <Typography variant="body2" sx={{ mt: 0.5, opacity: 0.85 }}>
             We store the original Amazon XLSX. In XLSX export mode, the file is included byte-for-byte.
           </Typography>
@@ -963,7 +1020,6 @@ export default function TemplatesPage() {
             Note: This assigns the template to the Equipment Type directly. Re-assign to change.
           </Typography>
 
-          {/* ✅ UI CHANGE: Template dropdown first, then Equipment Type */}
           <Grid container spacing={2} alignItems="center" sx={{ mb: 2 }}>
             <Grid item xs={12} md={4}>
               <FormControl fullWidth size="small">
@@ -996,7 +1052,12 @@ export default function TemplatesPage() {
             </Grid>
 
             <Grid item xs={12} md={4}>
-              <Button variant="contained" startIcon={<AddIcon />} onClick={handleCreateCustomizationLink} disabled={custLinkEquipId === '' || custLinkTemplateId === ''}>
+              <Button
+                variant="contained"
+                startIcon={<AddIcon />}
+                onClick={handleCreateCustomizationLink}
+                disabled={custLinkEquipId === '' || custLinkTemplateId === ''}
+              >
                 Assign Template
               </Button>
             </Grid>
@@ -1004,23 +1065,31 @@ export default function TemplatesPage() {
 
           <TableContainer>
             <Table size="small">
-              <TableHead><TableRow><TableCell>Assigned Template</TableCell><TableCell>Equipment Type</TableCell></TableRow></TableHead>
+              <TableHead>
+                <TableRow>
+                  <TableCell>Assigned Template</TableCell>
+                  <TableCell>Equipment Type</TableCell>
+                </TableRow>
+              </TableHead>
               <TableBody>
-                {equipmentTypes.filter(et => et.amazon_customization_template_id).map((et) => (
-                  <TableRow key={et.id}>
-                    <TableCell>
-                      {getCustomizationName(et.amazon_customization_template_id!)}
-                    </TableCell>
-                    <TableCell>{et.name}
-                    </TableCell>
-                  </TableRow>
-                ))}
+                {equipmentTypes
+                  .filter(et => (et as any).amazon_customization_template_id) // keep compatible with your existing type
+                  .map((et) => {
+                    const assignedId = (et as any).amazon_customization_template_id as number
+                    return (
+                      <TableRow key={et.id}>
+                        <TableCell>{getCustomizationName(assignedId)}</TableCell>
+                        <TableCell>{et.name}</TableCell>
+                      </TableRow>
+                    )
+                  })}
               </TableBody>
             </Table>
           </TableContainer>
         </Box>
       </Paper>
 
+      {/* Upload Confirmation */}
       <Dialog open={pendingUpload !== null} onClose={handleCancelProductTypeUpload}>
         <DialogTitle sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
           {pendingUpload?.matchStatus === 'match' ? <CheckCircleIcon color="success" /> : <WarningIcon color="warning" />}
@@ -1059,6 +1128,7 @@ export default function TemplatesPage() {
             <Typography variant="caption" sx={{ display: 'block', mt: 1, opacity: 0.8 }}>
               Preview is capped to 50×50 for performance.
             </Typography>
+
             <TableContainer>
               <Table size="small">
                 <TableHead>
@@ -1071,26 +1141,53 @@ export default function TemplatesPage() {
                 </TableHead>
                 <TableBody>
                   {productTypeTemplates.map(pt => (
-                    <TableRow key={`pt-${pt.id}`} hover selected={(selectedTemplate as AmazonProductType)?.code === pt.code} onClick={() => { setSelectedTemplate(pt); setTemplateType('product') }} sx={{ cursor: 'pointer' }}>
+                    <TableRow
+                      key={`pt-${pt.id}`}
+                      hover
+                      selected={(selectedTemplate as AmazonProductType | null)?.code === pt.code}
+                      onClick={() => { setSelectedTemplate(pt); setTemplateType('product') }}
+                      sx={{ cursor: 'pointer' }}
+                    >
                       <TableCell>{pt.code}</TableCell>
                       <TableCell><Chip label="Product Type" size="small" color="primary" variant="outlined" /></TableCell>
                       <TableCell>{pt.fields?.length || 0} fields</TableCell>
                       <TableCell>
-                        <IconButton size="small" onClick={(e) => { e.stopPropagation(); handleDeleteProductType(pt.code); }}><DeleteIcon /></IconButton>
-                        <IconButton size="small" onClick={(e) => { e.stopPropagation(); handlePreviewProductType(pt.code); }} title="Preview Original File"><PreviewIcon /></IconButton>
-                        <IconButton size="small" component="a" href={templatesApi.downloadProductTypeTemplateUrl(pt.code)} download target="_blank" onClick={(e) => e.stopPropagation()} title="Download Original File"><DownloadIcon /></IconButton>
+                        <IconButton size="small" onClick={(e) => { e.stopPropagation(); void handleDeleteProductType(pt.code) }}>
+                          <DeleteIcon />
+                        </IconButton>
+                        <IconButton size="small" onClick={(e) => { e.stopPropagation(); void handlePreviewProductType(pt.code) }} title="Preview Original File">
+                          <PreviewIcon />
+                        </IconButton>
+                        <IconButton
+                          size="small"
+                          component="a"
+                          href={templatesApi.downloadProductTypeTemplateUrl(pt.code)}
+                          download
+                          target="_blank"
+                          onClick={(e) => e.stopPropagation()}
+                          title="Download Original File"
+                        >
+                          <DownloadIcon />
+                        </IconButton>
                       </TableCell>
                     </TableRow>
                   ))}
+
                   {customizationTemplates.map(ct => (
-                    <TableRow key={`ct-${ct.id}`} hover selected={(selectedTemplate as AmazonCustomizationTemplate)?.id === ct.id} onClick={() => { setSelectedTemplate(ct); setTemplateType('customization') }} sx={{ cursor: 'pointer' }}>
+                    <TableRow
+                      key={`ct-${ct.id}`}
+                      hover
+                      selected={(selectedTemplate as AmazonCustomizationTemplate | null)?.id === ct.id}
+                      onClick={() => { setSelectedTemplate(ct); setTemplateType('customization') }}
+                      sx={{ cursor: 'pointer' }}
+                    >
                       <TableCell>{ct.original_filename}</TableCell>
                       <TableCell><Chip label="Customization" size="small" color="secondary" variant="outlined" /></TableCell>
-                      <TableCell>{Math.round(ct.file_size / 1024)} KB</TableCell>
+                      <TableCell>{Math.round((ct.file_size || 0) / 1024)} KB</TableCell>
                       <TableCell>
                         <IconButton
                           size="small"
-                          onClick={(e) => { e.stopPropagation(); setTemplateType('customization'); setSelectedTemplate(ct); handlePreviewCustomizationTemplate(ct.id); }}
+                          onClick={(e) => { e.stopPropagation(); setTemplateType('customization'); setSelectedTemplate(ct); void handlePreviewCustomizationTemplate(ct.id) }}
                           title="Preview File"
                           sx={{ mr: 1 }}
                         >
@@ -1107,7 +1204,7 @@ export default function TemplatesPage() {
                         >
                           <DownloadIcon />
                         </IconButton>
-                        <IconButton size="small" onClick={(e) => { e.stopPropagation(); handleDeleteCustomization(ct.id); }} title="Delete">
+                        <IconButton size="small" onClick={(e) => { e.stopPropagation(); void handleDeleteCustomization(ct.id) }} title="Delete">
                           <DeleteIcon />
                         </IconButton>
                       </TableCell>
@@ -1123,10 +1220,12 @@ export default function TemplatesPage() {
           {selectedTemplate && (
             <Paper sx={{ p: 2 }}>
               {templateType === 'product' ? (
-                // PRODUCT TYPE DETAILS (Existing Logic)
                 <>
-                  {/* Export Overrides Section */}
-                  <Accordion defaultExpanded={(selectedTemplate as AmazonProductType).export_sheet_name_override || (selectedTemplate as AmazonProductType).export_start_row_override ? true : false} sx={{ mb: 2, border: '1px solid #e0e0e0', boxShadow: 'none' }}>
+                  {/* Export Overrides */}
+                  <Accordion
+                    defaultExpanded={Boolean((selectedTemplate as AmazonProductType).export_sheet_name_override || (selectedTemplate as AmazonProductType).export_start_row_override)}
+                    sx={{ mb: 2, border: '1px solid #e0e0e0', boxShadow: 'none' }}
+                  >
                     <AccordionSummary expandIcon={<ExpandMoreIcon />} sx={{ backgroundColor: '#fff8e1' }}>
                       <Typography variant="subtitle1" sx={{ fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: 1 }}>
                         <WarningIcon fontSize="small" color="warning" /> Export Overrides (Fallback)
@@ -1160,20 +1259,10 @@ export default function TemplatesPage() {
                           />
                         </Grid>
                         <Grid item xs={12} md={4} sx={{ display: 'flex', gap: 1, mt: 0.5 }}>
-                          <Button
-                            variant="contained"
-                            color="primary"
-                            onClick={handleSaveOverrides}
-                            disabled={overrideSaving}
-                          >
+                          <Button variant="contained" color="primary" onClick={() => void handleSaveOverrides()} disabled={overrideSaving}>
                             Save Overrides
                           </Button>
-                          <Button
-                            variant="outlined"
-                            color="error"
-                            onClick={handleClearOverrides}
-                            disabled={overrideSaving}
-                          >
+                          <Button variant="outlined" color="error" onClick={() => void handleClearOverrides()} disabled={overrideSaving}>
                             Clear
                           </Button>
                         </Grid>
@@ -1188,29 +1277,30 @@ export default function TemplatesPage() {
                         <Switch size="small" checked={showOnlyRequired} onChange={(e) => setShowOnlyRequired(e.target.checked)} />
                         <Typography variant="body2">Required Only</Typography>
                       </Box>
-                      <Button variant="outlined" size="small" startIcon={<PreviewIcon />} onClick={() => setShowPreview(true)}>Preview Export</Button>
+                      <Button variant="outlined" size="small" startIcon={<PreviewIcon />} onClick={() => setShowPreview(true)}>
+                        Preview Export
+                      </Button>
                     </Box>
                   </Box>
 
                   <Box sx={{ maxHeight: 500, overflowY: 'auto' }}>
-                    {/* Render fields logic reused from before */}
                     {(() => {
                       const pt = selectedTemplate as AmazonProductType
                       const allFields = pt.fields || []
                       const filteredFields = showOnlyRequired ? allFields.filter(f => f.required) : allFields
+
                       const groupedFields = filteredFields.reduce((acc, field) => {
                         const group = field.attribute_group || 'Other'
                         if (!acc[group]) acc[group] = []
                         acc[group].push(field)
                         return acc
-                      }, {} as Record<string, typeof pt.fields>)
-                      const groups = Object.keys(groupedFields || {})
+                      }, {} as Record<string, ProductTypeField[]>)
+
+                      const groups = Object.keys(groupedFields)
 
                       const handleToggleGroupRequired = async (groupName: string, setRequired: boolean) => {
-                        const groupFields = groupedFields![groupName] || []
-                        // Optimistic update locally first? No, let's do it safely.
-                        // Actually, we should probably do parallel requests or a bulk endpoint.
-                        // Existing pattern was loop.
+                        const groupFields = groupedFields[groupName] || []
+
                         for (const field of groupFields) {
                           if (field.required !== setRequired) {
                             try {
@@ -1221,22 +1311,21 @@ export default function TemplatesPage() {
                           }
                         }
 
-                        // Update UI
                         const currentPt = selectedTemplate as AmazonProductType
-                        const updatedFields = currentPt.fields.map(f => {
+                        const updatedFields = (currentPt.fields || []).map(f => {
                           const inGroup = groupFields.some(gf => gf.id === f.id)
                           return inGroup ? { ...f, required: setRequired } : f
                         })
 
                         const updatedPt = { ...currentPt, fields: updatedFields }
                         setSelectedTemplate(updatedPt)
-                        setProductTypeTemplates(prev => prev.map(t => t.id === updatedPt.id ? updatedPt : t))
+                        setProductTypeTemplates(prev => prev.map(t => (t.id === updatedPt.id ? updatedPt : t)))
                       }
 
                       return groups.map((groupName) => {
-                        const groupFields = groupedFields![groupName] || []
-                        const allRequired = groupFields.every(f => f.required)
-                        const noneRequired = groupFields.every(f => !f.required)
+                        const groupFields = groupedFields[groupName] || []
+                        const allRequired = groupFields.length > 0 && groupFields.every(f => f.required)
+                        const noneRequired = groupFields.length > 0 && groupFields.every(f => !f.required)
 
                         return (
                           <Accordion key={groupName} defaultExpanded={false} sx={{ '&:before': { display: 'none' } }}>
@@ -1264,7 +1353,7 @@ export default function TemplatesPage() {
                                 <Button
                                   size="small"
                                   variant="outlined"
-                                  onClick={() => handleToggleGroupRequired(groupName, true)}
+                                  onClick={() => void handleToggleGroupRequired(groupName, true)}
                                   disabled={allRequired}
                                 >
                                   Mark All Required
@@ -1272,14 +1361,21 @@ export default function TemplatesPage() {
                                 <Button
                                   size="small"
                                   variant="outlined"
-                                  onClick={() => handleToggleGroupRequired(groupName, false)}
+                                  onClick={() => void handleToggleGroupRequired(groupName, false)}
                                   disabled={noneRequired}
                                 >
                                   Clear All Required
                                 </Button>
                               </Box>
+
                               <Table size="small">
-                                <TableHead><TableRow><TableCell>Field Name</TableCell><TableCell width={80}>Required</TableCell><TableCell>Default / Selected Value</TableCell></TableRow></TableHead>
+                                <TableHead>
+                                  <TableRow>
+                                    <TableCell>Field Name</TableCell>
+                                    <TableCell width={80}>Required</TableCell>
+                                    <TableCell>Default / Selected Value</TableCell>
+                                  </TableRow>
+                                </TableHead>
                                 <TableBody>
                                   {groupFields.map(field => (
                                     <TableRow key={field.id} hover sx={{ cursor: 'pointer' }} onClick={() => setSelectedField(field)}>
@@ -1287,23 +1383,19 @@ export default function TemplatesPage() {
                                       <TableCell onClick={(e) => e.stopPropagation()}>
                                         <Switch
                                           size="small"
-                                          checked={field.required}
+                                          checked={Boolean(field.required)}
                                           onChange={async (e) => {
                                             const newRequired = e.target.checked
                                             try {
                                               const updated = await templatesApi.updateField(field.id, { required: newRequired })
                                               const updatedField = { ...field, required: updated.required }
-                                              setSelectedTemplate({
-                                                ...selectedTemplate,
-                                                fields: (selectedTemplate as AmazonProductType).fields.map(f =>
-                                                  f.id === field.id ? updatedField : f
-                                                )
-                                              })
-                                              setProductTypeTemplates(prev => prev.map(t =>
-                                                t.id === (selectedTemplate as AmazonProductType).id
-                                                  ? { ...t, fields: t.fields.map(f => f.id === field.id ? updatedField : f) }
-                                                  : t
-                                              ))
+
+                                              const current = selectedTemplate as AmazonProductType
+                                              const newFields = (current.fields || []).map(f => (f.id === field.id ? updatedField : f))
+                                              const newPt = { ...current, fields: newFields }
+
+                                              setSelectedTemplate(newPt)
+                                              setProductTypeTemplates(prev => prev.map(t => (t.id === newPt.id ? newPt : t)))
                                             } catch (err) {
                                               console.error('Failed to update required status', err)
                                             }
@@ -1314,9 +1406,9 @@ export default function TemplatesPage() {
                                         {field.selected_value ? (
                                           <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
                                             <Chip label={field.selected_value} size="small" color="primary" />
-                                            {field.valid_values?.length > 0 && (
+                                            {(field.valid_values?.length || 0) > 0 && (
                                               <Typography variant="body2" color="text.secondary">
-                                                ({field.valid_values.length})
+                                                ({field.valid_values!.length})
                                               </Typography>
                                             )}
                                           </Box>
@@ -1328,15 +1420,15 @@ export default function TemplatesPage() {
                                               color="success"
                                               title={field.custom_value}
                                             />
-                                            {field.valid_values?.length > 0 && (
+                                            {(field.valid_values?.length || 0) > 0 && (
                                               <Typography variant="body2" color="text.secondary">
-                                                ({field.valid_values.length})
+                                                ({field.valid_values!.length})
                                               </Typography>
                                             )}
                                           </Box>
-                                        ) : field.valid_values?.length > 0 ? (
+                                        ) : (field.valid_values?.length || 0) > 0 ? (
                                           <Typography variant="body2" color="text.secondary">
-                                            {field.valid_values.length} values
+                                            {field.valid_values!.length} values
                                           </Typography>
                                         ) : (
                                           <Typography variant="body2" color="text.secondary">Any</Typography>
@@ -1354,7 +1446,6 @@ export default function TemplatesPage() {
                   </Box>
                 </>
               ) : (
-                // CUSTOMIZATION DETAILS
                 <Box>
                   <Typography variant="h6">Customization Template Details</Typography>
                   <Box sx={{ mt: 2 }}>
@@ -1381,13 +1472,11 @@ export default function TemplatesPage() {
           field={selectedField}
           onClose={() => setSelectedField(null)}
           onUpdate={(updatedField) => {
-            // Update local state for immediate feedback
-            // (Abbreviated update logic for brevity - in real app full update is safer, but here relying on reloadData or basic immutability)
             const pt = selectedTemplate as AmazonProductType
-            const newFields = pt.fields.map(f => f.id === updatedField.id ? updatedField : f)
+            const newFields = (pt.fields || []).map(f => (f.id === updatedField.id ? updatedField : f))
             const newPt = { ...pt, fields: newFields }
             setSelectedTemplate(newPt)
-            setProductTypeTemplates(prev => prev.map(p => p.id === newPt.id ? newPt : p))
+            setProductTypeTemplates(prev => prev.map(p => (p.id === newPt.id ? newPt : p)))
             setSelectedField(updatedField)
           }}
         />
