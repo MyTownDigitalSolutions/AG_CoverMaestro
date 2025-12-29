@@ -1343,14 +1343,29 @@ export default function AmazonTemplatesPage() {
                 </FormControl>
               </Grid>
               <Grid item xs={12} md={4}>
-                <Button
-                  variant="contained"
-                  startIcon={<LinkIcon />}
-                  onClick={handleCreateCustomizationLink}
-                  disabled={custLinkEquipId === '' || custLinkTemplateId === ''}
-                >
-                  Assign Template
-                </Button>
+                {(() => {
+                  const selectedEt = equipmentTypes.find(e => e.id === custLinkEquipId)
+                  const currentDefaultId = (selectedEt as any)?.amazon_customization_template_id
+                  const isRedundant = custLinkEquipId !== '' && custLinkTemplateId !== '' && currentDefaultId === custLinkTemplateId
+
+                  return (
+                    <Box sx={{ display: 'flex', flexDirection: 'column' }}>
+                      <Button
+                        variant="contained"
+                        startIcon={<LinkIcon />}
+                        onClick={handleCreateCustomizationLink}
+                        disabled={custLinkEquipId === '' || custLinkTemplateId === '' || isRedundant}
+                      >
+                        Assign Template
+                      </Button>
+                      {isRedundant && (
+                        <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, fontStyle: 'italic' }}>
+                          This template is already assigned as the default for the selected equipment type.
+                        </Typography>
+                      )}
+                    </Box>
+                  )
+                })()}
               </Grid>
             </Grid>
           </Paper>
