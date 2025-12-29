@@ -30,6 +30,7 @@ import {
 
 import type { AmazonProductType, EquipmentType, ProductTypeField, AmazonCustomizationTemplate } from '../types'
 import FieldDetailsDialog from '../components/FieldDetailsDialog'
+import EquipmentTypeCustomizationTemplatesManager from '../components/EquipmentTypeCustomizationTemplatesManager'
 
 const rowStyles: Record<number, CSSProperties> = {
   0: { backgroundColor: '#1976d2', color: 'white', fontWeight: 'bold', fontSize: '11px' },
@@ -401,6 +402,9 @@ export default function AmazonTemplatesPage() {
   const [overrideSheetName, setOverrideSheetName] = useState('')
   const [overrideStartRow, setOverrideStartRow] = useState('')
   const [overrideSaving, setOverrideSaving] = useState(false)
+
+  // Slot Assignment State
+  const [slotAssignmentEquipmentTypeId, setSlotAssignmentEquipmentTypeId] = useState<number | ''>('')
 
   useEffect(() => {
     if (selectedTemplate && templateType === 'product') {
@@ -1297,85 +1301,127 @@ export default function AmazonTemplatesPage() {
           </Paper>
 
           {/* Linking Section - Customization */}
-          <Paper sx={{ p: 3, mb: 3 }}>
-            <Box ref={customLinkingRef} style={{ scrollMarginTop: '80px' }}>
-              <Typography variant="h6" gutterBottom sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                <LinkIcon /> Assign Customization Template to Equipment Type
+          <Paper sx={{ p: 3, mb: 3 }} ref={customLinkingRef} id="customization-linking-section">
+            <Box sx={{ mb: 2 }}>
+              <Typography variant="h6">Assign Customization Template to Equipment Type</Typography>
+              <Typography variant="body2" color="text.secondary">
+                Link an equipment type to a default customization template. This template will be used for all models of this equipment type unless overridden.
               </Typography>
-              <Typography variant="body2" sx={{ mt: 0.5, opacity: 0.85 }}>
-                We store the original Amazon XLSX. In XLSX export mode, the file is included byte-for-byte.
-              </Typography>
-              <Typography variant="caption" color="text.secondary" paragraph>
-                Note: This assigns the template to the Equipment Type directly. Re-assign to change.
+            </Box>
+
+            <Grid container spacing={2} alignItems="center">
+              <Grid item xs={12} md={4}>
+                <FormControl fullWidth>
+                  <InputLabel id="cust-link-equip-label">Equipment Type</InputLabel>
+                  <Select
+                    labelId="cust-link-equip-label"
+                    value={custLinkEquipId}
+                    onChange={(e) => setCustLinkEquipId(e.target.value === '' ? '' : Number(e.target.value))}
+                    label="Equipment Type"
+                  >
+                    <MenuItem value=""><em>None</em></MenuItem>
+                    {equipmentTypes.map((et) => (
+                      <MenuItem key={et.id} value={et.id}>{et.name}</MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              </Grid>
+              <Grid item xs={12} md={4}>
+                <FormControl fullWidth>
+                  <InputLabel id="cust-link-templ-label">Customization Template</InputLabel>
+                  <Select
+                    labelId="cust-link-templ-label"
+                    value={custLinkTemplateId}
+                    onChange={(e) => setCustLinkTemplateId(e.target.value === '' ? '' : Number(e.target.value))}
+                    label="Customization Template"
+                  >
+                    <MenuItem value=""><em>None</em></MenuItem>
+                    {customizationTemplates.map((ct) => (
+                      <MenuItem key={ct.id} value={ct.id}>{ct.original_filename}</MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              </Grid>
+              <Grid item xs={12} md={4}>
+                <Button
+                  variant="contained"
+                  startIcon={<LinkIcon />}
+                  onClick={handleCreateCustomizationLink}
+                  disabled={custLinkEquipId === '' || custLinkTemplateId === ''}
+                >
+                  Assign Template
+                </Button>
+              </Grid>
+            </Grid>
+          </Paper>
+
+          {/* Advanced: Slot Assignments */}
+          <Accordion sx={{ mb: 3 }}>
+            <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+              <Typography variant="h6">Advanced: Customization Slot Assignments (Overrides)</Typography>
+            </AccordionSummary>
+            <AccordionDetails>
+              <Typography variant="body2" color="text.secondary" paragraph>
+                Manage multiple customization templates for a single equipment type (e.g., specific slots).
+                Select an equipment type to view and manage its slots.
               </Typography>
 
-              <Grid container spacing={2} alignItems="center" sx={{ mb: 2 }}>
-                <Grid item xs={12} md={4}>
-                  <FormControl fullWidth size="small">
-                    <InputLabel>Customization Template</InputLabel>
+              <Grid container spacing={2}>
+                <Grid item xs={12} md={6}>
+                  <FormControl fullWidth>
+                    <InputLabel>Select Equipment Type</InputLabel>
                     <Select
-                      value={custLinkTemplateId}
-                      label="Customization Template"
-                      onChange={(e) => setCustLinkTemplateId(e.target.value as number)}
+                      value={slotAssignmentEquipmentTypeId}
+                      onChange={(e) => setSlotAssignmentEquipmentTypeId(e.target.value === '' ? '' : Number(e.target.value))}
+                      label="Select Equipment Type"
                     >
-                      {customizationTemplates.map((t) => (
-                        <MenuItem key={t.id} value={t.id}>{t.original_filename}</MenuItem>
-                      ))}
-                    </Select>
-                  </FormControl>
-                </Grid>
-
-                <Grid item xs={12} md={4}>
-                  <FormControl fullWidth size="small">
-                    <InputLabel>Equipment Type</InputLabel>
-                    <Select
-                      value={custLinkEquipId}
-                      label="Equipment Type"
-                      onChange={(e) => setCustLinkEquipId(e.target.value as number)}
-                    >
-                      {equipmentTypes.map((et) => (
+                      <MenuItem value=""><em>Select Equipment Type</em></MenuItem>
+                      {equipmentTypes.map(et => (
                         <MenuItem key={et.id} value={et.id}>{et.name}</MenuItem>
                       ))}
                     </Select>
                   </FormControl>
                 </Grid>
 
-                <Grid item xs={12} md={4}>
-                  <Button
-                    variant="contained"
-                    startIcon={<AddIcon />}
-                    onClick={handleCreateCustomizationLink}
-                    disabled={custLinkEquipId === '' || custLinkTemplateId === ''}
-                  >
-                    Assign Template
-                  </Button>
+                <Grid item xs={12}>
+                  {slotAssignmentEquipmentTypeId !== '' && (
+                    <Paper variant="outlined" sx={{ p: 2 }}>
+                      <EquipmentTypeCustomizationTemplatesManager
+                        equipmentTypeId={slotAssignmentEquipmentTypeId as number}
+                        equipmentTypeName={getEquipmentTypeName(slotAssignmentEquipmentTypeId as number)}
+                      />
+                    </Paper>
+                  )}
                 </Grid>
               </Grid>
+            </AccordionDetails>
+          </Accordion>
 
-              <TableContainer>
-                <Table size="small">
-                  <TableHead>
-                    <TableRow>
-                      <TableCell>Assigned Template</TableCell>
-                      <TableCell>Equipment Type</TableCell>
-                    </TableRow>
-                  </TableHead>
-                  <TableBody>
-                    {equipmentTypes
-                      .filter(et => (et as any).amazon_customization_template_id)
-                      .map((et) => {
-                        const assignedId = (et as any).amazon_customization_template_id as number
-                        return (
-                          <TableRow key={et.id}>
-                            <TableCell>{getCustomizationName(assignedId)}</TableCell>
-                            <TableCell>{et.name}</TableCell>
-                          </TableRow>
-                        )
-                      })}
-                  </TableBody>
-                </Table>
-              </TableContainer>
-            </Box>
+          <Paper sx={{ p: 2, mb: 3 }}>
+            <Typography variant="h6" gutterBottom>Overview: Default Template Assignments</Typography>
+            <TableContainer>
+              <Table size="small">
+                <TableHead>
+                  <TableRow>
+                    <TableCell>Assigned Template</TableCell>
+                    <TableCell>Equipment Type</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {equipmentTypes
+                    .filter(et => (et as any).amazon_customization_template_id)
+                    .map((et) => {
+                      const assignedId = (et as any).amazon_customization_template_id as number
+                      return (
+                        <TableRow key={et.id}>
+                          <TableCell>{getCustomizationName(assignedId)}</TableCell>
+                          <TableCell>{et.name}</TableCell>
+                        </TableRow>
+                      )
+                    })}
+                </TableBody>
+              </Table>
+            </TableContainer>
           </Paper>
 
           {/* List Section - Customization */}
@@ -1456,8 +1502,9 @@ export default function AmazonTemplatesPage() {
               )}
             </Grid>
           </Grid>
-        </Box>
-      )}
+        </Box >
+      )
+      }
 
       {/* Upload Confirmation */}
       <Dialog open={pendingUpload !== null} onClose={handleCancelProductTypeUpload}>
@@ -1491,24 +1538,28 @@ export default function AmazonTemplatesPage() {
         data={ptPreviewData}
       />
 
-      {showPreview && selectedTemplate && templateType === 'product' && (
-        <TemplatePreview template={selectedTemplate as AmazonProductType} onClose={() => setShowPreview(false)} />
-      )}
+      {
+        showPreview && selectedTemplate && templateType === 'product' && (
+          <TemplatePreview template={selectedTemplate as AmazonProductType} onClose={() => setShowPreview(false)} />
+        )
+      }
 
-      {selectedField && selectedTemplate && templateType === 'product' && (
-        <FieldDetailsDialog
-          field={selectedField}
-          onClose={() => setSelectedField(null)}
-          onUpdate={(updatedField) => {
-            const pt = selectedTemplate as AmazonProductType
-            const newFields = (pt.fields || []).map(f => (f.id === updatedField.id ? updatedField : f))
-            const newPt = { ...pt, fields: newFields }
-            setSelectedTemplate(newPt)
-            setProductTypeTemplates(prev => prev.map(p => (p.id === newPt.id ? newPt : p)))
-            setSelectedField(updatedField)
-          }}
-        />
-      )}
+      {
+        selectedField && selectedTemplate && templateType === 'product' && (
+          <FieldDetailsDialog
+            field={selectedField}
+            onClose={() => setSelectedField(null)}
+            onUpdate={(updatedField) => {
+              const pt = selectedTemplate as AmazonProductType
+              const newFields = (pt.fields || []).map(f => (f.id === updatedField.id ? updatedField : f))
+              const newPt = { ...pt, fields: newFields }
+              setSelectedTemplate(newPt)
+              setProductTypeTemplates(prev => prev.map(p => (p.id === newPt.id ? newPt : p)))
+              setSelectedField(updatedField)
+            }}
+          />
+        )
+      }
 
       {/* Customization Template Preview Modal */}
       <CustomizationTemplateFilePreview
@@ -1518,6 +1569,6 @@ export default function AmazonTemplatesPage() {
         error={custPreviewError}
         data={custPreviewData}
       />
-    </Box>
+    </Box >
   )
 }

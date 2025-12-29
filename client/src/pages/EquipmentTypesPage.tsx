@@ -10,10 +10,9 @@ import EditIcon from '@mui/icons-material/Edit'
 import AddIcon from '@mui/icons-material/Add'
 import SettingsIcon from '@mui/icons-material/Settings'
 import DesignServicesIcon from '@mui/icons-material/DesignServices'
-import ListAltIcon from '@mui/icons-material/ListAlt'
 import { equipmentTypesApi, pricingApi, designOptionsApi, settingsApi } from '../services/api'
 import type { EquipmentType, PricingOption, DesignOption, AmazonCustomizationTemplate } from '../types'
-import EquipmentTypeCustomizationTemplatesManager from '../components/EquipmentTypeCustomizationTemplatesManager'
+
 
 export default function EquipmentTypesPage() {
   const [equipmentTypes, setEquipmentTypes] = useState<EquipmentType[]>([])
@@ -31,8 +30,8 @@ export default function EquipmentTypesPage() {
   const [name, setName] = useState('')
   const [allCustomizationTemplates, setAllCustomizationTemplates] = useState<AmazonCustomizationTemplate[]>([])
   const [selectedTemplateId, setSelectedTemplateId] = useState<number | null>(null)
-  const [templatesDialogOpen, setTemplatesDialogOpen] = useState(false)
-  const [selectedEquipmentTypeForTemplates, setSelectedEquipmentTypeForTemplates] = useState<EquipmentType | null>(null)
+
+
 
   const loadEquipmentTypes = async () => {
     const data = await equipmentTypesApi.list()
@@ -143,15 +142,7 @@ export default function EquipmentTypesPage() {
     loadEquipmentTypes()
   }
 
-  const handleOpenTemplatesDialog = (equipmentType: EquipmentType) => {
-    setSelectedEquipmentTypeForTemplates(equipmentType)
-    setTemplatesDialogOpen(true)
-  }
 
-  const handleCloseTemplatesDialog = () => {
-    setTemplatesDialogOpen(false)
-    setSelectedEquipmentTypeForTemplates(null)
-  }
 
   return (
     <Box>
@@ -201,9 +192,7 @@ export default function EquipmentTypesPage() {
                   </Box>
                 </TableCell>
                 <TableCell align="right">
-                  <IconButton onClick={() => handleOpenTemplatesDialog(et)} size="small" title="Manage Templates">
-                    <ListAltIcon />
-                  </IconButton>
+
                   <IconButton onClick={() => handleOpenDesignDialog(et)} size="small" title="Manage Design Options">
                     <DesignServicesIcon />
                   </IconButton>
@@ -349,14 +338,7 @@ export default function EquipmentTypesPage() {
         </DialogActions>
       </Dialog>
 
-      {selectedEquipmentTypeForTemplates && (
-        <EquipmentTypeCustomizationTemplatesManager
-          equipmentTypeId={selectedEquipmentTypeForTemplates.id}
-          equipmentTypeName={selectedEquipmentTypeForTemplates.name}
-          open={templatesDialogOpen}
-          onClose={handleCloseTemplatesDialog}
-        />
-      )}
+
     </Box>
   )
 }

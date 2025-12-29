@@ -11,19 +11,10 @@ import AddIcon from '@mui/icons-material/Add'
 import { settingsApi } from '../services/api'
 import type { AmazonCustomizationTemplate, EquipmentTypeCustomizationTemplateItem } from '../types'
 
-interface EquipmentTypeCustomizationTemplatesManagerProps {
-    equipmentTypeId: number
-    equipmentTypeName: string
-    open: boolean
-    onClose: () => void
-}
-
 export default function EquipmentTypeCustomizationTemplatesManager({
     equipmentTypeId,
-    equipmentTypeName,
-    open,
-    onClose
-}: EquipmentTypeCustomizationTemplatesManagerProps) {
+    equipmentTypeName
+}: { equipmentTypeId: number, equipmentTypeName: string }) {
     const [assignedTemplates, setAssignedTemplates] = useState<EquipmentTypeCustomizationTemplateItem[]>([])
     const [defaultTemplateId, setDefaultTemplateId] = useState<number | null>(null)
     const [allTemplates, setAllTemplates] = useState<AmazonCustomizationTemplate[]>([])
@@ -33,7 +24,8 @@ export default function EquipmentTypeCustomizationTemplatesManager({
     const [error, setError] = useState<string | null>(null)
 
     const loadData = async () => {
-        if (!open) return
+        if (!equipmentTypeId) return
+
         try {
             setError(null)
             const [templatesResp, allTemplatesResp] = await Promise.all([
@@ -51,7 +43,7 @@ export default function EquipmentTypeCustomizationTemplatesManager({
 
     useEffect(() => {
         loadData()
-    }, [equipmentTypeId, open])
+    }, [equipmentTypeId])
 
     const handleSetDefault = async (templateId: number) => {
         try {
@@ -114,99 +106,93 @@ export default function EquipmentTypeCustomizationTemplatesManager({
     }
 
     return (
-        <>
-            <Dialog open={open} onClose={onClose} maxWidth="md" fullWidth>
-                <DialogTitle>
-                    Customization Templates for {equipmentTypeName}
-                </DialogTitle>
-                <DialogContent>
-                    {error && (
-                        <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError(null)}>
-                            {error}
-                        </Alert>
-                    )}
+        <Box>
+            {error && (
+                <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError(null)}>
+                    {error}
+                </Alert>
+            )}
 
-                    <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                        The default template is used automatically during export unless overridden.
+            <Typography variant="subtitle2" gutterBottom>
+                Customization Slots for {equipmentTypeName}
+            </Typography>
+
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                The default template is used automatically during export unless overridden.
+            </Typography>
+
+            {assignedTemplates.length === 0 ? (
+                <Box sx={{ textAlign: 'center', py: 4, border: '1px dashed #ccc', borderRadius: 1 }}>
+                    <Typography variant="body2" color="text.secondary">
+                        No templates assigned to slots
                     </Typography>
+                </Box>
+            ) : (
+                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                    {assignedTemplates.sort((a, b) => a.slot - b.slot).map((template) => (
+                        <Paper key={template.template_id} variant="outlined" sx={{ p: 2 }}>
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                                <Box sx={{
+                                    bgcolor: 'primary.main',
+                                    color: 'white',
+                                    borderRadius: 1,
+                                    px: 1.5,
+                                    py: 0.5,
+                                    fontWeight: 'bold',
+                                    fontSize: '0.875rem'
+                                }}>
+                                    Slot {template.slot}
+                                </Box>
+                                <Box sx={{ flex: 1 }}>
+                                    <Typography variant="body1">
+                                        {template.original_filename}
+                                    </Typography>
+                                    <Typography variant="caption" color="text.secondary">
+                                        Uploaded: {formatDate(template.upload_date)}
+                                    </Typography>
+                                </Box>
+                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                    <IconButton
+                                        size="small"
+                                        onClick={() => handleSetDefault(template.template_id)}
+                                        disabled={defaultTemplateId === template.template_id}
+                                        title={defaultTemplateId === template.template_id ? 'Current default' : 'Set as default'}
+                                        color={defaultTemplateId === template.template_id ? 'primary' : 'default'}
+                                    >
+                                        {defaultTemplateId === template.template_id ? <StarIcon /> : <StarOutlineIcon />}
+                                    </IconButton>
+                                    <IconButton
+                                        size="small"
+                                        onClick={() => handleUnassign(template.template_id)}
+                                        color="error"
+                                        title="Remove"
+                                    >
+                                        <DeleteIcon />
+                                    </IconButton>
+                                </Box>
+                            </Box>
+                        </Paper>
+                    ))}
+                </Box>
+            )}
 
-                    {assignedTemplates.length === 0 ? (
-                        <Box sx={{ textAlign: 'center', py: 4 }}>
-                            <Typography variant="body2" color="text.secondary">
-                                No templates assigned
-                            </Typography>
-                        </Box>
-                    ) : (
-                        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                            {assignedTemplates.sort((a, b) => a.slot - b.slot).map((template) => (
-                                <Paper key={template.template_id} variant="outlined" sx={{ p: 2 }}>
-                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                                        <Box sx={{
-                                            bgcolor: 'primary.main',
-                                            color: 'white',
-                                            borderRadius: 1,
-                                            px: 1.5,
-                                            py: 0.5,
-                                            fontWeight: 'bold',
-                                            fontSize: '0.875rem'
-                                        }}>
-                                            Slot {template.slot}
-                                        </Box>
-                                        <Box sx={{ flex: 1 }}>
-                                            <Typography variant="body1">
-                                                {template.original_filename}
-                                            </Typography>
-                                            <Typography variant="caption" color="text.secondary">
-                                                Uploaded: {formatDate(template.upload_date)}
-                                            </Typography>
-                                        </Box>
-                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                            <IconButton
-                                                size="small"
-                                                onClick={() => handleSetDefault(template.template_id)}
-                                                disabled={defaultTemplateId === template.template_id}
-                                                title={defaultTemplateId === template.template_id ? 'Current default' : 'Set as default'}
-                                                color={defaultTemplateId === template.template_id ? 'primary' : 'default'}
-                                            >
-                                                {defaultTemplateId === template.template_id ? <StarIcon /> : <StarOutlineIcon />}
-                                            </IconButton>
-                                            <IconButton
-                                                size="small"
-                                                onClick={() => handleUnassign(template.template_id)}
-                                                color="error"
-                                                title="Remove"
-                                            >
-                                                <DeleteIcon />
-                                            </IconButton>
-                                        </Box>
-                                    </Box>
-                                </Paper>
-                            ))}
-                        </Box>
-                    )}
+            {assignedTemplates.length < 3 && (
+                <Button
+                    variant="outlined"
+                    startIcon={<AddIcon />}
+                    onClick={handleOpenAssignDialog}
+                    sx={{ mt: 2 }}
+                    fullWidth
+                >
+                    Assign Template to Slot
+                </Button>
+            )}
 
-                    {assignedTemplates.length < 3 && (
-                        <Button
-                            variant="outlined"
-                            startIcon={<AddIcon />}
-                            onClick={handleOpenAssignDialog}
-                            sx={{ mt: 2 }}
-                            fullWidth
-                        >
-                            Assign Template to Slot
-                        </Button>
-                    )}
-
-                    {assignedTemplates.length > 0 && !defaultTemplateId && (
-                        <Alert severity="warning" sx={{ mt: 2 }}>
-                            No default selected. Select a default template to use during export.
-                        </Alert>
-                    )}
-                </DialogContent>
-                <DialogActions>
-                    <Button onClick={onClose}>Close</Button>
-                </DialogActions>
-            </Dialog>
+            {assignedTemplates.length > 0 && !defaultTemplateId && (
+                <Alert severity="warning" sx={{ mt: 2 }}>
+                    No default selected. Select a default template to use during export.
+                </Alert>
+            )}
 
             <Dialog open={assignDialogOpen} onClose={() => setAssignDialogOpen(false)} maxWidth="sm" fullWidth>
                 <DialogTitle>Assign Template</DialogTitle>
@@ -270,6 +256,6 @@ export default function EquipmentTypeCustomizationTemplatesManager({
                     </Button>
                 </DialogActions>
             </Dialog>
-        </>
+        </Box>
     )
 }
