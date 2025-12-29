@@ -5,7 +5,7 @@ import {
   Table, TableBody, TableCell, TableContainer, TableHead, TableRow,
   Chip, Alert, CircularProgress, FormControl, InputLabel, Select, MenuItem, Divider,
   Dialog, DialogTitle, DialogContent, DialogContentText, DialogActions,
-  Accordion, AccordionSummary, AccordionDetails, Switch
+  Accordion, AccordionSummary, AccordionDetails, Switch, Tabs, Tab
 } from '@mui/material'
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
 import DeleteIcon from '@mui/icons-material/Delete'
@@ -343,7 +343,7 @@ interface PendingUpload {
   matchStatus: 'match' | 'mismatch'
 }
 
-export default function TemplatesPage() {
+export default function AmazonTemplatesPage() {
   // Existing state for Product Types
   const [productTypeTemplates, setProductTypeTemplates] = useState<AmazonProductType[]>([])
 
@@ -753,7 +753,7 @@ export default function TemplatesPage() {
             </Typography>
           </Box>
           <Box sx={{ display: 'flex', gap: 1 }}>
-            <Button component={RouterLink} to="/templates" variant="text" size="small">
+            <Button component={RouterLink} to="/templates/amazon" variant="text" size="small">
               Clear Focus
             </Button>
             <Button component={RouterLink} to="/export" variant="contained" color="primary">
@@ -763,25 +763,23 @@ export default function TemplatesPage() {
         </Paper>
       )}
 
-      {/* Main Action Card: Import/Update */}
-      <Paper sx={{ p: 3, mb: 3 }}>
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 2 }}>
-          <Typography variant="h6">Import New Template</Typography>
-          <FormControl size="small" sx={{ minWidth: 200 }}>
-            <InputLabel>Template Type</InputLabel>
-            <Select
-              value={templateType}
-              label="Template Type"
-              onChange={(e) => setTemplateType(e.target.value as 'product' | 'customization')}
-            >
-              <MenuItem value="product">Product Type Template</MenuItem>
-              <MenuItem value="customization">Customization Template</MenuItem>
-            </Select>
-          </FormControl>
-        </Box>
+      {/* Tabs */}
+      <Box sx={{ borderBottom: 1, borderColor: 'divider', mb: 3 }}>
+        <Tabs value={templateType} onChange={(e, v) => { setTemplateType(v); setSelectedTemplate(null); }}>
+          <Tab label="Product Type Templates" value="product" />
+          <Tab label="Customization Templates" value="customization" />
+        </Tabs>
+      </Box>
 
-        {templateType === 'product' ? (
-          <>
+      {/* TAB 1: PRODUCT TYPE TEMPLATES */}
+      {templateType === 'product' && (
+        <Box>
+          {/* Import / Update Section - Product Type */}
+          <Paper sx={{ p: 3, mb: 3 }}>
+            <Box sx={{ mb: 2 }}>
+              <Typography variant="h6">Import New Product Type</Typography>
+            </Box>
+
             <Grid container spacing={2} alignItems="center">
               <Grid item xs={12} md={4}>
                 <TextField
@@ -862,365 +860,150 @@ export default function TemplatesPage() {
                 </Grid>
               </>
             )}
-          </>
-        ) : (
-          <>
-            <Grid container spacing={2} alignItems="center">
+
+            {error && <Alert severity="error" sx={{ mt: 2 }}>{error}</Alert>}
+            {success && <Alert severity="success" sx={{ mt: 2 }}>{success}</Alert>}
+          </Paper>
+
+          {/* Linking Section - Product Type */}
+          <Paper sx={{ p: 3, mb: 3 }}>
+            <Typography variant="h6" gutterBottom sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <LinkIcon /> Link Product Type to Equipment Type
+            </Typography>
+            <Typography variant="body2" sx={{ mt: 0.5, mb: 2, opacity: 0.85 }}>
+              We store the original Amazon XLSX and extract fields for defaults. Preview/Download uses the stored file.
+            </Typography>
+
+            <Grid container spacing={2} alignItems="center" sx={{ mb: 2 }}>
+              <Grid item xs={12} md={4}>
+                <FormControl fullWidth size="small">
+                  <InputLabel>Product Type Template</InputLabel>
+                  <Select
+                    value={ptLinkTemplateId}
+                    label="Product Type Template"
+                    onChange={(e) => setPtLinkTemplateId(e.target.value as number)}
+                  >
+                    {productTypeTemplates.map((t) => (
+                      <MenuItem key={t.id} value={t.id}>{t.code}</MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              </Grid>
+
+              <Grid item xs={12} md={4}>
+                <FormControl fullWidth size="small">
+                  <InputLabel>Equipment Type</InputLabel>
+                  <Select
+                    value={ptLinkEquipId}
+                    label="Equipment Type"
+                    onChange={(e) => setPtLinkEquipId(e.target.value as number)}
+                  >
+                    {equipmentTypes.map((et) => (
+                      <MenuItem key={et.id} value={et.id}>{et.name}</MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              </Grid>
+
               <Grid item xs={12} md={4}>
                 <Button
                   variant="contained"
-                  component="label"
-                  startIcon={uploading ? <CircularProgress size={20} /> : <UploadFileIcon />}
-                  disabled={uploading}
+                  startIcon={<AddIcon />}
+                  onClick={handleCreateProductTypeLink}
+                  disabled={ptLinkEquipId === '' || ptLinkTemplateId === ''}
                 >
-                  Upload New Customization Template
-                  <input type="file" hidden accept=".xlsx,.xls" onChange={(e) => handleCustomizationFileSelect(e, false)} />
+                  Link Product Type
                 </Button>
               </Grid>
             </Grid>
 
-            {customizationTemplates.length > 0 && (
-              <>
-                <Divider sx={{ my: 3 }} />
-                <Typography variant="h6" gutterBottom>Update Existing Customization Template</Typography>
-                <Grid container spacing={2} alignItems="center">
-                  <Grid item xs={12} md={4}>
-                    <FormControl fullWidth>
-                      <InputLabel>Select Customization Template</InputLabel>
-                      <Select
-                        value={selectedCustomizationId}
-                        label="Select Customization Template"
-                        onChange={(e) => setSelectedCustomizationId(e.target.value as number)}
-                      >
-                        {customizationTemplates.map((t) => (
-                          <MenuItem key={t.id} value={t.id}>{t.original_filename}</MenuItem>
-                        ))}
-                      </Select>
-                    </FormControl>
-                  </Grid>
-                  <Grid item xs={12} md={4}>
-                    <Button
-                      variant="outlined"
-                      component="label"
-                      color="warning"
-                      startIcon={uploading ? <CircularProgress size={20} /> : <RefreshIcon />}
-                      disabled={uploading || selectedCustomizationId === ''}
-                    >
-                      Upload Updated File
-                      <input type="file" hidden accept=".xlsx,.xls" onChange={(e) => handleCustomizationFileSelect(e, true)} />
-                    </Button>
-                  </Grid>
-                </Grid>
-              </>
-            )}
-          </>
-        )}
-
-        {error && <Alert severity="error" sx={{ mt: 2 }}>{error}</Alert>}
-        {success && <Alert severity="success" sx={{ mt: 2 }}>{success}</Alert>}
-      </Paper>
-
-      {/* Linking Section */}
-      <Paper sx={{ p: 3, mb: 3 }}>
-        <Typography variant="h6" gutterBottom sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-          <LinkIcon /> Template Linking
-        </Typography>
-
-        {/* Product Type Links */}
-        <Box sx={{ mb: 4 }}>
-          <Typography variant="subtitle1" sx={{ fontWeight: 'bold' }} gutterBottom>
-            Product Type Templates (for regular listing data)
-          </Typography>
-          <Typography variant="body2" sx={{ mt: 0.5, opacity: 0.85 }}>
-            We store the original Amazon XLSX and extract fields for defaults. Preview/Download uses the stored file.
-          </Typography>
-
-          <Grid container spacing={2} alignItems="center" sx={{ mb: 2 }}>
-            <Grid item xs={12} md={4}>
-              <FormControl fullWidth size="small">
-                <InputLabel>Product Type Template</InputLabel>
-                <Select
-                  value={ptLinkTemplateId}
-                  label="Product Type Template"
-                  onChange={(e) => setPtLinkTemplateId(e.target.value as number)}
-                >
-                  {productTypeTemplates.map((t) => (
-                    <MenuItem key={t.id} value={t.id}>{t.code}</MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
-            </Grid>
-
-            <Grid item xs={12} md={4}>
-              <FormControl fullWidth size="small">
-                <InputLabel>Equipment Type</InputLabel>
-                <Select
-                  value={ptLinkEquipId}
-                  label="Equipment Type"
-                  onChange={(e) => setPtLinkEquipId(e.target.value as number)}
-                >
-                  {equipmentTypes.map((et) => (
-                    <MenuItem key={et.id} value={et.id}>{et.name}</MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
-            </Grid>
-
-            <Grid item xs={12} md={4}>
-              <Button
-                variant="contained"
-                startIcon={<AddIcon />}
-                onClick={handleCreateProductTypeLink}
-                disabled={ptLinkEquipId === '' || ptLinkTemplateId === ''}
-              >
-                Link Product Type
-              </Button>
-            </Grid>
-          </Grid>
-
-          {equipmentTypeLinks.length > 0 && (
-            <TableContainer>
-              <Table size="small">
-                <TableHead>
-                  <TableRow>
-                    <TableCell>Template</TableCell>
-                    <TableCell>Equipment Type</TableCell>
-                    <TableCell>Actions</TableCell>
-                  </TableRow>
-                </TableHead>
-                <TableBody>
-                  {equipmentTypeLinks.map((link) => (
-                    <TableRow key={link.id}>
-                      <TableCell>{getProductTypeCode(link.product_type_id)}</TableCell>
-                      <TableCell>{getEquipmentTypeName(link.equipment_type_id)}</TableCell>
-                      <TableCell>
-                        <IconButton size="small" onClick={() => handleDeleteProductTypeLink(link.id)}>
-                          <DeleteIcon />
-                        </IconButton>
-                      </TableCell>
+            {equipmentTypeLinks.length > 0 && (
+              <TableContainer>
+                <Table size="small">
+                  <TableHead>
+                    <TableRow>
+                      <TableCell>Template</TableCell>
+                      <TableCell>Equipment Type</TableCell>
+                      <TableCell>Actions</TableCell>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </TableContainer>
-          )}
-        </Box>
-
-        <Divider />
-
-        {/* Customization Links */}
-        <Box sx={{ mt: 3 }} ref={customLinkingRef} style={{ scrollMarginTop: '80px' }}>
-          <Typography variant="subtitle1" sx={{ fontWeight: 'bold' }} gutterBottom>
-            Customization Templates (for customization.txt)
-          </Typography>
-          <Typography variant="body2" sx={{ mt: 0.5, opacity: 0.85 }}>
-            We store the original Amazon XLSX. In XLSX export mode, the file is included byte-for-byte.
-          </Typography>
-          <Typography variant="caption" color="text.secondary" paragraph>
-            Note: This assigns the template to the Equipment Type directly. Re-assign to change.
-          </Typography>
-
-          <Grid container spacing={2} alignItems="center" sx={{ mb: 2 }}>
-            <Grid item xs={12} md={4}>
-              <FormControl fullWidth size="small">
-                <InputLabel>Customization Template</InputLabel>
-                <Select
-                  value={custLinkTemplateId}
-                  label="Customization Template"
-                  onChange={(e) => setCustLinkTemplateId(e.target.value as number)}
-                >
-                  {customizationTemplates.map((t) => (
-                    <MenuItem key={t.id} value={t.id}>{t.original_filename}</MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
-            </Grid>
-
-            <Grid item xs={12} md={4}>
-              <FormControl fullWidth size="small">
-                <InputLabel>Equipment Type</InputLabel>
-                <Select
-                  value={custLinkEquipId}
-                  label="Equipment Type"
-                  onChange={(e) => setCustLinkEquipId(e.target.value as number)}
-                >
-                  {equipmentTypes.map((et) => (
-                    <MenuItem key={et.id} value={et.id}>{et.name}</MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
-            </Grid>
-
-            <Grid item xs={12} md={4}>
-              <Button
-                variant="contained"
-                startIcon={<AddIcon />}
-                onClick={handleCreateCustomizationLink}
-                disabled={custLinkEquipId === '' || custLinkTemplateId === ''}
-              >
-                Assign Template
-              </Button>
-            </Grid>
-          </Grid>
-
-          <TableContainer>
-            <Table size="small">
-              <TableHead>
-                <TableRow>
-                  <TableCell>Assigned Template</TableCell>
-                  <TableCell>Equipment Type</TableCell>
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {equipmentTypes
-                  .filter(et => (et as any).amazon_customization_template_id) // keep compatible with your existing type
-                  .map((et) => {
-                    const assignedId = (et as any).amazon_customization_template_id as number
-                    return (
-                      <TableRow key={et.id}>
-                        <TableCell>{getCustomizationName(assignedId)}</TableCell>
-                        <TableCell>{et.name}</TableCell>
+                  </TableHead>
+                  <TableBody>
+                    {equipmentTypeLinks.map((link) => (
+                      <TableRow key={link.id}>
+                        <TableCell>{getProductTypeCode(link.product_type_id)}</TableCell>
+                        <TableCell>{getEquipmentTypeName(link.equipment_type_id)}</TableCell>
+                        <TableCell>
+                          <IconButton size="small" onClick={() => handleDeleteProductTypeLink(link.id)}>
+                            <DeleteIcon />
+                          </IconButton>
+                        </TableCell>
                       </TableRow>
-                    )
-                  })}
-              </TableBody>
-            </Table>
-          </TableContainer>
-        </Box>
-      </Paper>
-
-      {/* Upload Confirmation */}
-      <Dialog open={pendingUpload !== null} onClose={handleCancelProductTypeUpload}>
-        <DialogTitle sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-          {pendingUpload?.matchStatus === 'match' ? <CheckCircleIcon color="success" /> : <WarningIcon color="warning" />}
-          {pendingUpload?.matchStatus === 'match' ? 'Confirm Upload' : 'File Mismatch Warning'}
-        </DialogTitle>
-        <DialogContent>
-          <DialogContentText>
-            {pendingUpload?.matchStatus === 'match' ? (
-              <>File <strong>{pendingUpload?.file.name}</strong> matches Product Type <strong>{pendingUpload?.productCode}</strong>. Proceed?</>
-            ) : (
-              <>File <strong>{pendingUpload?.file.name}</strong> does not match Product Type <strong>{pendingUpload?.productCode}</strong>. Use anyway?</>
+                    ))}
+                  </TableBody>
+                </Table>
+              </TableContainer>
             )}
-          </DialogContentText>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={handleCancelProductTypeUpload}>Cancel</Button>
-          <Button onClick={handleConfirmProductTypeUpload} variant="contained" color={pendingUpload?.matchStatus === 'match' ? 'primary' : 'warning'}>
-            {pendingUpload?.matchStatus === 'match' ? 'Proceed' : 'Yes, Use This File'}
-          </Button>
-        </DialogActions>
-      </Dialog>
-
-      {/* Product Type File Preview Modal */}
-      <ProductTypeFilePreview
-        open={isPtPreviewOpen}
-        onClose={handleClosePtPreview}
-        loading={ptPreviewLoading}
-        error={ptPreviewError}
-        data={ptPreviewData}
-      />
-
-      <Grid container spacing={3}>
-        <Grid item xs={12}>
-          <Paper sx={{ p: 2 }}>
-            <Typography variant="h6" gutterBottom>Imported Templates</Typography>
-            <Typography variant="caption" sx={{ display: 'block', mt: 1, opacity: 0.8 }}>
-              Preview is capped to 50×50 for performance.
-            </Typography>
-
-            <TableContainer>
-              <Table size="small">
-                <TableHead>
-                  <TableRow>
-                    <TableCell>Name / Code</TableCell>
-                    <TableCell>Type</TableCell>
-                    <TableCell>Info</TableCell>
-                    <TableCell>Actions</TableCell>
-                  </TableRow>
-                </TableHead>
-                <TableBody>
-                  {productTypeTemplates.map(pt => (
-                    <TableRow
-                      key={`pt-${pt.id}`}
-                      hover
-                      selected={(selectedTemplate as AmazonProductType | null)?.code === pt.code}
-                      onClick={() => { setSelectedTemplate(pt); setTemplateType('product') }}
-                      sx={{ cursor: 'pointer' }}
-                    >
-                      <TableCell>{pt.code}</TableCell>
-                      <TableCell><Chip label="Product Type" size="small" color="primary" variant="outlined" /></TableCell>
-                      <TableCell>{pt.fields?.length || 0} fields</TableCell>
-                      <TableCell>
-                        <IconButton size="small" onClick={(e) => { e.stopPropagation(); void handleDeleteProductType(pt.code) }}>
-                          <DeleteIcon />
-                        </IconButton>
-                        <IconButton size="small" onClick={(e) => { e.stopPropagation(); void handlePreviewProductType(pt.code) }} title="Preview Original File">
-                          <PreviewIcon />
-                        </IconButton>
-                        <IconButton
-                          size="small"
-                          component="a"
-                          href={templatesApi.downloadProductTypeTemplateUrl(pt.code)}
-                          download
-                          target="_blank"
-                          onClick={(e) => e.stopPropagation()}
-                          title="Download Original File"
-                        >
-                          <DownloadIcon />
-                        </IconButton>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-
-                  {customizationTemplates.map(ct => (
-                    <TableRow
-                      key={`ct-${ct.id}`}
-                      hover
-                      selected={(selectedTemplate as AmazonCustomizationTemplate | null)?.id === ct.id}
-                      onClick={() => { setSelectedTemplate(ct); setTemplateType('customization') }}
-                      sx={{ cursor: 'pointer' }}
-                    >
-                      <TableCell>{ct.original_filename}</TableCell>
-                      <TableCell><Chip label="Customization" size="small" color="secondary" variant="outlined" /></TableCell>
-                      <TableCell>{Math.round((ct.file_size || 0) / 1024)} KB</TableCell>
-                      <TableCell>
-                        <IconButton
-                          size="small"
-                          onClick={(e) => { e.stopPropagation(); setTemplateType('customization'); setSelectedTemplate(ct); void handlePreviewCustomizationTemplate(ct.id) }}
-                          title="Preview File"
-                          sx={{ mr: 1 }}
-                        >
-                          <PreviewIcon />
-                        </IconButton>
-                        <IconButton
-                          size="small"
-                          component="a"
-                          href={settingsApi.downloadAmazonCustomizationTemplateUrl(ct.id)}
-                          download
-                          onClick={(e) => e.stopPropagation()}
-                          title="Download Original"
-                          sx={{ mr: 1 }}
-                        >
-                          <DownloadIcon />
-                        </IconButton>
-                        <IconButton size="small" onClick={(e) => { e.stopPropagation(); void handleDeleteCustomization(ct.id) }} title="Delete">
-                          <DeleteIcon />
-                        </IconButton>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </TableContainer>
           </Paper>
-        </Grid>
 
-        <Grid item xs={12}>
-          {selectedTemplate && (
-            <Paper sx={{ p: 2 }}>
-              {templateType === 'product' ? (
-                <>
+          {/* List Section - Product Type */}
+          <Grid container spacing={3}>
+            <Grid item xs={12}>
+              <Paper sx={{ p: 2 }}>
+                <Typography variant="h6" gutterBottom>Imported Product Types</Typography>
+
+                <TableContainer>
+                  <Table size="small">
+                    <TableHead>
+                      <TableRow>
+                        <TableCell>Name / Code</TableCell>
+                        <TableCell>Type</TableCell>
+                        <TableCell>Info</TableCell>
+                        <TableCell>Actions</TableCell>
+                      </TableRow>
+                    </TableHead>
+                    <TableBody>
+                      {productTypeTemplates.map(pt => (
+                        <TableRow
+                          key={`pt-${pt.id}`}
+                          hover
+                          selected={(selectedTemplate as AmazonProductType | null)?.code === pt.code}
+                          onClick={() => { setSelectedTemplate(pt) }}
+                          sx={{ cursor: 'pointer' }}
+                        >
+                          <TableCell>{pt.code}</TableCell>
+                          <TableCell><Chip label="Product Type" size="small" color="primary" variant="outlined" /></TableCell>
+                          <TableCell>{pt.fields?.length || 0} fields</TableCell>
+                          <TableCell>
+                            <IconButton size="small" onClick={(e) => { e.stopPropagation(); void handleDeleteProductType(pt.code) }}>
+                              <DeleteIcon />
+                            </IconButton>
+                            <IconButton size="small" onClick={(e) => { e.stopPropagation(); void handlePreviewProductType(pt.code) }} title="Preview Original File">
+                              <PreviewIcon />
+                            </IconButton>
+                            <IconButton
+                              size="small"
+                              component="a"
+                              href={templatesApi.downloadProductTypeTemplateUrl(pt.code)}
+                              download
+                              target="_blank"
+                              onClick={(e) => e.stopPropagation()}
+                              title="Download Original File"
+                            >
+                              <DownloadIcon />
+                            </IconButton>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </TableContainer>
+              </Paper>
+            </Grid>
+
+            {/* Details Section - Product Type */}
+            <Grid item xs={12}>
+              {selectedTemplate && (
+                <Paper sx={{ p: 2 }}>
                   {/* Export Overrides */}
                   <Accordion
                     defaultExpanded={Boolean((selectedTemplate as AmazonProductType).export_sheet_name_override || (selectedTemplate as AmazonProductType).export_start_row_override)}
@@ -1444,24 +1227,269 @@ export default function TemplatesPage() {
                       })
                     })()}
                   </Box>
-                </>
-              ) : (
-                <Box>
-                  <Typography variant="h6">Customization Template Details</Typography>
-                  <Box sx={{ mt: 2 }}>
-                    <Typography><strong>Filename:</strong> {(selectedTemplate as AmazonCustomizationTemplate).original_filename}</Typography>
-                    <Typography><strong>Upload Date:</strong> {new Date((selectedTemplate as AmazonCustomizationTemplate).upload_date).toLocaleString()}</Typography>
-                    <Typography><strong>Size:</strong> {(selectedTemplate as AmazonCustomizationTemplate).file_size} bytes</Typography>
-                    <Typography sx={{ mt: 2, fontStyle: 'italic', color: 'text.secondary' }}>
-                      This is a raw Excel template used for generating customization files. No field mapping is required.
-                    </Typography>
-                  </Box>
-                </Box>
+                </Paper>
               )}
-            </Paper>
-          )}
-        </Grid>
-      </Grid>
+            </Grid>
+          </Grid>
+        </Box>
+      )}
+
+      {/* TAB 2: CUSTOMIZATION TEMPLATES */}
+      {templateType === 'customization' && (
+        <Box>
+
+          {/* Import / Update Section - Customization */}
+          <Paper sx={{ p: 3, mb: 3 }}>
+            <Box sx={{ mb: 2 }}>
+              <Typography variant="h6">Import New Customization Template</Typography>
+            </Box>
+
+            <Grid container spacing={2} alignItems="center">
+              <Grid item xs={12} md={4}>
+                <Button
+                  variant="contained"
+                  component="label"
+                  startIcon={uploading ? <CircularProgress size={20} /> : <UploadFileIcon />}
+                  disabled={uploading}
+                >
+                  Upload New Customization Template
+                  <input type="file" hidden accept=".xlsx,.xls" onChange={(e) => handleCustomizationFileSelect(e, false)} />
+                </Button>
+              </Grid>
+            </Grid>
+
+            {customizationTemplates.length > 0 && (
+              <>
+                <Divider sx={{ my: 3 }} />
+                <Typography variant="h6" gutterBottom>Update Existing Customization Template</Typography>
+                <Grid container spacing={2} alignItems="center">
+                  <Grid item xs={12} md={4}>
+                    <FormControl fullWidth>
+                      <InputLabel>Select Customization Template</InputLabel>
+                      <Select
+                        value={selectedCustomizationId}
+                        label="Select Customization Template"
+                        onChange={(e) => setSelectedCustomizationId(e.target.value as number)}
+                      >
+                        {customizationTemplates.map((t) => (
+                          <MenuItem key={t.id} value={t.id}>{t.original_filename}</MenuItem>
+                        ))}
+                      </Select>
+                    </FormControl>
+                  </Grid>
+                  <Grid item xs={12} md={4}>
+                    <Button
+                      variant="outlined"
+                      component="label"
+                      color="warning"
+                      startIcon={uploading ? <CircularProgress size={20} /> : <RefreshIcon />}
+                      disabled={uploading || selectedCustomizationId === ''}
+                    >
+                      Upload Updated File
+                      <input type="file" hidden accept=".xlsx,.xls" onChange={(e) => handleCustomizationFileSelect(e, true)} />
+                    </Button>
+                  </Grid>
+                </Grid>
+              </>
+            )}
+            {error && <Alert severity="error" sx={{ mt: 2 }}>{error}</Alert>}
+            {success && <Alert severity="success" sx={{ mt: 2 }}>{success}</Alert>}
+          </Paper>
+
+          {/* Linking Section - Customization */}
+          <Paper sx={{ p: 3, mb: 3 }}>
+            <Box ref={customLinkingRef} style={{ scrollMarginTop: '80px' }}>
+              <Typography variant="h6" gutterBottom sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                <LinkIcon /> Assign Customization Template to Equipment Type
+              </Typography>
+              <Typography variant="body2" sx={{ mt: 0.5, opacity: 0.85 }}>
+                We store the original Amazon XLSX. In XLSX export mode, the file is included byte-for-byte.
+              </Typography>
+              <Typography variant="caption" color="text.secondary" paragraph>
+                Note: This assigns the template to the Equipment Type directly. Re-assign to change.
+              </Typography>
+
+              <Grid container spacing={2} alignItems="center" sx={{ mb: 2 }}>
+                <Grid item xs={12} md={4}>
+                  <FormControl fullWidth size="small">
+                    <InputLabel>Customization Template</InputLabel>
+                    <Select
+                      value={custLinkTemplateId}
+                      label="Customization Template"
+                      onChange={(e) => setCustLinkTemplateId(e.target.value as number)}
+                    >
+                      {customizationTemplates.map((t) => (
+                        <MenuItem key={t.id} value={t.id}>{t.original_filename}</MenuItem>
+                      ))}
+                    </Select>
+                  </FormControl>
+                </Grid>
+
+                <Grid item xs={12} md={4}>
+                  <FormControl fullWidth size="small">
+                    <InputLabel>Equipment Type</InputLabel>
+                    <Select
+                      value={custLinkEquipId}
+                      label="Equipment Type"
+                      onChange={(e) => setCustLinkEquipId(e.target.value as number)}
+                    >
+                      {equipmentTypes.map((et) => (
+                        <MenuItem key={et.id} value={et.id}>{et.name}</MenuItem>
+                      ))}
+                    </Select>
+                  </FormControl>
+                </Grid>
+
+                <Grid item xs={12} md={4}>
+                  <Button
+                    variant="contained"
+                    startIcon={<AddIcon />}
+                    onClick={handleCreateCustomizationLink}
+                    disabled={custLinkEquipId === '' || custLinkTemplateId === ''}
+                  >
+                    Assign Template
+                  </Button>
+                </Grid>
+              </Grid>
+
+              <TableContainer>
+                <Table size="small">
+                  <TableHead>
+                    <TableRow>
+                      <TableCell>Assigned Template</TableCell>
+                      <TableCell>Equipment Type</TableCell>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {equipmentTypes
+                      .filter(et => (et as any).amazon_customization_template_id)
+                      .map((et) => {
+                        const assignedId = (et as any).amazon_customization_template_id as number
+                        return (
+                          <TableRow key={et.id}>
+                            <TableCell>{getCustomizationName(assignedId)}</TableCell>
+                            <TableCell>{et.name}</TableCell>
+                          </TableRow>
+                        )
+                      })}
+                  </TableBody>
+                </Table>
+              </TableContainer>
+            </Box>
+          </Paper>
+
+          {/* List Section - Customization */}
+          <Grid container spacing={3}>
+            <Grid item xs={12}>
+              <Paper sx={{ p: 2 }}>
+                <Typography variant="h6" gutterBottom>Uploaded Customization Templates</Typography>
+                <TableContainer>
+                  <Table size="small">
+                    <TableHead>
+                      <TableRow>
+                        <TableCell>Name / Code</TableCell>
+                        <TableCell>Type</TableCell>
+                        <TableCell>Info</TableCell>
+                        <TableCell>Actions</TableCell>
+                      </TableRow>
+                    </TableHead>
+                    <TableBody>
+                      {customizationTemplates.map(ct => (
+                        <TableRow
+                          key={`ct-${ct.id}`}
+                          hover
+                          selected={(selectedTemplate as AmazonCustomizationTemplate | null)?.id === ct.id}
+                          onClick={() => { setSelectedTemplate(ct) }}
+                          sx={{ cursor: 'pointer' }}
+                        >
+                          <TableCell>{ct.original_filename}</TableCell>
+                          <TableCell><Chip label="Customization" size="small" color="secondary" variant="outlined" /></TableCell>
+                          <TableCell>{Math.round((ct.file_size || 0) / 1024)} KB</TableCell>
+                          <TableCell>
+                            <IconButton
+                              size="small"
+                              onClick={(e) => { e.stopPropagation(); setSelectedTemplate(ct); void handlePreviewCustomizationTemplate(ct.id) }}
+                              title="Preview File"
+                              sx={{ mr: 1 }}
+                            >
+                              <PreviewIcon />
+                            </IconButton>
+                            <IconButton
+                              size="small"
+                              component="a"
+                              href={settingsApi.downloadAmazonCustomizationTemplateUrl(ct.id)}
+                              download
+                              onClick={(e) => e.stopPropagation()}
+                              title="Download Original"
+                              sx={{ mr: 1 }}
+                            >
+                              <DownloadIcon />
+                            </IconButton>
+                            <IconButton size="small" onClick={(e) => { e.stopPropagation(); void handleDeleteCustomization(ct.id) }} title="Delete">
+                              <DeleteIcon />
+                            </IconButton>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </TableContainer>
+              </Paper>
+            </Grid>
+
+            {/* Details Section - Customization */}
+            <Grid item xs={12}>
+              {selectedTemplate && (
+                <Paper sx={{ p: 2 }}>
+                  <Box>
+                    <Typography variant="h6">Customization Template Details</Typography>
+                    <Box sx={{ mt: 2 }}>
+                      <Typography><strong>Filename:</strong> {(selectedTemplate as AmazonCustomizationTemplate).original_filename}</Typography>
+                      <Typography><strong>Upload Date:</strong> {new Date((selectedTemplate as AmazonCustomizationTemplate).upload_date).toLocaleString()}</Typography>
+                      <Typography><strong>Size:</strong> {(selectedTemplate as AmazonCustomizationTemplate).file_size} bytes</Typography>
+                      <Typography sx={{ mt: 2, fontStyle: 'italic', color: 'text.secondary' }}>
+                        This is a raw Excel template used for generating customization files. No field mapping is required.
+                      </Typography>
+                    </Box>
+                  </Box>
+                </Paper>
+              )}
+            </Grid>
+          </Grid>
+        </Box>
+      )}
+
+      {/* Upload Confirmation */}
+      <Dialog open={pendingUpload !== null} onClose={handleCancelProductTypeUpload}>
+        <DialogTitle sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          {pendingUpload?.matchStatus === 'match' ? <CheckCircleIcon color="success" /> : <WarningIcon color="warning" />}
+          {pendingUpload?.matchStatus === 'match' ? 'Confirm Upload' : 'File Mismatch Warning'}
+        </DialogTitle>
+        <DialogContent>
+          <DialogContentText>
+            {pendingUpload?.matchStatus === 'match' ? (
+              <>File <strong>{pendingUpload?.file.name}</strong> matches Product Type <strong>{pendingUpload?.productCode}</strong>. Proceed?</>
+            ) : (
+              <>File <strong>{pendingUpload?.file.name}</strong> does not match Product Type <strong>{pendingUpload?.productCode}</strong>. Use anyway?</>
+            )}
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleCancelProductTypeUpload}>Cancel</Button>
+          <Button onClick={handleConfirmProductTypeUpload} variant="contained" color={pendingUpload?.matchStatus === 'match' ? 'primary' : 'warning'}>
+            {pendingUpload?.matchStatus === 'match' ? 'Proceed' : 'Yes, Use This File'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Product Type File Preview Modal */}
+      <ProductTypeFilePreview
+        open={isPtPreviewOpen}
+        onClose={handleClosePtPreview}
+        loading={ptPreviewLoading}
+        error={ptPreviewError}
+        data={ptPreviewData}
+      />
 
       {showPreview && selectedTemplate && templateType === 'product' && (
         <TemplatePreview template={selectedTemplate as AmazonProductType} onClose={() => setShowPreview(false)} />

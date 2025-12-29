@@ -15,7 +15,11 @@ import DesignOptionsPage from './pages/DesignOptionsPage'
 import CustomersPage from './pages/CustomersPage'
 import OrdersPage from './pages/OrdersPage'
 import PricingCalculator from './pages/PricingCalculator'
-import TemplatesPage from './pages/TemplatesPage'
+
+import AmazonTemplatesPage from './pages/AmazonTemplatesPage'
+import EbayTemplatesPage from './pages/EbayTemplatesPage'
+import ReverbTemplatesPage from './pages/ReverbTemplatesPage'
+import EtsyTemplatesPage from './pages/EtsyTemplatesPage'
 import ExportPage from './pages/ExportPage'
 import SettingsPage from './pages/SettingsPage'
 import ShippingRatesPage from './pages/ShippingRatesPage'
@@ -40,7 +44,10 @@ function App() {
           <Route path="/customers" element={<CustomersPage />} />
           <Route path="/orders" element={<OrdersPage />} />
           <Route path="/pricing" element={<PricingCalculator />} />
-          <Route path="/templates" element={<TemplatesPage />} />
+          <Route path="/templates/amazon" element={<AmazonTemplatesPage />} />
+          <Route path="/templates/ebay" element={<EbayTemplatesPage />} />
+          <Route path="/templates/reverb" element={<ReverbTemplatesPage />} />
+          <Route path="/templates/etsy" element={<EtsyTemplatesPage />} />
           <Route path="/export" element={<ExportPage />} />
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="/settings/shipping-rates" element={<ShippingRatesPage />} />

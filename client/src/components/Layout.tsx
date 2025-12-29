@@ -81,7 +81,17 @@ const menuItems = [
   },
   { text: 'Customers', icon: <PeopleIcon />, path: '/customers' },
   { text: 'Orders', icon: <ShoppingCartIcon />, path: '/orders' },
-  { text: 'Templates', icon: <DescriptionIcon />, path: '/templates' },
+  {
+    text: 'Templates',
+    icon: <DescriptionIcon />,
+    path: '/templates/amazon', // Default to Amazon
+    children: [
+      { text: 'Amazon', icon: <DescriptionIcon />, path: '/templates/amazon' },
+      { text: 'eBay', icon: <DescriptionIcon />, path: '/templates/ebay' },
+      { text: 'Reverb', icon: <DescriptionIcon />, path: '/templates/reverb' },
+      { text: 'Etsy', icon: <DescriptionIcon />, path: '/templates/etsy' },
+    ]
+  },
   { text: 'Export', icon: <FileDownloadIcon />, path: '/export' },
 ]
 
@@ -112,6 +122,11 @@ export default function Layout({ children }: LayoutProps) {
     // Check Suppliers / Materials
     if (['/materials', '/suppliers', '/suppliers-materials'].some(p => location.pathname.startsWith(p))) {
       newOpen['Suppliers / Materials'] = true
+    }
+
+    // Check Templates
+    if (location.pathname.startsWith('/templates')) {
+      newOpen['Templates'] = true
     }
 
     if (Object.keys(newOpen).length > 0) {
