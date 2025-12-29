@@ -1423,9 +1423,22 @@ export default function AmazonTemplatesPage() {
                   </TableRow>
                 </TableHead>
                 <TableBody>
-                  {equipmentTypes
-                    .filter(et => (et as any).amazon_customization_template_id)
-                    .map((et) => {
+                  {(() => {
+                    const assigned = equipmentTypes.filter(et => (et as any).amazon_customization_template_id)
+
+                    if (assigned.length === 0) {
+                      return (
+                        <TableRow>
+                          <TableCell colSpan={2} align="center">
+                            <Typography variant="body2" color="text.secondary" sx={{ fontStyle: 'italic', py: 2 }}>
+                              No default customization template is currently assigned.
+                            </Typography>
+                          </TableCell>
+                        </TableRow>
+                      )
+                    }
+
+                    return assigned.map((et) => {
                       const assignedId = (et as any).amazon_customization_template_id as number
                       return (
                         <TableRow key={et.id}>
@@ -1433,7 +1446,8 @@ export default function AmazonTemplatesPage() {
                           <TableCell>{et.name}</TableCell>
                         </TableRow>
                       )
-                    })}
+                    })
+                  })()}
                 </TableBody>
               </Table>
             </TableContainer>

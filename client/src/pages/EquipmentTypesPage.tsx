@@ -10,7 +10,8 @@ import EditIcon from '@mui/icons-material/Edit'
 import AddIcon from '@mui/icons-material/Add'
 import SettingsIcon from '@mui/icons-material/Settings'
 import DesignServicesIcon from '@mui/icons-material/DesignServices'
-import { equipmentTypesApi, pricingApi, designOptionsApi, settingsApi } from '../services/api'
+import { equipmentTypesApi, pricingApi, designOptionsApi, settingsApi, templatesApi } from '../services/api'
+import type { EquipmentTypeProductTypeLink } from '../services/api'
 import type { EquipmentType, PricingOption, DesignOption, AmazonCustomizationTemplate } from '../types'
 
 
@@ -30,6 +31,7 @@ export default function EquipmentTypesPage() {
   const [name, setName] = useState('')
   const [allCustomizationTemplates, setAllCustomizationTemplates] = useState<AmazonCustomizationTemplate[]>([])
   const [selectedTemplateId, setSelectedTemplateId] = useState<number | null>(null)
+  const [productTypeLinks, setProductTypeLinks] = useState<EquipmentTypeProductTypeLink[]>([])
 
 
 
@@ -69,11 +71,21 @@ export default function EquipmentTypesPage() {
     setAllCustomizationTemplates(data)
   }
 
+  const loadProductTypeLinks = async () => {
+    try {
+      const data = await templatesApi.listEquipmentTypeLinks()
+      setProductTypeLinks(data)
+    } catch (e) {
+      console.error('Failed to load equipment type links', e)
+    }
+  }
+
   useEffect(() => {
     loadEquipmentTypes()
     loadPricingOptions()
     loadDesignOptions()
     loadCustomizationTemplates()
+    loadProductTypeLinks()
   }, [])
 
   const handleOpenDialog = (equipmentType?: EquipmentType) => {
@@ -170,7 +182,33 @@ export default function EquipmentTypesPage() {
           <TableBody>
             {equipmentTypes.map((et) => (
               <TableRow key={et.id}>
-                <TableCell>{et.name}</TableCell>
+                <TableCell>
+                  <Typography variant="body2" sx={{ fontWeight: 'bold' }}>{et.name}</Typography>
+                  <Box sx={{ mt: 0.5, display: 'flex', gap: 0.5, flexWrap: 'wrap' }}>
+                    {(() => {
+                      const assigned = productTypeLinks.some(l => l.equipment_type_id === et.id)
+                      return (
+                        <Chip
+                          label={`Amazon Product Type: ${assigned ? 'Assigned' : 'Not assigned'}`}
+                          size="small"
+                          color={assigned ? 'success' : 'default'}
+                          variant="outlined"
+                        />
+                      )
+                    })()}
+                    {(() => {
+                      const assigned = !!(et as any).amazon_customization_template_id
+                      return (
+                        <Chip
+                          label={`Amazon Customization: ${assigned ? 'Assigned' : 'Not assigned'}`}
+                          size="small"
+                          color={assigned ? 'success' : 'default'}
+                          variant="outlined"
+                        />
+                      )
+                    })()}
+                  </Box>
+                </TableCell>
                 <TableCell>
                   <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap' }}>
                     {(equipmentTypeDesignOptions[et.id] || []).map((option) => (
