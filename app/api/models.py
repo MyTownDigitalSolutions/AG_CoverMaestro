@@ -296,6 +296,12 @@ def create_model(data: ModelCreate, db: Session = Depends(get_db)):
 
 @router.put("/{id}", response_model=ModelResponse)
 def update_model(id: int, data: ModelCreate, db: Session = Depends(get_db)):
+    print("=" * 80)
+    print("🔥🔥🔥 UPDATE_MODEL HIT 🔥🔥🔥")
+    print(f"Model ID: {id}")
+    print(f"Data received: name={data.name}, width={data.width}, depth={data.depth}, height={data.height}")
+    print("=" * 80)
+    
     model = db.query(Model).filter(Model.id == id).first()
     if not model:
         raise HTTPException(status_code=404, detail="Model not found")
@@ -406,73 +412,28 @@ def update_model(id: int, data: ModelCreate, db: Session = Depends(get_db)):
         # PRICING LOGIC (OPTIONAL - NEVER BLOCKS SAVE)
         # ========================================
         try:
-            print("[PRICING] Checking if recalculation needed...")
-            
-            # Get last pricing snapshot to detect changes
-            last_snapshot = db.query(ModelPricingSnapshot).filter(
-                ModelPricingSnapshot.model_id == model.id,
-                ModelPricingSnapshot.marketplace == "amazon"
-            ).order_by(ModelPricingSnapshot.created_at.desc()).first()
-            
-            # Determine if pricing should be recalculated
-            should_recalculate = False
-            recalc_reason = None
-            
-            # Check if we have sufficient data for pricing
+            # Check if we have dimensions for pricing
             has_dimensions = (
                 model.width and model.width > 0 and
                 model.depth and model.depth > 0 and
                 model.height and model.height > 0
             )
-            has_surface_area = surface_area and surface_area > 0
             
-            if not has_dimensions or not has_surface_area:
-                print(f"[PRICING] Skipped – insufficient dimensions (w={model.width}, d={model.depth}, h={model.height}, sa={surface_area})")
-                should_recalculate = False
-            elif not last_snapshot:
-                # No pricing exists yet, but we now have dimensions
-                should_recalculate = True
-                recalc_reason = "No pricing snapshot exists and dimensions are now available"
-                print(f"[PRICING] {recalc_reason}")
+            if not has_dimensions:
+                print(f"[PRICING] Skipped – insufficient dimensions (w={model.width}, d={model.depth}, h={model.height})")
             else:
-                # Compare current values to last pricing snapshot inputs
-                print(f"[PRICING] Comparing current values to last snapshot from {last_snapshot.created_at}")
+                # ALWAYS recalculate pricing when dimensions exist
+                # SAVE is the authoritative trigger for pricing
+                print(f"[PRICING] Dimensions present (w={model.width}, d={model.depth}, h={model.height})")
+                print(f"[PRICING] Running baseline recalculation for model ID: {model.id}")
                 
-                # Pricing-relevant fields to check
-                changes = []
-                
-                if last_snapshot.inputs_width != model.width:
-                    changes.append(f"width: {last_snapshot.inputs_width} → {model.width}")
-                if last_snapshot.inputs_depth != model.depth:
-                    changes.append(f"depth: {last_snapshot.inputs_depth} → {model.depth}")
-                if last_snapshot.inputs_height != model.height:
-                    changes.append(f"height: {last_snapshot.inputs_height} → {model.height}")
-                if last_snapshot.inputs_equipment_type_id != model.equipment_type_id:
-                    changes.append(f"equipment_type_id: {last_snapshot.inputs_equipment_type_id} → {model.equipment_type_id}")
-                
-                # Check optional fields for changes (handle None comparisons)
-                if last_snapshot.inputs_top_depth_in != model.top_depth_in:
-                    changes.append(f"top_depth_in: {last_snapshot.inputs_top_depth_in} → {model.top_depth_in}")
-                if last_snapshot.inputs_angle_drop_in != model.angle_drop_in:
-                    changes.append(f"angle_drop_in: {last_snapshot.inputs_angle_drop_in} → {model.angle_drop_in}")
-                if last_snapshot.inputs_handle_location_option_id != model.handle_location_option_id:
-                    changes.append(f"handle_location_option_id: {last_snapshot.inputs_handle_location_option_id} → {model.handle_location_option_id}")
-                if last_snapshot.inputs_angle_type_option_id != model.angle_type_option_id:
-                    changes.append(f"angle_type_option_id: {last_snapshot.inputs_angle_type_option_id} → {model.angle_type_option_id}")
-                
-                if changes:
-                    should_recalculate = True
-                    recalc_reason = f"Pricing-relevant fields changed: {', '.join(changes)}"
-                    print(f"[PRICING][UPDATE] changed_fields={', '.join(changes)}")
-                else:
-                    print("[PRICING][UPDATE] No pricing-relevant changes detected - skipping recalculation")
-            
-            # Conditional pricing recalculation
-            if should_recalculate:
-                print(f"[PRICING][UPDATE] running baseline recalculation - Reason: {recalc_reason}")
                 try:
                     # Use 'amazon' marketplace to match what "Recalculate Baseline (Amazon)" button uses
                     PricingCalculator(db).calculate_model_prices(model.id, marketplace="amazon")
+                    
+                    # CRITICAL: Commit pricing snapshots to make them visible
+                    db.commit()
+                    print("[PRICING] Pricing snapshots committed to database")
                     
                     # Query the created snapshots for logging
                     created_snapshots = db.query(ModelPricingSnapshot).filter(
@@ -480,9 +441,10 @@ def update_model(id: int, data: ModelCreate, db: Session = Depends(get_db)):
                         ModelPricingSnapshot.marketplace == "amazon"
                     ).order_by(ModelPricingSnapshot.created_at.desc()).limit(4).all()
                     
-                    print(f"[PRICING][UPDATE] Recalculation successful - created/updated {len(created_snapshots)} snapshots")
+                    print(f"[PRICING] Recalculation successful - created/updated {len(created_snapshots)} snapshots")
                     for snapshot in created_snapshots:
-                        print(f"[PRICING][UPDATE] wrote snapshot id={snapshot.id}, variant={snapshot.variant_key}, created_at={snapshot.created_at}")
+                        print(f"[PRICING] Snapshot: id={snapshot.id}, variant={snapshot.variant_key}, created_at={snapshot.created_at}")
+                        
                 except Exception as pricing_error:
                     # Log but DO NOT block (model already saved)
                     print(f"[PRICING] Recalculation failed: {str(pricing_error)}")
