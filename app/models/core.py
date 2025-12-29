@@ -84,6 +84,9 @@ class Model(Base):
     handle_location_option = relationship("DesignOption", foreign_keys=[handle_location_option_id])
     angle_type_option = relationship("DesignOption", foreign_keys=[angle_type_option_id])
     
+    # Marketplace listings
+    marketplace_listings = relationship("MarketplaceListing", back_populates="model", cascade="all, delete-orphan")
+    
     __table_args__ = (UniqueConstraint('series_id', 'name', name='uq_model_series_name'),)
 
 class Material(Base):
@@ -435,6 +438,27 @@ class ModelPricingHistory(Base):
     
     __table_args__ = (
         Index('ix_model_pricing_history_lookup', 'model_id', 'marketplace', 'variant_key', 'calculated_at'),
+    )
+
+class MarketplaceListing(Base):
+    __tablename__ = "marketplace_listings"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    model_id = Column(Integer, ForeignKey("models.id", ondelete="CASCADE"), nullable=False)
+    marketplace = Column(String(20), nullable=False)
+    external_id = Column(String(64), nullable=False)
+    listing_url = Column(String, nullable=True)
+    status = Column(String(20), nullable=True)
+    parent_external_id = Column(String(64), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    
+    model = relationship("Model", back_populates="marketplace_listings")
+    
+    __table_args__ = (
+        UniqueConstraint('model_id', 'marketplace', 'external_id', name='uq_model_marketplace_external_id'),
+        Index('ix_marketplace_listings_model_id', 'model_id'),
+        Index('ix_marketplace_listings_marketplace_external_id', 'marketplace', 'external_id')
     )
 
 # Post-class relationship definitions to handle forward references

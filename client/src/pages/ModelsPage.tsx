@@ -775,10 +775,17 @@ export default function ModelsPage() {
     top_handle_length_in: null as number | null,
     top_handle_height_in: null as number | null,
     top_handle_rear_edge_to_center_in: null as number | null,
-    model_notes: ''  // PART B: Universal model notes field
+    model_notes: '',  // PART B: Universal model notes field
+    selectedMarketplace: 'amazon',
+    marketplace_listings_amazon_external_id: '',
+    marketplace_listings_ebay_external_id: '',
+    marketplace_listings_reverb_external_id: '',
+    marketplace_listings_etsy_external_id: ''
   })
 
   const [textOptionValues, setTextOptionValues] = useState<Record<number, string>>({})
+  const [validationErrors, setValidationErrors] = useState<string[]>([])
+  const [isSaving, setIsSaving] = useState(false)
 
   const ALLOWED_HANDLE_TYPES = new Set([
     'guitar amplifier',
@@ -815,16 +822,7 @@ export default function ModelsPage() {
       equipmentTypesApi.getDesignOptions(formData.equipment_type_id)
         .then(options => {
           setAvailableDesignOptions(options)
-
-          // STEP 1: Default Angle Type to "No Angle" if not already set
-          if (!formData.angle_type_option_id) {
-            const noAngleOption = options.find(o =>
-              o.option_type === 'angle_type' && o.name === 'No Angle'
-            )
-            if (noAngleOption) {
-              setFormData(prev => ({ ...prev, angle_type_option_id: noAngleOption.id }))
-            }
-          }
+          // No auto-selection of angle type - user must explicitly choose
         })
         .catch(err => {
           console.error("Failed to load design options", err)
@@ -904,6 +902,11 @@ export default function ModelsPage() {
   }
 
   const handleSave = async () => {
+    // Validate minimum requirements first
+    if (!validateForm()) {
+      return  // Prevent save if validation fails
+    }
+
     // STEP 4: SAVE PAYLOAD - Include design_option_values
     const design_option_values: Record<number, string> = {}
 
@@ -920,35 +923,101 @@ export default function ModelsPage() {
       handle_width: formData.handle_width || undefined,
       image_url: formData.image_url || undefined,
       sku_override: formData.sku_override.trim() !== '' ? formData.sku_override.trim() : null,
-      handle_location: formData.handle_location,
-      angle_type: formData.angle_type,
+      // Only send handle_location if user selected a value (not placeholder 'none')
+      handle_location: formData.handle_location && formData.handle_location !== 'none'
+        ? formData.handle_location
+        : undefined,
+      // Only send angle_type if user selected a value (not placeholder 'No Angle')  
+      angle_type: formData.angle_type && formData.angle_type !== 'No Angle'
+        ? formData.angle_type
+        : undefined,
       handle_location_option_id: formData.handle_location_option_id,
       angle_type_option_id: formData.angle_type_option_id,
       top_handle_length_in: formData.top_handle_length_in,
       top_handle_height_in: formData.top_handle_height_in,
       top_handle_rear_edge_to_center_in: formData.top_handle_rear_edge_to_center_in,
       model_notes: formData.model_notes || null,  // PART B: Include model notes
-      design_option_values: design_option_values
+      design_option_values: design_option_values,
+      marketplace_listings: [
+        formData.marketplace_listings_amazon_external_id && {
+          marketplace: 'amazon',
+          external_id: formData.marketplace_listings_amazon_external_id.trim()
+        },
+        formData.marketplace_listings_ebay_external_id && {
+          marketplace: 'ebay',
+          external_id: formData.marketplace_listings_ebay_external_id.trim()
+        },
+        formData.marketplace_listings_reverb_external_id && {
+          marketplace: 'reverb',
+          external_id: formData.marketplace_listings_reverb_external_id.trim()
+        },
+        formData.marketplace_listings_etsy_external_id && {
+          marketplace: 'etsy',
+          external_id: formData.marketplace_listings_etsy_external_id.trim()
+        }
+      ].filter(Boolean)
     } as any
 
-    // STEP 4: Temporary logging for verification
+    // Console logs for verification
+    console.log('[SAVE] marketplace_listings', data.marketplace_listings)
+    console.log('[SAVE] marketplace_listings', data.marketplace_listings)
     console.log('[SAVE] design_option_values', data.design_option_values)
     console.log('[ModelsPage] FULL PAYLOAD:', JSON.stringify(data, null, 2))
 
-    let savedModel: Model
-    if (editingModel) {
-      savedModel = await modelsApi.update(editingModel.id, data)
-      console.log('[ModelsPage] After save refetch (update response):', savedModel)
-      setModels(prev => prev.map(m => m.id === savedModel.id ? savedModel : m))
-      setEditingModel(savedModel)
-    } else {
-      savedModel = await modelsApi.create(data)
-      console.log('[ModelsPage] After save refetch (create response):', savedModel)
-      setModels(prev => [...prev, savedModel])
+    setIsSaving(true)  // Disable save button
+
+    try {
+      let savedModel: Model
+
+      console.log(`[ModelsPage] Sending ${editingModel ? 'UPDATE' : 'CREATE'} request...`)
+
+      if (editingModel) {
+        savedModel = await modelsApi.update(editingModel.id, data)
+        console.log('[ModelsPage] UPDATE response received:', savedModel)
+        setModels(prev => prev.map(m => m.id === savedModel.id ? savedModel : m))
+        setEditingModel(savedModel)
+        alert('Model updated successfully!')  // TODO: Replace with toast/snackbar
+      } else {
+        savedModel = await modelsApi.create(data)
+        console.log('[ModelsPage] CREATE response received:', savedModel)
+        setModels(prev => [...prev, savedModel])
+        alert('Model saved successfully!')  // TODO: Replace with toast/snackbar
+      }
+
+      // Success: close modal and refresh
+      setDialogOpen(false)
+      resetForm()
+      loadData()  // Refresh full list to ensure consistency
+
+    } catch (error: any) {
+      // Error: keep modal open and show error
+      console.error('[ModelsPage] SAVE FAILED:', error)
+
+      let errorMessage = 'Save failed: Unknown error'
+
+      if (error.response) {
+        console.error('[ModelsPage] Error response status:', error.response.status)
+        console.error('[ModelsPage] Error response data:', error.response.data)
+
+        if (error.response.data?.detail) {
+          if (typeof error.response.data.detail === 'string') {
+            errorMessage = `Save failed: ${error.response.data.detail}`
+          } else if (error.response.data.detail.errors) {
+            errorMessage = `Save failed: ${error.response.data.detail.errors.join(', ')}`
+          } else if (error.response.data.detail.message) {
+            errorMessage = `Save failed: ${error.response.data.detail.message}`
+          }
+        }
+      } else if (error.message) {
+        errorMessage = `Save failed: ${error.message}`
+      }
+
+      alert(errorMessage)  // TODO: Replace with toast/snackbar
+      // DO NOT close modal - keep it open so user can fix the error
+
+    } finally {
+      setIsSaving(false)  // Re-enable save button
     }
-    setDialogOpen(false)
-    resetForm()
-    loadData()
   }
 
   const handleDeleteClick = (id: number) => {
@@ -985,9 +1054,15 @@ export default function ModelsPage() {
       top_handle_length_in: null,
       top_handle_height_in: null,
       top_handle_rear_edge_to_center_in: null,
-      model_notes: ''  // PART B: Reset model notes
+      model_notes: '',  // PART B: Reset model notes
+      selectedMarketplace: 'amazon',
+      marketplace_listings_amazon_external_id: '',
+      marketplace_listings_ebay_external_id: '',
+      marketplace_listings_reverb_external_id: '',
+      marketplace_listings_etsy_external_id: ''
     })
     setTextOptionValues({})
+    setValidationErrors([])  // Clear validation errors
     // Clear textOptionValues on reset
     setEditingModel(null)
   }
@@ -1013,8 +1088,16 @@ export default function ModelsPage() {
       top_handle_length_in: model.top_handle_length_in || null,
       top_handle_height_in: model.top_handle_height_in || null,
       top_handle_rear_edge_to_center_in: model.top_handle_rear_edge_to_center_in || null,
-      model_notes: model.model_notes || ''  // PART B: Load model notes
+      model_notes: model.model_notes || '',  // PART B: Load model notes
+      selectedMarketplace: 'amazon',
+      marketplace_listings_amazon_external_id: model.marketplace_listings?.find(ml => ml.marketplace === 'amazon')?.external_id || '',
+      marketplace_listings_ebay_external_id: model.marketplace_listings?.find(ml => ml.marketplace === 'ebay')?.external_id || '',
+      marketplace_listings_reverb_external_id: model.marketplace_listings?.find(ml => ml.marketplace === 'reverb')?.external_id || '',
+      marketplace_listings_etsy_external_id: model.marketplace_listings?.find(ml => ml.marketplace === 'etsy')?.external_id || ''
     })
+
+    // Console log for load
+    console.log('[LOAD] marketplace_listings', model.marketplace_listings || [])
 
     // STEP 5: LOAD / EDIT - Populate textOptionValues from design_option_values
     const loadedTextOptions: Record<number, string> = {}
@@ -1055,8 +1138,9 @@ export default function ModelsPage() {
     return angleTypeOptions.find(o => o.id === formData.angle_type_option_id)
   }, [angleTypeOptions, formData.angle_type_option_id])
 
-  const angleTypeName = selectedAngleTypeOption?.name ?? 'No Angle'
-  const hasAngle = angleTypeName !== 'No Angle'
+  const angleTypeName = selectedAngleTypeOption?.name ?? null
+  const hasAngleSelection = !!angleTypeName
+  const hasAngle = hasAngleSelection && angleTypeName !== 'No Angle'
 
   // Separate Angle Drop and Top Depth from generic text options
   const angleDropOption = useMemo(() =>
@@ -1113,6 +1197,24 @@ export default function ModelsPage() {
       handleMeasurementOptions['Side Handle Rear Edge to Center']
     return !!hasAnySideOption
   }, [selectedHandleLocationName, handleMeasurementOptions])
+
+  // Minimum Save Requirements Validation
+  const isFormValid = useMemo(() => {
+    return !!(
+      formData.series_id &&
+      formData.name.trim() !== '' &&
+      formData.equipment_type_id
+    )
+  }, [formData.series_id, formData.name, formData.equipment_type_id])
+
+  const validateForm = () => {
+    const errors: string[] = []
+    if (!formData.series_id) errors.push('Series is required')
+    if (!formData.name.trim()) errors.push('Model name is required')
+    if (!formData.equipment_type_id) errors.push('Equipment type is required')
+    setValidationErrors(errors)
+    return errors.length === 0
+  }
 
   return (
     <Box>
@@ -1270,6 +1372,15 @@ export default function ModelsPage() {
       >
         <DialogTitle>{editingModel ? 'Edit Model' : 'Add Model'}</DialogTitle>
         <DialogContent>
+          {validationErrors.length > 0 && (
+            <Box sx={{ mb: 2, p: 2, bgcolor: 'error.light', borderRadius: 1 }}>
+              {validationErrors.map((error, index) => (
+                <Typography key={index} variant="body2" color="error.dark">
+                  • {error}
+                </Typography>
+              ))}
+            </Box>
+          )}
           <Grid container spacing={2} sx={{ mt: 1 }}>
             <Grid item xs={12}>
               <FormControl fullWidth>
@@ -1330,6 +1441,147 @@ export default function ModelsPage() {
                 helperText="If set, exports will use this SKU instead of the generated SKU."
               />
             </Grid>
+
+            {/* Compact Marketplace Listings Section */}
+            <Grid item xs={12} sx={{ mt: 2 }}>
+              <Typography variant="subtitle2" gutterBottom>
+                Marketplace Listings
+              </Typography>
+              <Box sx={{ display: 'flex', gap: 2, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+                <FormControl size="small" sx={{ minWidth: 120 }}>
+                  <InputLabel>Marketplace</InputLabel>
+                  <Select
+                    value={formData.selectedMarketplace || 'amazon'}
+                    label="Marketplace"
+                    onChange={(e) => setFormData({ ...formData, selectedMarketplace: e.target.value })}
+                  >
+                    <MenuItem value="amazon">Amazon</MenuItem>
+                    <MenuItem value="ebay">eBay</MenuItem>
+                    <MenuItem value="reverb">Reverb</MenuItem>
+                    <MenuItem value="etsy">Etsy</MenuItem>
+                  </Select>
+                </FormControl>
+                <TextField
+                  size="small"
+                  label={
+                    formData.selectedMarketplace === 'amazon' ? 'Amazon ASIN' :
+                      formData.selectedMarketplace === 'ebay' ? 'eBay Item Number' :
+                        formData.selectedMarketplace === 'reverb' ? 'Reverb Listing ID' :
+                          'Etsy Listing ID'
+                  }
+                  value={
+                    formData.selectedMarketplace === 'amazon' ? formData.marketplace_listings_amazon_external_id :
+                      formData.selectedMarketplace === 'ebay' ? formData.marketplace_listings_ebay_external_id :
+                        formData.selectedMarketplace === 'reverb' ? formData.marketplace_listings_reverb_external_id :
+                          formData.marketplace_listings_etsy_external_id
+                  }
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    if (formData.selectedMarketplace === 'amazon') {
+                      setFormData({ ...formData, marketplace_listings_amazon_external_id: value });
+                    } else if (formData.selectedMarketplace === 'ebay') {
+                      setFormData({ ...formData, marketplace_listings_ebay_external_id: value });
+                    } else if (formData.selectedMarketplace === 'reverb') {
+                      setFormData({ ...formData, marketplace_listings_reverb_external_id: value });
+                    } else {
+                      setFormData({ ...formData, marketplace_listings_etsy_external_id: value });
+                    }
+                  }}
+                  sx={{ width: 220 }}
+                />
+              </Box>
+
+              {/* List of saved marketplace IDs */}
+              {(formData.marketplace_listings_amazon_external_id || formData.marketplace_listings_ebay_external_id ||
+                formData.marketplace_listings_reverb_external_id || formData.marketplace_listings_etsy_external_id) && (
+                  <Box sx={{ mt: 1.5, ml: 1 }}>
+                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
+                      Current Listings:
+                    </Typography>
+                    {formData.marketplace_listings_amazon_external_id && (
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
+                        <Typography variant="body2">
+                          <strong>Amazon:</strong> {formData.marketplace_listings_amazon_external_id}
+                        </Typography>
+                        <IconButton
+                          size="small"
+                          onClick={() => {
+                            setFormData({
+                              ...formData,
+                              marketplace_listings_amazon_external_id: '',
+                              selectedMarketplace: 'amazon'
+                            });
+                          }}
+                          sx={{ p: 0.5 }}
+                        >
+                          <DeleteIcon fontSize="small" />
+                        </IconButton>
+                      </Box>
+                    )}
+                    {formData.marketplace_listings_ebay_external_id && (
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
+                        <Typography variant="body2">
+                          <strong>eBay:</strong> {formData.marketplace_listings_ebay_external_id}
+                        </Typography>
+                        <IconButton
+                          size="small"
+                          onClick={() => {
+                            setFormData({
+                              ...formData,
+                              marketplace_listings_ebay_external_id: '',
+                              selectedMarketplace: 'ebay'
+                            });
+                          }}
+                          sx={{ p: 0.5 }}
+                        >
+                          <DeleteIcon fontSize="small" />
+                        </IconButton>
+                      </Box>
+                    )}
+                    {formData.marketplace_listings_reverb_external_id && (
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
+                        <Typography variant="body2">
+                          <strong>Reverb:</strong> {formData.marketplace_listings_reverb_external_id}
+                        </Typography>
+                        <IconButton
+                          size="small"
+                          onClick={() => {
+                            setFormData({
+                              ...formData,
+                              marketplace_listings_reverb_external_id: '',
+                              selectedMarketplace: 'reverb'
+                            });
+                          }}
+                          sx={{ p: 0.5 }}
+                        >
+                          <DeleteIcon fontSize="small" />
+                        </IconButton>
+                      </Box>
+                    )}
+                    {formData.marketplace_listings_etsy_external_id && (
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
+                        <Typography variant="body2">
+                          <strong>Etsy:</strong> {formData.marketplace_listings_etsy_external_id}
+                        </Typography>
+                        <IconButton
+                          size="small"
+                          onClick={() => {
+                            setFormData({
+                              ...formData,
+                              marketplace_listings_etsy_external_id: '',
+                              selectedMarketplace: 'etsy'
+                            });
+                          }}
+                          sx={{ p: 0.5 }}
+                        >
+                          <DeleteIcon fontSize="small" />
+                        </IconButton>
+                      </Box>
+                    )}
+                  </Box>
+                )}
+            </Grid>
+
             <Grid item xs={6}>
               <FormControl fullWidth>
                 <InputLabel>Equipment Type</InputLabel>
@@ -1499,11 +1751,22 @@ export default function ModelsPage() {
                     {/* STEP 3: Angle Type - Show after Handle Location selected */}
                     <Grid item xs={12} sx={{ mt: 2 }}>
                       <FormControl fullWidth disabled={angleTypeOptions.length === 0}>
-                        <InputLabel>Angle Type</InputLabel>
+                        <InputLabel id="angle-type-label" shrink>Angle Type</InputLabel>
                         <Select
+                          labelId="angle-type-label"
+                          id="angle-type-select"
                           value={formData.angle_type_option_id || ''}
                           label="Angle Type"
                           onChange={(e) => setFormData({ ...formData, angle_type_option_id: e.target.value ? Number(e.target.value) : null })}
+                          displayEmpty
+                          notched
+                          renderValue={(selected) => {
+                            if (!selected) {
+                              return <span style={{ color: '#9e9e9e', fontStyle: 'italic' }}>Select Angle Type</span>;
+                            }
+                            const selectedOption = angleTypeOptions.find(opt => opt.id === selected);
+                            return selectedOption?.name || '';
+                          }}
                         >
                           {angleTypeOptions.map((opt) => (
                             <MenuItem key={opt.id} value={opt.id}>{opt.name}</MenuItem>
@@ -1593,7 +1856,13 @@ export default function ModelsPage() {
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setDialogOpen(false)}>Close</Button>
-          <Button onClick={handleSave} variant="contained">Save</Button>
+          <Button
+            onClick={handleSave}
+            variant="contained"
+            disabled={!isFormValid || isSaving}
+          >
+            {isSaving ? 'Saving...' : 'Save'}
+          </Button>
         </DialogActions>
       </Dialog>
 
