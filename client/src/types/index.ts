@@ -33,6 +33,18 @@ export interface DesignOption {
   equipment_type_ids?: number[]
 }
 
+export interface MarketplaceListing {
+  id: number
+  model_id: number
+  marketplace: string
+  external_id: string
+  listing_url?: string
+  status?: string
+  parent_external_id?: string
+  created_at: string
+  updated_at: string
+}
+
 export interface Model {
   id: number
   name: string
@@ -57,6 +69,7 @@ export interface Model {
   top_handle_height_in?: number | null
   top_handle_rear_edge_to_center_in?: number | null
   model_notes?: string | null
+  marketplace_listings?: MarketplaceListing[]
 }
 
 export type MaterialType = 'fabric' | 'hardware' | 'packaging'

@@ -86,13 +86,33 @@ class ModelBase(BaseModel):
     top_handle_rear_edge_to_center_in: Optional[float] = None
     model_notes: Optional[str] = None
 
-class ModelCreate(ModelBase):
+class MarketplaceListingBase(BaseModel):
+    marketplace: str
+    external_id: str
+    listing_url: Optional[str] = None
+
+class MarketplaceListingCreate(MarketplaceListingBase):
     pass
+
+class MarketplaceListingResponse(MarketplaceListingBase):
+    id: int
+    model_id: int
+    status: Optional[str] = None
+    parent_external_id: Optional[str] = None
+    created_at: datetime
+    updated_at: datetime
+    
+    class Config:
+        from_attributes = True
+
+class ModelCreate(ModelBase):
+    marketplace_listings: Optional[List[MarketplaceListingCreate]] = []
 
 class ModelResponse(ModelBase):
     id: int
     parent_sku: Optional[str] = None
     surface_area_sq_in: Optional[float] = None
+    marketplace_listings: List[MarketplaceListingResponse] = []
     
     class Config:
         from_attributes = True
