@@ -1496,46 +1496,45 @@ export default function AmazonTemplatesPage() {
           </Paper>
 
           {/* SECTION F: Advanced Slot Assignments */}
-          <Accordion sx={{ mb: 3 }}>
-            <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+          {/* SECTION F: Advanced Slot Assignments */}
+          <Paper sx={{ p: 3, mb: 3 }}>
+            <Box sx={{ mb: 2 }}>
               <Typography variant="h6">Advanced: Customization Slot Assignments (Overrides)</Typography>
-            </AccordionSummary>
-            <AccordionDetails>
-              <Typography variant="body2" color="text.secondary" paragraph>
-                Manage multiple customization templates for a single equipment type (e.g., specific slots).
-                Select an equipment type to view and manage its slots.
-              </Typography>
+            </Box>
+            <Typography variant="body2" color="text.secondary" paragraph>
+              Manage multiple customization templates for a single equipment type (e.g., specific slots).
+              Select an equipment type to view and manage its slots.
+            </Typography>
 
-              <Grid container spacing={2}>
-                <Grid item xs={12} md={6}>
-                  <FormControl fullWidth>
-                    <InputLabel>Select Equipment Type</InputLabel>
-                    <Select
-                      value={slotAssignmentEquipmentTypeId}
-                      onChange={(e) => setSlotAssignmentEquipmentTypeId(e.target.value === '' ? '' : Number(e.target.value))}
-                      label="Select Equipment Type"
-                    >
-                      <MenuItem value=""><em>Select Equipment Type</em></MenuItem>
-                      {equipmentTypes.map(et => (
-                        <MenuItem key={et.id} value={et.id}>{et.name}</MenuItem>
-                      ))}
-                    </Select>
-                  </FormControl>
-                </Grid>
-
-                <Grid item xs={12}>
-                  {slotAssignmentEquipmentTypeId !== '' && (
-                    <Paper variant="outlined" sx={{ p: 2 }}>
-                      <EquipmentTypeCustomizationTemplatesManager
-                        equipmentTypeId={slotAssignmentEquipmentTypeId as number}
-                        equipmentTypeName={getEquipmentTypeName(slotAssignmentEquipmentTypeId as number)}
-                      />
-                    </Paper>
-                  )}
-                </Grid>
+            <Grid container spacing={2}>
+              <Grid item xs={12} md={6}>
+                <FormControl fullWidth>
+                  <InputLabel>Select Equipment Type</InputLabel>
+                  <Select
+                    value={slotAssignmentEquipmentTypeId}
+                    onChange={(e) => setSlotAssignmentEquipmentTypeId(e.target.value === '' ? '' : Number(e.target.value))}
+                    label="Select Equipment Type"
+                  >
+                    <MenuItem value=""><em>Select Equipment Type</em></MenuItem>
+                    {equipmentTypes.map(et => (
+                      <MenuItem key={et.id} value={et.id}>{et.name}</MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
               </Grid>
-            </AccordionDetails>
-          </Accordion>
+
+              <Grid item xs={12}>
+                {slotAssignmentEquipmentTypeId !== '' && (
+                  <Paper variant="outlined" sx={{ p: 2 }}>
+                    <EquipmentTypeCustomizationTemplatesManager
+                      equipmentTypeId={slotAssignmentEquipmentTypeId as number}
+                      equipmentTypeName={getEquipmentTypeName(slotAssignmentEquipmentTypeId as number)}
+                    />
+                  </Paper>
+                )}
+              </Grid>
+            </Grid>
+          </Paper>
 
         </Box >
       )
