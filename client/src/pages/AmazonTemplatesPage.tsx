@@ -1242,7 +1242,7 @@ export default function AmazonTemplatesPage() {
       {templateType === 'customization' && (
         <Box>
 
-          {/* Import / Update Section - Customization */}
+          {/* SECTION A: Import New Customization Template */}
           <Paper sx={{ p: 3, mb: 3 }}>
             <Box sx={{ mb: 2 }}>
               <Typography variant="h6">Import New Customization Template</Typography>
@@ -1261,200 +1261,12 @@ export default function AmazonTemplatesPage() {
                 </Button>
               </Grid>
             </Grid>
-
-            {customizationTemplates.length > 0 && (
-              <>
-                <Divider sx={{ my: 3 }} />
-                <Typography variant="h6" gutterBottom>Update Existing Customization Template</Typography>
-                <Grid container spacing={2} alignItems="center">
-                  <Grid item xs={12} md={4}>
-                    <FormControl fullWidth>
-                      <InputLabel>Select Customization Template</InputLabel>
-                      <Select
-                        value={selectedCustomizationId}
-                        label="Select Customization Template"
-                        onChange={(e) => setSelectedCustomizationId(e.target.value as number)}
-                      >
-                        {customizationTemplates.map((t) => (
-                          <MenuItem key={t.id} value={t.id}>{t.original_filename}</MenuItem>
-                        ))}
-                      </Select>
-                    </FormControl>
-                  </Grid>
-                  <Grid item xs={12} md={4}>
-                    <Button
-                      variant="outlined"
-                      component="label"
-                      color="warning"
-                      startIcon={uploading ? <CircularProgress size={20} /> : <RefreshIcon />}
-                      disabled={uploading || selectedCustomizationId === ''}
-                    >
-                      Upload Updated File
-                      <input type="file" hidden accept=".xlsx,.xls" onChange={(e) => handleCustomizationFileSelect(e, true)} />
-                    </Button>
-                  </Grid>
-                </Grid>
-              </>
-            )}
             {error && <Alert severity="error" sx={{ mt: 2 }}>{error}</Alert>}
             {success && <Alert severity="success" sx={{ mt: 2 }}>{success}</Alert>}
           </Paper>
 
-          {/* Linking Section - Customization */}
-          <Paper sx={{ p: 3, mb: 3 }} ref={customLinkingRef} id="customization-linking-section">
-            <Box sx={{ mb: 2 }}>
-              <Typography variant="h6">Assign Customization Template to Equipment Type</Typography>
-              <Typography variant="body2" color="text.secondary">
-                Link an equipment type to a default customization template. This template will be used for all models of this equipment type unless overridden.
-              </Typography>
-            </Box>
-
-            <Grid container spacing={2} alignItems="center">
-              <Grid item xs={12} md={4}>
-                <FormControl fullWidth>
-                  <InputLabel id="cust-link-equip-label">Equipment Type</InputLabel>
-                  <Select
-                    labelId="cust-link-equip-label"
-                    value={custLinkEquipId}
-                    onChange={(e) => setCustLinkEquipId(e.target.value === '' ? '' : Number(e.target.value))}
-                    label="Equipment Type"
-                  >
-                    <MenuItem value=""><em>None</em></MenuItem>
-                    {equipmentTypes.map((et) => (
-                      <MenuItem key={et.id} value={et.id}>{et.name}</MenuItem>
-                    ))}
-                  </Select>
-                </FormControl>
-              </Grid>
-              <Grid item xs={12} md={4}>
-                <FormControl fullWidth>
-                  <InputLabel id="cust-link-templ-label">Customization Template</InputLabel>
-                  <Select
-                    labelId="cust-link-templ-label"
-                    value={custLinkTemplateId}
-                    onChange={(e) => setCustLinkTemplateId(e.target.value === '' ? '' : Number(e.target.value))}
-                    label="Customization Template"
-                  >
-                    <MenuItem value=""><em>None</em></MenuItem>
-                    {customizationTemplates.map((ct) => (
-                      <MenuItem key={ct.id} value={ct.id}>{ct.original_filename}</MenuItem>
-                    ))}
-                  </Select>
-                </FormControl>
-              </Grid>
-              <Grid item xs={12} md={4}>
-                {(() => {
-                  const selectedEt = equipmentTypes.find(e => e.id === custLinkEquipId)
-                  const currentDefaultId = (selectedEt as any)?.amazon_customization_template_id
-                  const isRedundant = custLinkEquipId !== '' && custLinkTemplateId !== '' && currentDefaultId === custLinkTemplateId
-
-                  return (
-                    <Box sx={{ display: 'flex', flexDirection: 'column' }}>
-                      <Button
-                        variant="contained"
-                        startIcon={<LinkIcon />}
-                        onClick={handleCreateCustomizationLink}
-                        disabled={custLinkEquipId === '' || custLinkTemplateId === '' || isRedundant}
-                      >
-                        Assign Template
-                      </Button>
-                      {isRedundant && (
-                        <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, fontStyle: 'italic' }}>
-                          This template is already assigned as the default for the selected equipment type.
-                        </Typography>
-                      )}
-                    </Box>
-                  )
-                })()}
-              </Grid>
-            </Grid>
-          </Paper>
-
-          {/* Advanced: Slot Assignments */}
-          <Accordion sx={{ mb: 3 }}>
-            <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-              <Typography variant="h6">Advanced: Customization Slot Assignments (Overrides)</Typography>
-            </AccordionSummary>
-            <AccordionDetails>
-              <Typography variant="body2" color="text.secondary" paragraph>
-                Manage multiple customization templates for a single equipment type (e.g., specific slots).
-                Select an equipment type to view and manage its slots.
-              </Typography>
-
-              <Grid container spacing={2}>
-                <Grid item xs={12} md={6}>
-                  <FormControl fullWidth>
-                    <InputLabel>Select Equipment Type</InputLabel>
-                    <Select
-                      value={slotAssignmentEquipmentTypeId}
-                      onChange={(e) => setSlotAssignmentEquipmentTypeId(e.target.value === '' ? '' : Number(e.target.value))}
-                      label="Select Equipment Type"
-                    >
-                      <MenuItem value=""><em>Select Equipment Type</em></MenuItem>
-                      {equipmentTypes.map(et => (
-                        <MenuItem key={et.id} value={et.id}>{et.name}</MenuItem>
-                      ))}
-                    </Select>
-                  </FormControl>
-                </Grid>
-
-                <Grid item xs={12}>
-                  {slotAssignmentEquipmentTypeId !== '' && (
-                    <Paper variant="outlined" sx={{ p: 2 }}>
-                      <EquipmentTypeCustomizationTemplatesManager
-                        equipmentTypeId={slotAssignmentEquipmentTypeId as number}
-                        equipmentTypeName={getEquipmentTypeName(slotAssignmentEquipmentTypeId as number)}
-                      />
-                    </Paper>
-                  )}
-                </Grid>
-              </Grid>
-            </AccordionDetails>
-          </Accordion>
-
-          <Paper sx={{ p: 2, mb: 3 }}>
-            <Typography variant="h6" gutterBottom>Overview: Default Template Assignments</Typography>
-            <TableContainer>
-              <Table size="small">
-                <TableHead>
-                  <TableRow>
-                    <TableCell>Assigned Template</TableCell>
-                    <TableCell>Equipment Type</TableCell>
-                  </TableRow>
-                </TableHead>
-                <TableBody>
-                  {(() => {
-                    const assigned = equipmentTypes.filter(et => (et as any).amazon_customization_template_id)
-
-                    if (assigned.length === 0) {
-                      return (
-                        <TableRow>
-                          <TableCell colSpan={2} align="center">
-                            <Typography variant="body2" color="text.secondary" sx={{ fontStyle: 'italic', py: 2 }}>
-                              No default customization template is currently assigned.
-                            </Typography>
-                          </TableCell>
-                        </TableRow>
-                      )
-                    }
-
-                    return assigned.map((et) => {
-                      const assignedId = (et as any).amazon_customization_template_id as number
-                      return (
-                        <TableRow key={et.id}>
-                          <TableCell>{getCustomizationName(assignedId)}</TableCell>
-                          <TableCell>{et.name}</TableCell>
-                        </TableRow>
-                      )
-                    })
-                  })()}
-                </TableBody>
-              </Table>
-            </TableContainer>
-          </Paper>
-
-          {/* List Section - Customization */}
-          <Grid container spacing={3}>
+          {/* SECTION B: Uploaded Customization Templates & Details */}
+          <Grid container spacing={3} sx={{ mb: 3 }}>
             <Grid item xs={12}>
               <Paper sx={{ p: 2 }}>
                 <Typography variant="h6" gutterBottom>Uploaded Customization Templates</Typography>
@@ -1512,7 +1324,7 @@ export default function AmazonTemplatesPage() {
               </Paper>
             </Grid>
 
-            {/* Details Section - Customization */}
+            {/* Details Section - Customization (Kept with List) */}
             <Grid item xs={12}>
               {selectedTemplate && (
                 <Paper sx={{ p: 2 }}>
@@ -1531,6 +1343,200 @@ export default function AmazonTemplatesPage() {
               )}
             </Grid>
           </Grid>
+
+          {/* SECTION C: Update Existing Customization Template */}
+          {customizationTemplates.length > 0 && (
+            <Paper sx={{ p: 3, mb: 3 }}>
+              <Typography variant="h6" gutterBottom>Update Existing Customization Template</Typography>
+              <Grid container spacing={2} alignItems="center">
+                <Grid item xs={12} md={4}>
+                  <FormControl fullWidth>
+                    <InputLabel>Select Customization Template</InputLabel>
+                    <Select
+                      value={selectedCustomizationId}
+                      label="Select Customization Template"
+                      onChange={(e) => setSelectedCustomizationId(e.target.value as number)}
+                    >
+                      {customizationTemplates.map((t) => (
+                        <MenuItem key={t.id} value={t.id}>{t.original_filename}</MenuItem>
+                      ))}
+                    </Select>
+                  </FormControl>
+                </Grid>
+                <Grid item xs={12} md={4}>
+                  <Button
+                    variant="outlined"
+                    component="label"
+                    color="warning"
+                    startIcon={uploading ? <CircularProgress size={20} /> : <RefreshIcon />}
+                    disabled={uploading || selectedCustomizationId === ''}
+                  >
+                    Upload Updated File
+                    <input type="file" hidden accept=".xlsx,.xls" onChange={(e) => handleCustomizationFileSelect(e, true)} />
+                  </Button>
+                </Grid>
+              </Grid>
+            </Paper>
+          )}
+
+          {/* SECTION D: Assign Customization Template to Equipment Type */}
+          <Paper sx={{ p: 3, mb: 3 }} ref={customLinkingRef} id="customization-linking-section">
+            <Box sx={{ mb: 2 }}>
+              <Typography variant="h6">Assign Customization Template to Equipment Type</Typography>
+              <Typography variant="body2" color="text.secondary">
+                Link an equipment type to a default customization template. This template will be used for all models of this equipment type unless overridden.
+              </Typography>
+            </Box>
+
+            <Grid container spacing={2} alignItems="center">
+              {/* Dropdown 1: Customization Template (Swapped: was Pos 2) */}
+              <Grid item xs={12} md={4}>
+                <FormControl fullWidth>
+                  <InputLabel id="cust-link-templ-label">Customization Template</InputLabel>
+                  <Select
+                    labelId="cust-link-templ-label"
+                    value={custLinkTemplateId}
+                    onChange={(e) => setCustLinkTemplateId(e.target.value === '' ? '' : Number(e.target.value))}
+                    label="Customization Template"
+                  >
+                    <MenuItem value=""><em>None</em></MenuItem>
+                    {customizationTemplates.map((ct) => (
+                      <MenuItem key={ct.id} value={ct.id}>{ct.original_filename}</MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              </Grid>
+
+              {/* Dropdown 2: Equipment Type (Swapped: was Pos 1) */}
+              <Grid item xs={12} md={4}>
+                <FormControl fullWidth>
+                  <InputLabel id="cust-link-equip-label">Equipment Type</InputLabel>
+                  <Select
+                    labelId="cust-link-equip-label"
+                    value={custLinkEquipId}
+                    onChange={(e) => setCustLinkEquipId(e.target.value === '' ? '' : Number(e.target.value))}
+                    label="Equipment Type"
+                  >
+                    <MenuItem value=""><em>None</em></MenuItem>
+                    {equipmentTypes.map((et) => (
+                      <MenuItem key={et.id} value={et.id}>{et.name}</MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              </Grid>
+
+              {/* Action Button & Guard */}
+              <Grid item xs={12} md={4}>
+                {(() => {
+                  const selectedEt = equipmentTypes.find(e => e.id === custLinkEquipId)
+                  const currentDefaultId = (selectedEt as any)?.amazon_customization_template_id
+                  const isRedundant = custLinkEquipId !== '' && custLinkTemplateId !== '' && currentDefaultId === custLinkTemplateId
+
+                  return (
+                    <Box sx={{ display: 'flex', flexDirection: 'column' }}>
+                      <Button
+                        variant="contained"
+                        startIcon={<LinkIcon />}
+                        onClick={handleCreateCustomizationLink}
+                        disabled={custLinkEquipId === '' || custLinkTemplateId === '' || isRedundant}
+                      >
+                        Assign Template
+                      </Button>
+                      {isRedundant && (
+                        <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, fontStyle: 'italic' }}>
+                          This template is already assigned as the default for the selected equipment type.
+                        </Typography>
+                      )}
+                    </Box>
+                  )
+                })()}
+              </Grid>
+            </Grid>
+          </Paper>
+
+          {/* SECTION E: Overview Table */}
+          <Paper sx={{ p: 2, mb: 3 }}>
+            <Typography variant="h6" gutterBottom>Overview: Default Template Assignments</Typography>
+            <TableContainer>
+              <Table size="small">
+                <TableHead>
+                  <TableRow>
+                    <TableCell>Assigned Template</TableCell>
+                    <TableCell>Equipment Type</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {(() => {
+                    const assigned = equipmentTypes.filter(et => (et as any).amazon_customization_template_id)
+                    if (assigned.length === 0) {
+                      return (
+                        <TableRow>
+                          <TableCell colSpan={2} align="center">
+                            <Typography variant="body2" color="text.secondary" sx={{ fontStyle: 'italic', py: 2 }}>
+                              No default customization template is currently assigned.
+                            </Typography>
+                          </TableCell>
+                        </TableRow>
+                      )
+                    }
+
+                    return assigned.map((et) => {
+                      const assignedId = (et as any).amazon_customization_template_id as number
+                      return (
+                        <TableRow key={et.id}>
+                          <TableCell>{getCustomizationName(assignedId)}</TableCell>
+                          <TableCell>{et.name}</TableCell>
+                        </TableRow>
+                      )
+                    })
+                  })()}
+                </TableBody>
+              </Table>
+            </TableContainer>
+          </Paper>
+
+          {/* SECTION F: Advanced Slot Assignments */}
+          <Accordion sx={{ mb: 3 }}>
+            <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+              <Typography variant="h6">Advanced: Customization Slot Assignments (Overrides)</Typography>
+            </AccordionSummary>
+            <AccordionDetails>
+              <Typography variant="body2" color="text.secondary" paragraph>
+                Manage multiple customization templates for a single equipment type (e.g., specific slots).
+                Select an equipment type to view and manage its slots.
+              </Typography>
+
+              <Grid container spacing={2}>
+                <Grid item xs={12} md={6}>
+                  <FormControl fullWidth>
+                    <InputLabel>Select Equipment Type</InputLabel>
+                    <Select
+                      value={slotAssignmentEquipmentTypeId}
+                      onChange={(e) => setSlotAssignmentEquipmentTypeId(e.target.value === '' ? '' : Number(e.target.value))}
+                      label="Select Equipment Type"
+                    >
+                      <MenuItem value=""><em>Select Equipment Type</em></MenuItem>
+                      {equipmentTypes.map(et => (
+                        <MenuItem key={et.id} value={et.id}>{et.name}</MenuItem>
+                      ))}
+                    </Select>
+                  </FormControl>
+                </Grid>
+
+                <Grid item xs={12}>
+                  {slotAssignmentEquipmentTypeId !== '' && (
+                    <Paper variant="outlined" sx={{ p: 2 }}>
+                      <EquipmentTypeCustomizationTemplatesManager
+                        equipmentTypeId={slotAssignmentEquipmentTypeId as number}
+                        equipmentTypeName={getEquipmentTypeName(slotAssignmentEquipmentTypeId as number)}
+                      />
+                    </Paper>
+                  )}
+                </Grid>
+              </Grid>
+            </AccordionDetails>
+          </Accordion>
+
         </Box >
       )
       }
