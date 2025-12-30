@@ -7,6 +7,7 @@ import traceback
 import shutil
 import os
 from fastapi import File, UploadFile
+import hashlib
 
 
 from app.database import get_db
@@ -17,7 +18,13 @@ from app.models.core import (
     LaborSetting, MarketplaceFeeRate, VariantProfitSetting, ShippingZone, ShippingDefaultSetting,
     ExportSetting, EquipmentType
 )
-from app.models.templates import AmazonCustomizationTemplate
+from app.models.templates import AmazonCustomizationTemplate, EquipmentTypeCustomizationTemplate
+from app.services.storage_policy import (
+    ensure_storage_dirs_exist,
+    assert_allowed_write_path,
+    get_customization_template_paths,
+    rotate_customization_template_backup,
+)
 from app.schemas.core import (
     MaterialRoleAssignmentCreate, MaterialRoleAssignmentResponse,
     ShippingRateCardCreate, ShippingRateCardResponse, ShippingRateCardUpdate,
@@ -31,7 +38,11 @@ from app.schemas.core import (
     ShippingZoneRateNormalizedResponse, ShippingZoneRateUpsertRequest,
     ShippingDefaultSettingCreate, ShippingDefaultSettingResponse,
     AmazonCustomizationTemplateAssignmentRequest, EquipmentTypeResponse,
-    AmazonCustomizationTemplatePreviewResponse
+    AmazonCustomizationTemplatePreviewResponse,
+    EquipmentTypeCustomizationTemplateAssignRequest,
+    EquipmentTypeCustomizationTemplateItem,
+    EquipmentTypeCustomizationTemplatesResponse,
+    EquipmentTypeCustomizationTemplateSetDefaultRequest
 )
 
 router = APIRouter(prefix="/settings", tags=["settings"])
@@ -598,28 +609,68 @@ def update_export_settings(data: ExportSettingCreate, db: Session = Depends(get_
 
 @router.post("/amazon-customization-templates/upload")
 def upload_amazon_customization_template(file: UploadFile = File(...), db: Session = Depends(get_db)):
-    base_dir = "attached_assets/customization_templates"
-    os.makedirs(base_dir, exist_ok=True)
-    
-    file_path = os.path.join(base_dir, file.filename)
-    
-    with open(file_path, "wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
-        
-    # Get file size
-    file_size = os.path.getsize(file_path)
-    
-    # Save to DB
+    """
+    Upload a new Amazon Customization Template (XLSX).
+
+    Storage policy parity with Product Type Templates:
+    - Canonical path in CUSTOMIZATION_DIR (deterministic, collision-safe)
+    - Single-backup rotation
+    - sha256 verification of persisted bytes
+    - Stores canonical file_path in DB (original_filename preserved for display/download name)
+    """
+    ensure_storage_dirs_exist()
+
+    # Read bytes once (UploadFile stream is consumed when copied)
+    file_bytes = file.file.read()
+    upload_sha256 = hashlib.sha256(file_bytes).hexdigest()
+    mem_size = len(file_bytes)
+
+    # Create DB row first to obtain a stable template_id for canonical naming
     template = AmazonCustomizationTemplate(
         original_filename=file.filename,
-        file_path=file_path,
-        file_size=file_size,
-        upload_date=datetime.utcnow()
+        file_path="",  # Will be updated to canonical path after persistence
+        file_size=mem_size,
+        upload_date=datetime.utcnow(),
     )
     db.add(template)
     db.commit()
     db.refresh(template)
-    
+
+    canonical_path, backup_path = get_customization_template_paths(template.id)
+
+    # Enforce storage policy
+    assert_allowed_write_path(canonical_path)
+    assert_allowed_write_path(backup_path)
+
+    # Rotate previous canonical -> backup (single backup copy)
+    rotate_customization_template_backup(canonical_path, backup_path)
+
+    # Persist to disk
+    with open(canonical_path, "wb") as buffer:
+        buffer.write(file_bytes)
+
+    disk_size = os.path.getsize(canonical_path)
+    with open(canonical_path, "rb") as f:
+        persisted_bytes = f.read()
+    persisted_sha256 = hashlib.sha256(persisted_bytes).hexdigest()
+
+    if upload_sha256 != persisted_sha256:
+        raise HTTPException(status_code=500, detail="Customization template write verification failed (sha256 mismatch).")
+
+    # Update DB with canonical path + final sizes
+    template.file_path = canonical_path
+    template.file_size = disk_size
+    template.upload_date = datetime.utcnow()
+
+    db.commit()
+    db.refresh(template)
+
+    print(
+        f"[CUSTOMIZATION_UPLOAD] template_id={template.id} "
+        f"upload_sha256={upload_sha256} persisted_sha256={persisted_sha256} "
+        f"mem_size={mem_size} disk_size={disk_size} path={canonical_path}"
+    )
+
     return {"message": "Upload successful", "id": template.id, "filename": template.original_filename}
 
 @router.get("/amazon-customization-templates")
@@ -628,52 +679,131 @@ def list_amazon_customization_templates(db: Session = Depends(get_db)):
 
 @router.post("/amazon-customization-templates/{id}/upload")
 def update_amazon_customization_template(id: int, file: UploadFile = File(...), db: Session = Depends(get_db)):
+    """
+    Replace the stored XLSX for an existing Amazon Customization Template.
+
+    Storage policy parity with Product Type Templates:
+    - Writes to canonical path for this template_id
+    - Single-backup rotation
+    - sha256 verification of persisted bytes
+    - Updates DB metadata (original_filename is updated for display/download name)
+    """
+    ensure_storage_dirs_exist()
+
     template = db.query(AmazonCustomizationTemplate).filter(AmazonCustomizationTemplate.id == id).first()
     if not template:
         raise HTTPException(status_code=404, detail="Template not found")
 
-    base_dir = "attached_assets/customization_templates"
-    os.makedirs(base_dir, exist_ok=True)
-    
-    # Overwrite using new filename (or preserve old? User req implies "replace stored file + update metadata")
-    file_path = os.path.join(base_dir, file.filename)
-    
-    with open(file_path, "wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
-        
-    file_size = os.path.getsize(file_path)
-    
+    file_bytes = file.file.read()
+    upload_sha256 = hashlib.sha256(file_bytes).hexdigest()
+    mem_size = len(file_bytes)
+
+    canonical_path, backup_path = get_customization_template_paths(template.id)
+
+    # Enforce storage policy
+    assert_allowed_write_path(canonical_path)
+    assert_allowed_write_path(backup_path)
+
+    # Rotate previous canonical -> backup (single backup copy)
+    rotate_customization_template_backup(canonical_path, backup_path)
+
+    # Persist to disk
+    with open(canonical_path, "wb") as buffer:
+        buffer.write(file_bytes)
+
+    disk_size = os.path.getsize(canonical_path)
+    with open(canonical_path, "rb") as f:
+        persisted_bytes = f.read()
+    persisted_sha256 = hashlib.sha256(persisted_bytes).hexdigest()
+
+    if upload_sha256 != persisted_sha256:
+        raise HTTPException(status_code=500, detail="Customization template write verification failed (sha256 mismatch).")
+
     # Update DB
     template.original_filename = file.filename
-    template.file_path = file_path # Update path in case filename changed
-    template.file_size = file_size
+    template.file_path = canonical_path
+    template.file_size = disk_size
     template.upload_date = datetime.utcnow()
-    
+
     db.commit()
     db.refresh(template)
-    
+
+    print(
+        f"[CUSTOMIZATION_UPDATE] template_id={template.id} "
+        f"upload_sha256={upload_sha256} persisted_sha256={persisted_sha256} "
+        f"mem_size={mem_size} disk_size={disk_size} path={canonical_path}"
+    )
+
     return {"message": "Update successful", "id": template.id, "filename": template.original_filename}
 
 @router.delete("/amazon-customization-templates/{id}")
 def delete_amazon_customization_template(id: int, db: Session = Depends(get_db)):
+    """
+    Delete an Amazon Customization Template.
+
+    Clean slate deletion:
+    - Clears any EquipmentType references (sets amazon_customization_template_id to NULL)
+    - Removes any multi-template assignments (join table rows)
+    - Deletes ALL on-disk artifacts (legacy file_path, canonical, backup)
+    - Deletes DB row
+    - Best-effort file deletion (missing files do not fail the request)
+    """
     template = db.query(AmazonCustomizationTemplate).filter(AmazonCustomizationTemplate.id == id).first()
     if not template:
         raise HTTPException(status_code=404, detail="Template not found")
-        
-    # Check if used? (Optional safeguard, user didn't strictly require it but it's good practice. 
-    # However user said "Additive only... deletion."
-    # We will just delete. If FK is generic logs might complain but it is nullable on EquipmentType.
     
-    # Delete file from disk?
-    if os.path.exists(template.file_path):
-        try:
-            os.remove(template.file_path)
-        except:
-            pass # Ignore file lock issues etc
-            
+    # Step 1: Clear EquipmentType references (single FK)
+    equipment_types = db.query(EquipmentType).filter(
+        EquipmentType.amazon_customization_template_id == template.id
+    ).all()
+    
+    for et in equipment_types:
+        print(f"[CUSTOMIZATION_DELETE] Clearing assignment from EquipmentType id={et.id} name={et.name}")
+        et.amazon_customization_template_id = None
+    
+    # Step 2: Remove multi-template assignments (join table)
+    join_rows = db.query(EquipmentTypeCustomizationTemplate).filter(
+        EquipmentTypeCustomizationTemplate.template_id == template.id
+    ).all()
+    
+    for join_row in join_rows:
+        print(f"[CUSTOMIZATION_DELETE] Removing multi-template assignment: equipment_type_id={join_row.equipment_type_id} slot={join_row.slot}")
+        db.delete(join_row)
+    
+    db.flush()  # Persist reference clearing before file deletion
+    
+    # Step 3: Collect all file paths to delete (use set to avoid duplicates)
+    paths_to_delete = set()
+    
+    # Add legacy stored path
+    if template.file_path:
+        paths_to_delete.add(template.file_path)
+    
+    # Add canonical and backup paths
+    canonical_path, backup_path = get_customization_template_paths(template.id)
+    paths_to_delete.add(canonical_path)
+    paths_to_delete.add(backup_path)
+    
+    # Step 4: Delete files (best-effort)
+    deleted_count = 0
+    for path in paths_to_delete:
+        if os.path.exists(path):
+            try:
+                os.remove(path)
+                deleted_count += 1
+                print(f"[CUSTOMIZATION_DELETE] Deleted file: {path}")
+            except Exception as e:
+                print(f"[CUSTOMIZATION_DELETE] Warning: Could not delete {path}: {e}")
+        else:
+            print(f"[CUSTOMIZATION_DELETE] File not found (skipping): {path}")
+    
+    # Step 5: Delete DB row
     db.delete(template)
     db.commit()
-    return {"message": "Template deleted"}
+    
+    print(f"[CUSTOMIZATION_DELETE] template_id={id} deleted_files={deleted_count}")
+    
+    return {"message": "Template deleted", "deleted_files": deleted_count}
 
 @router.get("/amazon-customization-templates/{id}/download")
 def download_amazon_customization_template(id: int, db: Session = Depends(get_db)):
@@ -742,6 +872,12 @@ def preview_amazon_customization_template(id: int, db: Session = Depends(get_db)
 
 @router.post("/equipment-types/{id}/amazon-customization-template/assign", response_model=EquipmentTypeResponse)
 def assign_amazon_customization_template(id: int, data: AmazonCustomizationTemplateAssignmentRequest, db: Session = Depends(get_db)):
+    """
+    Legacy single-template assignment endpoint (BACKWARD COMPATIBLE).
+    
+    Sets EquipmentType.amazon_customization_template_id (the "primary" template).
+    Also maintains coherence with multi-template system by upserting slot 1.
+    """
     equipment_type = db.query(EquipmentType).filter(EquipmentType.id == id).first()
     if not equipment_type:
         raise HTTPException(status_code=404, detail="Equipment type not found")
@@ -750,8 +886,234 @@ def assign_amazon_customization_template(id: int, data: AmazonCustomizationTempl
         template = db.query(AmazonCustomizationTemplate).filter(AmazonCustomizationTemplate.id == data.template_id).first()
         if not template:
             raise HTTPException(status_code=404, detail="Amazon Customization Template not found")
-            
+    
+    # Set single FK (existing behavior - UNCHANGED)
     equipment_type.amazon_customization_template_id = data.template_id
+    
+    # BACKWARD COMPATIBILITY: Also upsert join table slot 1 to keep systems coherent
+    if data.template_id is not None:
+        # Check if slot 1 already has a different template
+        existing_slot_1 = db.query(EquipmentTypeCustomizationTemplate).filter(
+            EquipmentTypeCustomizationTemplate.equipment_type_id == equipment_type.id,
+            EquipmentTypeCustomizationTemplate.slot == 1
+        ).first()
+        
+        if existing_slot_1:
+            if existing_slot_1.template_id != data.template_id:
+                # Update slot 1 to new template
+                existing_slot_1.template_id = data.template_id
+                existing_slot_1.created_at = datetime.utcnow()
+                print(f"[LEGACY_ASSIGN] Updated slot 1 for equipment_type_id={equipment_type.id} to template_id={data.template_id}")
+        else:
+            # Create new slot 1 assignment
+            new_assignment = EquipmentTypeCustomizationTemplate(
+                equipment_type_id=equipment_type.id,
+                template_id=data.template_id,
+                slot=1,
+                created_at=datetime.utcnow()
+            )
+            db.add(new_assignment)
+            print(f"[LEGACY_ASSIGN] Created slot 1 for equipment_type_id={equipment_type.id} with template_id={data.template_id}")
+    else:
+        # If unsetting the primary template, also remove slot 1
+        existing_slot_1 = db.query(EquipmentTypeCustomizationTemplate).filter(
+            EquipmentTypeCustomizationTemplate.equipment_type_id == equipment_type.id,
+            EquipmentTypeCustomizationTemplate.slot == 1
+        ).first()
+        
+        if existing_slot_1:
+            db.delete(existing_slot_1)
+            print(f"[LEGACY_ASSIGN] Removed slot 1 for equipment_type_id={equipment_type.id}")
+            
     db.commit()
     db.refresh(equipment_type)
     return equipment_type
+
+# ------------------------------------------------------------------
+# 9. Multi-Template Assignment (Slot-based, up to 3 templates)
+# ------------------------------------------------------------------
+
+@router.get("/equipment-types/{equipment_type_id}/amazon-customization-templates", response_model=EquipmentTypeCustomizationTemplatesResponse)
+def list_equipment_type_customization_templates(equipment_type_id: int, db: Session = Depends(get_db)):
+    """
+    List all customization templates assigned to an equipment type (up to 3 slots).
+    Includes default_template_id to indicate which template is the default.
+    """
+    equipment_type = db.query(EquipmentType).filter(EquipmentType.id == equipment_type_id).first()
+    if not equipment_type:
+        raise HTTPException(status_code=404, detail="Equipment type not found")
+    
+    # Query join table for all assignments
+    assignments = db.query(EquipmentTypeCustomizationTemplate).filter(
+        EquipmentTypeCustomizationTemplate.equipment_type_id == equipment_type_id
+    ).order_by(EquipmentTypeCustomizationTemplate.slot).all()
+    
+    # Build response with template details
+    template_items = []
+    for assignment in assignments:
+        template = db.query(AmazonCustomizationTemplate).filter(
+            AmazonCustomizationTemplate.id == assignment.template_id
+        ).first()
+        
+        if template:  # Safety check
+            template_items.append(EquipmentTypeCustomizationTemplateItem(
+                template_id=template.id,
+                slot=assignment.slot,
+                original_filename=template.original_filename,
+                upload_date=template.upload_date
+            ))
+    
+    return EquipmentTypeCustomizationTemplatesResponse(
+        equipment_type_id=equipment_type_id,
+        templates=template_items,
+        default_template_id=equipment_type.amazon_customization_template_id
+    )
+
+@router.post("/equipment-types/{equipment_type_id}/amazon-customization-templates/assign", response_model=EquipmentTypeCustomizationTemplatesResponse)
+def assign_equipment_type_customization_template(
+    equipment_type_id: int,
+    data: EquipmentTypeCustomizationTemplateAssignRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    Assign a customization template to a specific slot (1-3) for an equipment type.
+    
+    - Validates slot is 1, 2, or 3
+    - Validates both equipment type and template exist
+    - If slot already occupied, replaces it (upsert behavior)
+    - Prevents duplicate template assignments across slots
+    """
+    # Validate equipment type exists
+    equipment_type = db.query(EquipmentType).filter(EquipmentType.id == equipment_type_id).first()
+    if not equipment_type:
+        raise HTTPException(status_code=404, detail="Equipment type not found")
+    
+    # Validate template exists
+    template = db.query(AmazonCustomizationTemplate).filter(AmazonCustomizationTemplate.id == data.template_id).first()
+    if not template:
+        raise HTTPException(status_code=404, detail="Template not found")
+    
+    # Validate slot is 1, 2, or 3
+    if data.slot not in [1, 2, 3]:
+        raise HTTPException(status_code=400, detail="Slot must be 1, 2, or 3")
+    
+    # Check if this template is already assigned to a different slot for this equipment type
+    existing_different_slot = db.query(EquipmentTypeCustomizationTemplate).filter(
+        EquipmentTypeCustomizationTemplate.equipment_type_id == equipment_type_id,
+        EquipmentTypeCustomizationTemplate.template_id == data.template_id,
+        EquipmentTypeCustomizationTemplate.slot != data.slot
+    ).first()
+    
+    if existing_different_slot:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Template {data.template_id} is already assigned to slot {existing_different_slot.slot} for this equipment type"
+        )
+    
+    # Check if slot already has an assignment (upsert behavior)
+    existing_slot = db.query(EquipmentTypeCustomizationTemplate).filter(
+        EquipmentTypeCustomizationTemplate.equipment_type_id == equipment_type_id,
+        EquipmentTypeCustomizationTemplate.slot == data.slot
+    ).first()
+    
+    if existing_slot:
+        # Update existing slot
+        existing_slot.template_id = data.template_id
+        existing_slot.created_at = datetime.utcnow()
+        print(f"[MULTI_ASSIGN] Updated equipment_type_id={equipment_type_id} slot={data.slot} to template_id={data.template_id}")
+    else:
+        # Create new assignment
+        new_assignment = EquipmentTypeCustomizationTemplate(
+            equipment_type_id=equipment_type_id,
+            template_id=data.template_id,
+            slot=data.slot,
+            created_at=datetime.utcnow()
+        )
+        db.add(new_assignment)
+        print(f"[MULTI_ASSIGN] Created equipment_type_id={equipment_type_id} slot={data.slot} with template_id={data.template_id}")
+    
+    db.commit()
+    
+    # Return updated list of all assignments
+    return list_equipment_type_customization_templates(equipment_type_id, db)
+
+@router.post("/equipment-types/{equipment_type_id}/amazon-customization-templates/default")
+def set_equipment_type_customization_template_default(
+    equipment_type_id: int,
+    data: EquipmentTypeCustomizationTemplateSetDefaultRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    Set one of the assigned templates as the default for this equipment type.
+    
+    - Validates equipment type exists
+    - Validates template exists
+    - Validates template is currently assigned to this equipment type (in join table)
+    - Sets equipment_type.amazon_customization_template_id to the specified template
+    - Export behavior continues to use amazon_customization_template_id
+    """
+    # Validate equipment type exists
+    equipment_type = db.query(EquipmentType).filter(EquipmentType.id == equipment_type_id).first()
+    if not equipment_type:
+        raise HTTPException(status_code=404, detail="Equipment type not found")
+    
+    # Validate template exists
+    template = db.query(AmazonCustomizationTemplate).filter(AmazonCustomizationTemplate.id == data.template_id).first()
+    if not template:
+        raise HTTPException(status_code=404, detail="Template not found")
+    
+    # Validate template is assigned to this equipment type (must be in join table)
+    assignment = db.query(EquipmentTypeCustomizationTemplate).filter(
+        EquipmentTypeCustomizationTemplate.equipment_type_id == equipment_type_id,
+        EquipmentTypeCustomizationTemplate.template_id == data.template_id
+    ).first()
+    
+    if not assignment:
+        raise HTTPException(status_code=400, detail="Template is not assigned to this equipment type")
+    
+    # Set the default (single FK)
+    equipment_type.amazon_customization_template_id = data.template_id
+    db.commit()
+    
+    print(f"[SET_DEFAULT] equipment_type_id={equipment_type_id} default_template_id={data.template_id} slot={assignment.slot}")
+    
+    return {
+        "message": "Default template set",
+        "equipment_type_id": equipment_type_id,
+        "template_id": data.template_id
+    }
+
+@router.delete("/equipment-types/{equipment_type_id}/amazon-customization-templates/{template_id}")
+def unassign_equipment_type_customization_template(equipment_type_id: int, template_id: int, db: Session = Depends(get_db)):
+    """
+    Remove a specific template assignment from an equipment type.
+    
+    Deletes the join table row(s) for this equipment type + template combination.
+    If the template being unassigned is the current default, clears the default.
+    """
+    # Validate equipment type exists
+    equipment_type = db.query(EquipmentType).filter(EquipmentType.id == equipment_type_id).first()
+    if not equipment_type:
+        raise HTTPException(status_code=404, detail="Equipment type not found")
+    
+    # Find and delete the assignment(s)
+    assignments = db.query(EquipmentTypeCustomizationTemplate).filter(
+        EquipmentTypeCustomizationTemplate.equipment_type_id == equipment_type_id,
+        EquipmentTypeCustomizationTemplate.template_id == template_id
+    ).all()
+    
+    if not assignments:
+        raise HTTPException(status_code=404, detail="Template assignment not found for this equipment type")
+    
+    # If this template is the current default, clear it
+    if equipment_type.amazon_customization_template_id == template_id:
+        equipment_type.amazon_customization_template_id = None
+        print(f"[MULTI_UNASSIGN] Cleared default template for equipment_type_id={equipment_type_id}")
+    
+    for assignment in assignments:
+        print(f"[MULTI_UNASSIGN] Removing equipment_type_id={equipment_type_id} template_id={template_id} slot={assignment.slot}")
+        db.delete(assignment)
+    
+    db.commit()
+    
+    return {"message": "Template unassigned", "removed_slots": [a.slot for a in assignments]}

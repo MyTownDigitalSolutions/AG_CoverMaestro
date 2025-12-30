@@ -158,6 +158,18 @@ export default function ExportPage() {
     return Array.from(missingSet)
   }, [includeCustomization, selectedModels, allModels, allEquipmentTypes])
 
+  const allSelectedModelsMissingCustomization = useMemo(() => {
+    if (selectedModels.size === 0) return false
+    for (const mid of selectedModels) {
+      const model = allModels.find(m => m.id === mid)
+      if (model) {
+        const et = allEquipmentTypes.find(e => e.id === model.equipment_type_id)
+        if (et && et.amazon_customization_template_id) return false
+      }
+    }
+    return true
+  }, [selectedModels, allModels, allEquipmentTypes])
+
   useEffect(() => {
     loadData()
     loadHandle().then(h => { if (h) setBaseDir(h) })
@@ -1884,56 +1896,63 @@ export default function ExportPage() {
               </Table>
             </Box>
           </DialogContent>
-          <DialogActions sx={{ px: 3, py: 2, gap: 1 }}>
-            <Button onClick={() => setPreviewOpen(false)}>Close</Button>
-            <Box sx={{ flex: 1 }} />
-            {!validationReport || validationReport.status !== 'errors' ? (
-              <>
-                <Box sx={{ display: 'flex', alignItems: 'center', mr: 2, borderRight: '1px solid #ddd', pr: 2 }}>
-                  <FormControlLabel
-                    control={
-                      <Switch
-                        size="small"
-                        checked={includeCustomization}
-                        onChange={(e) => setIncludeCustomization(e.target.checked)}
-                      />
-                    }
-                    label={<Typography variant="caption">Include Customization</Typography>}
-                  />
-                </Box>
-                <Button
-                  variant="contained"
-                  color="primary"
-                  startIcon={<DownloadIcon />}
-                  onClick={handleZipDownload}
-                  disabled={downloading !== null}
-                  sx={{ mr: 2 }}
-                >
-                  {downloading === 'zip' ? 'Zipping...' : 'Download ZIP Package'}
-                </Button>
-
-                <Button
-                  variant="outlined"
-                  startIcon={<DownloadIcon />}
-                  onClick={() => handleFileSystemDownload('csv')}
-                  disabled={downloading !== null}
-                >
-                  {downloading === 'csv' ? 'Downloading...' : 'CSV'}
-                </Button>
-                <Button
-                  variant="outlined"
-                  startIcon={<DownloadIcon />}
-                  onClick={() => handleFileSystemDownload('xlsm')}
-                  disabled={downloading !== null}
-                >
-                  {downloading === 'xlsm' ? 'Downloading...' : 'XLSX'}
-                </Button>
-              </>
-            ) : (
-              <Button disabled color="error" variant="contained">
-                Fix Export Errors to Download
-              </Button>
+          <DialogActions sx={{ px: 3, py: 2, flexDirection: 'column', alignItems: 'stretch', gap: 1 }}>
+            {includeCustomization && allSelectedModelsMissingCustomization && (
+              <Alert severity="warning" sx={{ mb: 0 }}>
+                Customization export selected, but no default customization template is assigned.
+              </Alert>
             )}
+            <Box sx={{ display: 'flex', width: '100%', gap: 1, alignItems: 'center' }}>
+              <Button onClick={() => setPreviewOpen(false)}>Close</Button>
+              <Box sx={{ flex: 1 }} />
+              {!validationReport || validationReport.status !== 'errors' ? (
+                <>
+                  <Box sx={{ display: 'flex', alignItems: 'center', mr: 2, borderRight: '1px solid #ddd', pr: 2 }}>
+                    <FormControlLabel
+                      control={
+                        <Switch
+                          size="small"
+                          checked={includeCustomization}
+                          onChange={(e) => setIncludeCustomization(e.target.checked)}
+                        />
+                      }
+                      label={<Typography variant="caption">Include Customization</Typography>}
+                    />
+                  </Box>
+                  <Button
+                    variant="contained"
+                    color="primary"
+                    startIcon={<DownloadIcon />}
+                    onClick={handleZipDownload}
+                    disabled={downloading !== null}
+                    sx={{ mr: 2 }}
+                  >
+                    {downloading === 'zip' ? 'Zipping...' : 'Download ZIP Package'}
+                  </Button>
+
+                  <Button
+                    variant="outlined"
+                    startIcon={<DownloadIcon />}
+                    onClick={() => handleFileSystemDownload('csv')}
+                    disabled={downloading !== null}
+                  >
+                    {downloading === 'csv' ? 'Downloading...' : 'CSV'}
+                  </Button>
+                  <Button
+                    variant="outlined"
+                    startIcon={<DownloadIcon />}
+                    onClick={() => handleFileSystemDownload('xlsm')}
+                    disabled={downloading !== null}
+                  >
+                    {downloading === 'xlsm' ? 'Downloading...' : 'XLSX'}
+                  </Button>
+                </>
+              ) : (
+                <Button disabled color="error" variant="contained">
+                  Fix Export Errors to Download
+                </Button>
+              )}
+            </Box>
           </DialogActions>
         </Dialog>
       )}

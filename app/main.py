@@ -64,6 +64,19 @@ app.include_router(export.router)
 app.include_router(design_options.router)
 app.include_router(settings.router)
 
+# Serve static assets (JS, CSS, images) from React build
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
+
+client_dist = os.path.join(os.path.dirname(os.path.dirname(__file__)), "client", "dist")
+assets_dir = os.path.join(client_dist, "assets")
+
+if os.path.exists(assets_dir):
+    app.mount("/assets", StaticFiles(directory=assets_dir), name="assets")
+    print(f"[SPA] Serving static assets from: {assets_dir}")
+else:
+    print(f"[SPA] Warning: Assets directory not found at {assets_dir}")
+
 @app.get("/health")
 def health_check():
     return {"status": "healthy"}
@@ -75,3 +88,35 @@ def root():
         "docs": "/docs",
         "health": "/health"
     }
+
+# SPA fallback route - MUST be last to not interfere with API routes
+@app.get("/{full_path:path}")
+async def serve_spa(full_path: str):
+    """
+    Catch-all route to serve React SPA for client-side routing.
+    Returns index.html for any non-API route so React Router can handle routing.
+    """
+    # Do not intercept API routes or FastAPI built-in documentation routes
+    excluded_prefixes = ["api/"]
+    excluded_exact = ["openapi.json", "docs", "redoc", "health"]
+    
+    # Check exact matches first
+    if full_path in excluded_exact:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail="Not Found")
+    
+    # Check prefix matches
+    for prefix in excluded_prefixes:
+        if full_path.startswith(prefix):
+            from fastapi import HTTPException
+            raise HTTPException(status_code=404, detail="Not Found")
+    
+    # Serve index.html for all other routes
+    index_path = os.path.join(client_dist, "index.html")
+    
+    if os.path.exists(index_path):
+        return FileResponse(index_path)
+    else:
+        print(f"[SPA] Warning: index.html not found at {index_path}")
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail="SPA index.html not found")

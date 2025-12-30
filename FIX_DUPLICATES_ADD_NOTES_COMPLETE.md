@@ -226,3 +226,5 @@ cd "c:\Users\ksmar\Proton Drive\ksmartz7072\My files\Code Repositories\GGC\Antig
 1. Run database migration: `.venv\Scripts\alembic upgrade head`
 2. Restart backend (already running with `--reload`, should auto-restart)
 3. Run verification checklist at http://localhost:5000/models
+
+Testing this out.

@@ -50,6 +50,33 @@ class AmazonCustomizationTemplatePreviewResponse(BaseModel):
 class AmazonCustomizationTemplateAssignmentRequest(BaseModel):
     template_id: Optional[int] = None
 
+# Multi-template assignment schemas (slot-based)
+class EquipmentTypeCustomizationTemplateAssignRequest(BaseModel):
+    """Request to assign a template to a specific slot (1-3) for an equipment type."""
+    template_id: int
+    slot: int  # 1, 2, or 3
+
+class EquipmentTypeCustomizationTemplateItem(BaseModel):
+    """Single template assignment in a slot."""
+    template_id: int
+    slot: int
+    original_filename: str
+    upload_date: datetime
+    
+    class Config:
+        from_attributes = True
+
+class EquipmentTypeCustomizationTemplatesResponse(BaseModel):
+    """Response showing all assigned templates (up to 3) for an equipment type."""
+    equipment_type_id: int
+    templates: List[EquipmentTypeCustomizationTemplateItem]
+    default_template_id: Optional[int] = None
+
+class EquipmentTypeCustomizationTemplateSetDefaultRequest(BaseModel):
+    """Request to set one of the assigned templates as the default."""
+    template_id: int
+
+
 class EquipmentTypeBase(BaseModel):
     name: str
 

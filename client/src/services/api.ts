@@ -7,7 +7,7 @@ import type {
   MaterialRoleAssignment, ShippingRateCard, ShippingRateTier, ShippingZoneRate,
   MarketplaceShippingProfile, LaborSetting, MarketplaceFeeRate, VariantProfitSetting, ModelPricingSnapshot,
   ModelPricingHistory, PricingDiffResponse, ShippingZone, ShippingZoneRateNormalized,
-  ShippingDefaultSettingResponse, AmazonCustomizationTemplate
+  ShippingDefaultSettingResponse, AmazonCustomizationTemplate, EquipmentTypeCustomizationTemplatesResponse
 } from '../types'
 
 export interface PricingRecalculateBulkRequest {
@@ -328,6 +328,16 @@ export const settingsApi = {
   assignAmazonCustomizationTemplate: (equipmentTypeId: number, templateId: number | null) =>
     api.post<EquipmentType>(`/settings/equipment-types/${equipmentTypeId}/amazon-customization-template/assign`, { template_id: templateId }).then(r => r.data),
   previewCustomizationTemplate: (id: number) => api.get<AmazonCustomizationTemplatePreviewResponse>(`/settings/amazon-customization-templates/${id}/preview`).then(r => r.data),
+
+  // Multi-template management
+  listEquipmentTypeCustomizationTemplates: (equipmentTypeId: number) =>
+    api.get<EquipmentTypeCustomizationTemplatesResponse>(`/settings/equipment-types/${equipmentTypeId}/amazon-customization-templates`).then(r => r.data),
+  assignEquipmentTypeCustomizationTemplate: (equipmentTypeId: number, templateId: number, slot: number) =>
+    api.post<EquipmentTypeCustomizationTemplatesResponse>(`/settings/equipment-types/${equipmentTypeId}/amazon-customization-templates/assign`, { template_id: templateId, slot }).then(r => r.data),
+  setEquipmentTypeCustomizationTemplateDefault: (equipmentTypeId: number, templateId: number) =>
+    api.post(`/settings/equipment-types/${equipmentTypeId}/amazon-customization-templates/default`, { template_id: templateId }).then(r => r.data),
+  unassignEquipmentTypeCustomizationTemplate: (equipmentTypeId: number, templateId: number) =>
+    api.delete(`/settings/equipment-types/${equipmentTypeId}/amazon-customization-templates/${templateId}`).then(r => r.data),
 }
 
 export interface ExportRowData {

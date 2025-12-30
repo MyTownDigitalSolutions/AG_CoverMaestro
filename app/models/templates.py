@@ -12,6 +12,28 @@ class AmazonCustomizationTemplate(Base):
     upload_date = Column(DateTime, default=datetime.utcnow)
     file_size = Column(Integer, nullable=True)
 
+class EquipmentTypeCustomizationTemplate(Base):
+    """
+    Join table for multi-template assignment to equipment types.
+    Supports up to 3 templates per equipment type via slot-based assignment.
+    """
+    __tablename__ = "equipment_type_customization_templates"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    equipment_type_id = Column(Integer, ForeignKey("equipment_types.id"), nullable=False)
+    template_id = Column(Integer, ForeignKey("amazon_customization_templates.id"), nullable=False)
+    slot = Column(Integer, nullable=False)  # 1, 2, or 3
+    created_at = Column(DateTime, default=datetime.utcnow)
+    
+    # Relationships
+    equipment_type = relationship("EquipmentType")
+    template = relationship("AmazonCustomizationTemplate")
+    
+    __table_args__ = (
+        UniqueConstraint('equipment_type_id', 'slot', name='uq_equipment_type_customization_templates_slot'),
+        UniqueConstraint('equipment_type_id', 'template_id', name='uq_equipment_type_customization_templates_template'),
+    )
+
 class AmazonProductType(Base):
     __tablename__ = "amazon_product_types"
     

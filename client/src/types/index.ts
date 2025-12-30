@@ -17,6 +17,19 @@ export interface AmazonCustomizationTemplate {
   file_size: number
 }
 
+export interface EquipmentTypeCustomizationTemplateItem {
+  template_id: number
+  slot: number
+  original_filename: string
+  upload_date: string
+}
+
+export interface EquipmentTypeCustomizationTemplatesResponse {
+  equipment_type_id: number
+  templates: EquipmentTypeCustomizationTemplateItem[]
+  default_template_id: number | null
+}
+
 export interface EquipmentType {
   id: number
   name: string
