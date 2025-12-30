@@ -4,7 +4,7 @@ import {
   Table, TableBody, TableCell, TableContainer, TableHead, TableRow,
   Alert, CircularProgress, FormControl, InputLabel, Select, MenuItem,
   Chip, IconButton, Dialog, DialogTitle, DialogContent, DialogActions,
-  ToggleButton, ToggleButtonGroup, Tooltip,
+  ToggleButton, ToggleButtonGroup, Tooltip, Divider,
   Accordion, AccordionSummary, AccordionDetails, Switch, FormControlLabel, Radio, RadioGroup, FormLabel, Stack
 } from '@mui/material'
 import { Link as RouterLink } from 'react-router-dom'
@@ -1291,25 +1291,44 @@ export default function ExportPage() {
         </Alert>
       )}
 
-      {/* Export Settings Panel */}
+      {/* Export Actions & Settings */}
       <Paper sx={{ p: 3, mb: 3 }}>
-        <Typography variant="h6" gutterBottom>Export Settings (Amazon)</Typography>
-        <Grid container spacing={2} alignItems="flex-start">
-          <Grid item xs={12} md={8}>
-            <TextField
-              fullWidth
-              label="Default Save Path Template"
-              value={localSavePathTemplate}
-              onChange={(e) => setLocalSavePathTemplate(e.target.value)}
-              helperText={
-                <span>
-                  Note: This does not control where the browser downloads files. Downloads still go to your browser’s default Downloads folder unless you change browser settings.<br />
-                  Supported Placeholders: [Marketplace], [Manufacturer_Name], [Series_Name]
-                </span>
-              }
-              size="small"
-            />
-            <Box sx={{ mt: 2 }}>
+        <Typography variant="h6" gutterBottom>Export Actions ({listingType === 'individual' ? 'Individual' : 'Parent/Child'})</Typography>
+
+        <Box sx={{ display: 'flex', flexDirection: { xs: 'column', md: 'row' }, alignItems: 'flex-end', gap: 3, mb: 3 }}>
+          {/* Left group: Customization Template Export */}
+          <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1 }}>
+            <Typography variant="caption" sx={{ fontWeight: 600, color: 'text.secondary' }}>
+              Customization Template Export
+            </Typography>
+            <Box sx={{ display: 'flex', gap: 1 }}>
+              <Button
+                variant={localCustomizationFormat === 'txt' ? 'contained' : 'outlined'}
+                size="small"
+                startIcon={<DownloadIcon />}
+                onClick={() => setLocalCustomizationFormat('txt')}
+              >
+                TXT
+              </Button>
+              <Button
+                variant={localCustomizationFormat === 'xlsx' ? 'contained' : 'outlined'}
+                size="small"
+                startIcon={<DownloadIcon />}
+                onClick={() => setLocalCustomizationFormat('xlsx')}
+              >
+                XLSX
+              </Button>
+            </Box>
+          </Box>
+
+          <Divider orientation="vertical" flexItem sx={{ display: { xs: 'none', md: 'block' } }} />
+          <Divider orientation="horizontal" flexItem sx={{ display: { xs: 'block', md: 'none' }, width: '100%' }} />
+
+          {/* Right group: Product Template Export */}
+          <Box sx={{ display: 'flex', alignItems: 'flex-end', gap: 3, flexWrap: 'wrap', width: '100%' }}>
+
+            {/* Toggle + ZIP */}
+            <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1, flexGrow: 1 }}>
               <FormControlLabel
                 control={
                   <Switch
@@ -1318,118 +1337,129 @@ export default function ExportPage() {
                     size="small"
                   />
                 }
-                label="Include Customization"
+                label={<Typography variant="body2" sx={{ whiteSpace: 'nowrap' }}>Include Customization</Typography>}
+                sx={{ m: 0 }}
               />
+              <Button
+                variant="contained"
+                color="primary"
+                startIcon={<DownloadIcon />}
+                onClick={handleZipDownload}
+                disabled={downloading !== null}
+                sx={{ width: '100%', maxWidth: 400 }}
+              >
+                {downloading === 'zip' ? 'Zipping...' : 'DOWNLOAD ZIP PACKAGE'}
+              </Button>
             </Box>
-            <Box sx={{ mt: 2 }}>
-              <FormControl component="fieldset">
-                <FormLabel component="legend" sx={{ fontSize: '0.875rem' }}>Customization Export Format</FormLabel>
-                <RadioGroup
-                  row
-                  value={localCustomizationFormat}
-                  onChange={(e) => setLocalCustomizationFormat(e.target.value)}
-                >
-                  <FormControlLabel
-                    value="xlsx"
-                    control={<Radio size="small" />}
-                    label={<Typography variant="body2">Excel (.xlsx) — Recommended</Typography>}
-                  />
-                  <FormControlLabel
-                    value="txt"
-                    control={<Radio size="small" />}
-                    label={<Typography variant="body2">Unicode Text (.txt) — Legacy</Typography>}
-                  />
-                </RadioGroup>
-                {includeCustomization && localCustomizationFormat === 'txt' ? (
-                  <Alert
-                    severity="warning"
-                    sx={{ mt: 1 }}
-                    action={
-                      <Button
-                        size="small"
-                        onClick={async () => {
-                          const text =
-                            "To avoid blank TXT exports:\n" +
-                            "1) Open the customization template in Excel\n" +
-                            "2) Force recalculation (Ctrl+Alt+F9)\n" +
-                            "3) Save the file\n"
 
-                          try {
-                            await navigator.clipboard.writeText(text)
-                            setCustCopyCopied(true)
-                            window.setTimeout(() => setCustCopyCopied(false), 1500)
-                          } catch {
-                            // Clipboard may be blocked in some environments; still no-op per guardrails.
-                          }
-                        }}
-                      >
-                        {custCopyCopied ? 'Copied!' : 'Copy steps'}
-                      </Button>
-                    }
-                  >
-                    <Stack spacing={0.5}>
-                      <Typography variant="body2">
-                        TXT generation reads cached cell values (formulas may export blank unless the template was recalculated and saved in Excel).
-                      </Typography>
-                      <Typography variant="body2" sx={{ fontWeight: 600 }}>
-                        To avoid blanks:
-                      </Typography>
-                      <Typography variant="body2">1) Open the template in Excel</Typography>
-                      <Typography variant="body2">2) Force recalculation (Ctrl+Alt+F9)</Typography>
-                      <Typography variant="body2">3) Save the file</Typography>
-                    </Stack>
-                  </Alert>
-                ) : null}
-              </FormControl>
+            {/* Product CSV/XLSX */}
+            <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1 }}>
+              <Typography variant="caption" sx={{ fontWeight: 600, color: 'text.secondary' }}>
+                Product Template Export
+              </Typography>
+              <Box sx={{ display: 'flex', gap: 1 }}>
+                <Button
+                  variant="outlined"
+                  startIcon={<DownloadIcon />}
+                  onClick={() => handleFileSystemDownload('csv')}
+                  disabled={downloading !== null}
+                >
+                  CSV
+                </Button>
+                <Button
+                  variant="outlined"
+                  startIcon={<DownloadIcon />}
+                  onClick={() => handleFileSystemDownload('xlsx')}
+                  disabled={downloading !== null}
+                >
+                  XLSX
+                </Button>
+              </Box>
             </Box>
-            <Box sx={{ mt: 2, p: 2, bgcolor: '#f5f5f5', borderRadius: 1, border: '1px solid #e0e0e0' }}>
-              {!includeCustomization ? (
-                <Typography variant="body2" color="text.secondary">Customization is disabled.</Typography>
-              ) : missingTemplateNames.length > 0 ? (
-                <>
-                  <Typography variant="body2" color="error" sx={{ mb: 1, fontWeight: 500 }}>
-                    Customization is enabled, but these equipment types are missing an assigned customization template:
-                  </Typography>
-                  <ul style={{ margin: '4px 0 12px 20px', padding: 0, fontSize: '0.875rem' }}>
-                    {missingTemplateNames.map(name => <li key={name}>{name}</li>)}
-                  </ul>
-                  <Typography variant="body2" sx={{ mb: 1 }}>
-                    The customization file will not be included.
-                  </Typography>
-                  <Box sx={{ display: 'flex', gap: 1 }}>
-                    <Button
-                      component={RouterLink}
-                      to="/templates"
-                      size="small"
-                      variant="outlined"
-                      color="primary"
-                    >
-                      Manage templates
-                    </Button>
-                    <Button
-                      component={RouterLink}
-                      to="/templates?focus=customization&scroll=linking"
-                      size="small"
-                      variant="contained"
-                      color="warning"
-                    >
-                      Fix missing templates
-                    </Button>
-                  </Box>
-                </>
-              ) : (
-                <Typography variant="body2" color="success.main" sx={{ fontWeight: 500 }}>
-                  Customization file will be included as: {localCustomizationFormat.toUpperCase()}
-                </Typography>
-              )}
+          </Box>
+        </Box>
+
+        {/* TXT Warning */}
+        {includeCustomization && localCustomizationFormat === 'txt' && (
+          <Alert
+            severity="warning"
+            sx={{ mt: 1, mb: 2 }}
+            action={
+              <Button
+                size="small"
+                onClick={async () => {
+                  const text =
+                    "To avoid blank TXT exports:\n" +
+                    "1) Open the customization template in Excel\n" +
+                    "2) Force recalculation (Ctrl+Alt+F9)\n" +
+                    "3) Save the file\n"
+
+                  try {
+                    await navigator.clipboard.writeText(text)
+                    setCustCopyCopied(true)
+                    window.setTimeout(() => setCustCopyCopied(false), 1500)
+                  } catch {
+                    // no-op
+                  }
+                }}
+              >
+                {custCopyCopied ? 'Copied!' : 'Copy steps'}
+              </Button>
+            }
+          >
+            <Stack spacing={0.5}>
+              <Typography variant="body2">
+                TXT generation uses cached values.
+              </Typography>
+            </Stack>
+          </Alert>
+        )}
+
+        {/* Missing Templates Warning (Full Width) */}
+        {includeCustomization && missingTemplateNames.length > 0 && (
+          <Alert severity="error" sx={{ mt: 3 }}>
+            <Typography variant="subtitle2">Missing Default Customization Templates</Typography>
+            <Typography variant="body2" paragraph>
+              The following equipment types have no default template assigned:
+            </Typography>
+            <ul style={{ margin: '4px 0 12px 20px', padding: 0, fontSize: '0.875rem' }}>
+              {missingTemplateNames.map(name => <li key={name}>{name}</li>)}
+            </ul>
+            <Box sx={{ display: 'flex', gap: 1 }}>
+              <Button component={RouterLink} to="/templates" size="small" variant="outlined">
+                Manage Templates
+              </Button>
             </Box>
-          </Grid>
-          <Grid item xs={12} md={4}>
-            <Button variant="contained" onClick={handleSaveExportSettings} sx={{ height: 40 }}>
-              Save Configuration
-            </Button>
-          </Grid>
-        </Grid>
+          </Alert>
+        )}
+
+        {/* Path Settings (Collapsed) */}
+        <Box sx={{ mt: 3, pt: 1, borderTop: '1px solid #eee' }}>
+          <Accordion elevation={0} sx={{ '&:before': { display: 'none' }, bgcolor: 'transparent' }}>
+            <AccordionSummary expandIcon={<ExpandMoreIcon />} sx={{ px: 0 }}>
+              <Typography variant="caption" color="text.secondary">Advanced: Output Path Settings</Typography>
+            </AccordionSummary>
+            <AccordionDetails sx={{ px: 0 }}>
+              <Grid container spacing={2} alignItems="center">
+                <Grid item xs={12} md={9}>
+                  <TextField
+                    fullWidth
+                    label="Default Save Path Template"
+                    value={localSavePathTemplate}
+                    onChange={(e) => setLocalSavePathTemplate(e.target.value)}
+                    helperText="Supported: [Marketplace], [Manufacturer_Name], [Series_Name]"
+                    size="small"
+                  />
+                </Grid>
+                <Grid item xs={12} md={3}>
+                  <Button variant="outlined" onClick={handleSaveExportSettings} fullWidth>
+                    Save Path
+                  </Button>
+                </Grid>
+              </Grid>
+            </AccordionDetails>
+          </Accordion>
+        </Box>
       </Paper>
 
       <Paper sx={{ p: 3, mb: 3 }}>
@@ -1907,18 +1937,6 @@ export default function ExportPage() {
               <Box sx={{ flex: 1 }} />
               {!validationReport || validationReport.status !== 'errors' ? (
                 <>
-                  <Box sx={{ display: 'flex', alignItems: 'center', mr: 2, borderRight: '1px solid #ddd', pr: 2 }}>
-                    <FormControlLabel
-                      control={
-                        <Switch
-                          size="small"
-                          checked={includeCustomization}
-                          onChange={(e) => setIncludeCustomization(e.target.checked)}
-                        />
-                      }
-                      label={<Typography variant="caption">Include Customization</Typography>}
-                    />
-                  </Box>
                   <Button
                     variant="contained"
                     color="primary"
@@ -1941,10 +1959,10 @@ export default function ExportPage() {
                   <Button
                     variant="outlined"
                     startIcon={<DownloadIcon />}
-                    onClick={() => handleFileSystemDownload('xlsm')}
+                    onClick={() => handleFileSystemDownload('xlsx')}
                     disabled={downloading !== null}
                   >
-                    {downloading === 'xlsm' ? 'Downloading...' : 'XLSX'}
+                    {downloading === 'xlsx' ? 'Downloading...' : 'XLSX'}
                   </Button>
                 </>
               ) : (
