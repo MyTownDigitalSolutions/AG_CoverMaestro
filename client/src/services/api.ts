@@ -387,6 +387,11 @@ export const exportApi = {
     return response
   },
 
+  downloadCustomizationXlsx: async (modelIds: number[], listingType: 'individual' | 'parent_child' = 'individual') => {
+    const response = await api.post('/export/download/customization/xlsx', { model_ids: modelIds, listing_type: listingType }, { responseType: 'blob' })
+    return response
+  },
+
   downloadZip: async (
     modelIds: number[],
     listingType: 'individual' | 'parent_child',

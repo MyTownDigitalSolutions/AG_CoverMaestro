@@ -5,6 +5,7 @@ import zipfile
 import io
 import csv
 import json
+import copy
 import hashlib
 import requests # Added for image validation
 import concurrent.futures
@@ -1381,3 +1382,137 @@ def get_field_value(field: ProductTypeField, model: Model, series, manufacturer,
             return manufacturer.name if manufacturer else None
     
     return None
+
+
+def _generate_customization_xlsx(template_path: str, skus: List[str]) -> io.BytesIO:
+    if not os.path.exists(template_path):
+        raise HTTPException(status_code=500, detail=f"Customization template file missing: {template_path}")
+        
+    wb = load_workbook(template_path)
+    ws = wb.active # Assume active sheet
+    
+    # Blueprint Row: Row 2 (1-based index)
+    blueprint_row_idx = 2
+    max_col = ws.max_column
+    
+    # We assume Row 2 contains the formatting/formulas we want to replicate.
+    # We iterate SKUs.
+    for sku_idx, sku in enumerate(skus):
+        current_row_idx = blueprint_row_idx + sku_idx
+        
+        # Ensure row exists
+        if current_row_idx > ws.max_row:
+             # Just writing to new row implicitly creates it
+             pass
+
+        if current_row_idx == blueprint_row_idx:
+            # Editing the blueprint row directly (First SKU)
+            ws.cell(row=current_row_idx, column=1, value=sku)
+        else:
+            # For subsequent rows, we copy the blueprint row logic
+            for col in range(1, max_col + 1):
+                 source_cell = ws.cell(row=blueprint_row_idx, column=col)
+                 target_cell = ws.cell(row=current_row_idx, column=col)
+                 
+                 # Copy value (except Col 1)
+                 if col == 1:
+                     target_cell.value = sku
+                 else:
+                     target_cell.value = source_cell.value
+                     
+                 # Copy styles using internal _style proxy for performance/safety
+                 if source_cell.has_style:
+                     target_cell._style = copy.copy(source_cell._style)
+                     
+    output = io.BytesIO()
+    wb.save(output)
+    output.seek(0)
+    return output
+
+@router.post("/download/customization/xlsx")
+def download_customization_xlsx(request: ExportPreviewRequest, db: Session = Depends(get_db)):
+    """
+    Download filled Customization Template (XLSX).
+    Logic:
+    1. Resolve Models & Template.
+    2. Extract SKUs from Export Data (Authoritative).
+    3. Load Template, Clone Blueprint Row, Inject SKUs.
+    4. Return XLSX.
+    """
+    # 1. Reuse Build Export Data (to get data_rows and match ZIP behavior)
+    ensure_models_fresh_for_export(request, db)
+    header_rows, data_rows, filename_base, _, models, _, _ = build_export_data(request, db)
+    
+    if not models:
+        raise HTTPException(status_code=400, detail="No models found.")
+
+    # 2. Extract SKUs (Logic mirrored from download_zip)
+    ordered_field_names = header_rows[0] if header_rows else []
+    sku_col_idx = -1
+    target_fields = ["item_sku", "contribution_sku", "external_product_id"]
+    for target in target_fields:
+        for idx, field_name in enumerate(ordered_field_names):
+            if target in field_name.lower():
+                sku_col_idx = idx
+                break
+        if sku_col_idx != -1:
+            break
+            
+    if sku_col_idx == -1 and ordered_field_names and "sku" in ordered_field_names[0].lower():
+        sku_col_idx = 0
+        
+    skus = []
+    if sku_col_idx != -1:
+        for row in data_rows:
+            if sku_col_idx < len(row):
+                 val = row[sku_col_idx]
+                 skus.append(str(val) if val is not None else "")
+            else:
+                 skus.append("")
+    
+    # Filter empty? ZIP logic doesn't strictly filter, but appends empty string.
+    # However, customization usually implies valid items.
+    # We keeps skus aligned with export rows 1:1 if needed, 
+    # OR we assume 1 row per export row.
+    # We keep them.
+    
+    if not skus:
+        # Fallback to model parent_sku if extraction failed?
+        # User said "Reuse existing logic". 
+        # Existing logic in download_zip logs error if skus_count != worksheet_count.
+        # We proceed if we have count > 0.
+        if not data_rows:
+             raise HTTPException(status_code=400, detail="No data rows generated.")
+        # If extraction failed (sku_col_idx == -1), we have empty list or need fallback?
+        # If sku_col_idx is -1, loop above didn't run.
+        if sku_col_idx == -1:
+             # Try falling back to model.parent_sku for each model
+             # But models list matches data_rows 1:1?
+             # build_export_data returns models.
+             skus = [m.parent_sku for m in models]
+
+    # 3. Resolve Template
+    first_model = models[0]
+    equip_type = db.query(EquipmentType).filter(EquipmentType.id == first_model.equipment_type_id).first()
+    
+    if not equip_type or not equip_type.amazon_customization_template_id:
+         raise HTTPException(status_code=400, detail=f"No customization template assigned to Equipment Type: {equip_type.name if equip_type else 'Unknown'}")
+         
+    template = equip_type.amazon_customization_template
+    if not template or not template.file_path:
+        raise HTTPException(status_code=500, detail="Customization template record invalid.")
+        
+    # 4. Generate
+    try:
+        xlsx_buffer = _generate_customization_xlsx(template.file_path, skus)
+    except Exception as e:
+        logger.exception("Failed to generate customization XLSX")
+        raise HTTPException(status_code=500, detail=f"Generation failed: {str(e)}")
+    
+    filename = f"{filename_base}_Customization.xlsx"
+    
+    return StreamingResponse(
+        xlsx_buffer,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename={filename}"}
+    )

@@ -916,6 +916,39 @@ export default function ExportPage() {
     }
   }
 
+  const handleDownloadCustomizationXlsx = async () => {
+    if (selectedModels.size === 0) return
+    setLocalCustomizationFormat('xlsx')
+
+    try {
+      setDownloading('custom_xlsx')
+      const response = await exportApi.downloadCustomizationXlsx(Array.from(selectedModels), listingType)
+
+      const blob = new Blob([response.data], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
+      const url = window.URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+
+      const contentDisposition = response.headers['content-disposition']
+      let filename = 'Customization.xlsx'
+      if (contentDisposition) {
+        const match = contentDisposition.match(/filename="?([^"]+)"?/)
+        if (match && match[1]) filename = match[1]
+      }
+
+      link.setAttribute('download', filename)
+      document.body.appendChild(link)
+      link.click()
+      link.parentNode?.removeChild(link)
+
+    } catch (err) {
+      console.error(err)
+      setError('Failed to download customization template.')
+    } finally {
+      setDownloading(null)
+    }
+  }
+
   const allSelected = filteredModels.length > 0 && filteredModels.every(m => selectedModels.has(m.id))
   const someSelected = filteredModels.some(m => selectedModels.has(m.id))
 
@@ -1159,9 +1192,10 @@ export default function ExportPage() {
                 variant={localCustomizationFormat === 'xlsx' ? 'contained' : 'outlined'}
                 size="small"
                 startIcon={<DownloadIcon />}
-                onClick={() => setLocalCustomizationFormat('xlsx')}
+                onClick={handleDownloadCustomizationXlsx}
+                disabled={downloading !== null}
               >
-                XLSX
+                {downloading === 'custom_xlsx' ? 'Downloading...' : 'XLSX'}
               </Button>
             </Box>
           </Box>
