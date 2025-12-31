@@ -5,15 +5,11 @@ import {
   Alert, CircularProgress, FormControl, InputLabel, Select, MenuItem,
   Chip, IconButton, Dialog, DialogTitle, DialogContent, DialogActions,
   ToggleButton, ToggleButtonGroup, Tooltip, Divider,
-  Accordion, AccordionSummary, AccordionDetails, Switch, FormControlLabel, Radio, RadioGroup, FormLabel, Stack
+  Accordion, AccordionSummary, AccordionDetails, Switch, FormControlLabel, Stack
 } from '@mui/material'
 import { Link as RouterLink } from 'react-router-dom'
-import PreviewIcon from '@mui/icons-material/Preview'
-import CloseIcon from '@mui/icons-material/Close'
 import DownloadIcon from '@mui/icons-material/Download'
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
-import VerifiedUserIcon from '@mui/icons-material/VerifiedUser'
-import GppBadIcon from '@mui/icons-material/GppBad'
 import RefreshIcon from '@mui/icons-material/Refresh'
 import FactCheckIcon from '@mui/icons-material/FactCheck'
 import WarningIcon from '@mui/icons-material/Warning'
@@ -25,36 +21,12 @@ import { manufacturersApi, seriesApi, modelsApi, templatesApi, exportApi, pricin
 import { pickBaseDirectory, ensureSubdirectory, writeFileAtomic, loadHandle, clearPersistedHandle, getOrPickWritableBaseDirectory } from '../services/fileSystem'
 import type { Manufacturer, Series, Model, AmazonProductType, EquipmentType } from '../types'
 
-interface AuditFieldAction {
-  field_name: string
-  column_index: number
-  rule_explanation: string
-  source?: {
-    marketplace: string
-    variant_key: string
-    entity: string
-    field: string
-  }
-}
 
-interface AuditData {
-  row_mode: string
-  pricing: { matched_price_fields: AuditFieldAction[] }
-  sku: { matched_sku_fields: AuditFieldAction[] }
-  row_samples: { model_id: number; model_name: string; key_values: Record<string, string | null> }[]
-}
 
-interface ExportPreviewData {
-  headers: (string | null)[][]
-  rows: { model_id: number; model_name: string; data: (string | null)[] }[]
-  template_code: string
-  export_signature?: string
-  field_map?: Record<string, number>
-  audit?: AuditData
-}
+
 
 interface WriteResult {
-  key: string // unique ID for retry targeting (e.g. "master", "series-123")
+  key: string
   filename: string
   status: 'success' | 'failed' | 'pending'
   errorMessage?: string
@@ -62,17 +34,6 @@ interface WriteResult {
   verified?: boolean
   verificationReason?: string
 }
-
-const rowStyles: Record<number, React.CSSProperties> = {
-  0: { backgroundColor: '#1976d2', color: 'white', fontWeight: 'bold', fontSize: '11px' },
-  1: { backgroundColor: '#2196f3', color: 'white', fontSize: '11px' },
-  2: { backgroundColor: '#4caf50', color: 'white', fontWeight: 'bold', fontSize: '11px' },
-  3: { backgroundColor: '#8bc34a', color: 'black', fontWeight: 'bold', fontSize: '11px' },
-  4: { backgroundColor: '#c8e6c9', color: 'black', fontSize: '10px' },
-  5: { backgroundColor: '#fff9c4', color: 'black', fontStyle: 'italic', fontSize: '10px' },
-}
-
-
 
 const normalizeName = (s?: string | null) => (s ?? '').trim().toLowerCase()
 
@@ -100,13 +61,10 @@ export default function ExportPage() {
   const [selectedModels, setSelectedModels] = useState<Set<number>>(new Set())
 
   const [loading, setLoading] = useState(true)
-  const [generating, setGenerating] = useState(false)
   const [recalculating, setRecalculating] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [missingSnapshots, setMissingSnapshots] = useState<Record<number, string[]> | null>(null)
 
-  const [previewOpen, setPreviewOpen] = useState(false)
-  const [previewData, setPreviewData] = useState<ExportPreviewData | null>(null)
   const [listingType, setListingType] = useState<'individual' | 'parent_child'>('individual')
   const [downloading, setDownloading] = useState<string | null>(null)
   const [includeCustomization, setIncludeCustomization] = useState(true)
@@ -120,8 +78,7 @@ export default function ExportPage() {
 
 
   // Phase 12: Export Confidence Verification
-  const [lastDownloadSignature, setLastDownloadSignature] = useState<string | null>(null)
-  const [lastDownloadTemplateCode, setLastDownloadTemplateCode] = useState<string | null>(null)
+
 
   // Phase 13A: Validation
   const [validating, setValidating] = useState(false)
@@ -158,17 +115,7 @@ export default function ExportPage() {
     return Array.from(missingSet)
   }, [includeCustomization, selectedModels, allModels, allEquipmentTypes])
 
-  const allSelectedModelsMissingCustomization = useMemo(() => {
-    if (selectedModels.size === 0) return false
-    for (const mid of selectedModels) {
-      const model = allModels.find(m => m.id === mid)
-      if (model) {
-        const et = allEquipmentTypes.find(e => e.id === model.equipment_type_id)
-        if (et && et.amazon_customization_template_id) return false
-      }
-    }
-    return true
-  }, [selectedModels, allModels, allEquipmentTypes])
+
 
   useEffect(() => {
     loadData()
@@ -411,62 +358,7 @@ export default function ExportPage() {
     }
   }
 
-  const handleRecalcAndPreview = async () => {
-    if (selectedModels.size === 0) return
 
-    try {
-      setRecalculating(true)
-      setError(null)
-      const modelIds = Array.from(selectedModels)
-      await pricingApi.recalculateBaselines({
-        model_ids: modelIds,
-        only_if_stale: false
-      })
-
-      setRecalculating(false)
-      await handleGeneratePreview()
-
-    } catch (err: any) {
-      setRecalculating(false)
-      setError(err.response?.data?.detail || 'Recalculation failed')
-      console.error(err)
-    }
-  }
-
-  const handleGeneratePreview = async () => {
-    if (selectedModels.size === 0) {
-      setError('Please select at least one model')
-      return
-    }
-
-    try {
-      setGenerating(true)
-      setError(null)
-      setMissingSnapshots(null)
-
-      const modelIds = Array.from(selectedModels)
-
-      // Preflight Check
-      const status = await pricingApi.verifySnapshotStatus(modelIds)
-      if (!status.complete) {
-        setMissingSnapshots(status.missing_snapshots)
-        return
-      }
-
-      // Clear previous download verification state
-      setLastDownloadSignature(null)
-      setLastDownloadTemplateCode(null)
-
-      const preview = await exportApi.generatePreview(modelIds, listingType)
-      setPreviewData(preview)
-      setPreviewOpen(true)
-    } catch (err: any) {
-      setError(err.response?.data?.detail || 'Failed to generate preview')
-      console.error(err)
-    } finally {
-      setGenerating(false)
-    }
-  }
 
   const getFreshValidationReport = async (): Promise<ExportValidationResponse> => {
     // Construct deterministc key for current scope
@@ -602,10 +494,8 @@ export default function ExportPage() {
           }
 
           // Updates for verification stats
-          const sig = response.headers['x-export-signature'];
-          const tCode = response.headers['x-export-template-code'];
-          if (sig) setLastDownloadSignature(sig);
-          if (tCode) setLastDownloadTemplateCode(tCode);
+          // Updates for verification stats - REMOVED
+
 
           // Trigger Download
           const contentType = response.headers['content-type'] || 'application/vnd.ms-excel.sheet.macroEnabled.12';
@@ -656,6 +546,27 @@ export default function ExportPage() {
         setError(null);
         setFsStatus("Generating XLSX...");
         const modelIds = Array.from(selectedModels);
+        console.log(`[EXPORT][XLSX] modelIds.length=${modelIds.length} modelIds=${modelIds.join(',')}`);
+        console.log(`[EXPORT][XLSX] listingType=${listingType}`);
+        console.log(`[EXPORT][XLSX] format=${format}`);
+
+        if (!modelIds || modelIds.length === 0) {
+          console.warn("[EXPORT][XLSX] blocked: no models selected");
+          setError("Select at least one model to export.");
+          setDownloading(null);
+          setFsStatus(null);
+          return;
+        }
+
+        if (!listingType) {
+          console.warn("[EXPORT][XLSX] blocked: listingType missing");
+          setError("Listing type is missing. Refresh the page and try again.");
+          setDownloading(null);
+          setFsStatus(null);
+          return;
+        }
+
+        console.log("[EXPORT][XLSX] calling downloadXlsx with args:", { modelIds, listingType });
 
         try {
           const response = await exportApi.downloadXlsx(modelIds, listingType);
@@ -673,10 +584,8 @@ export default function ExportPage() {
             filename = `Amazon-${mfrName.replace(/\s+/g, '_')}.xlsx`;
           }
 
-          const sig = response.headers['x-export-signature'];
-          const tCode = response.headers['x-export-template-code'];
-          if (sig) setLastDownloadSignature(sig);
-          if (tCode) setLastDownloadTemplateCode(tCode);
+
+
 
           // XLSX Blob Config
           const blob = new Blob([response.data], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
@@ -707,6 +616,9 @@ export default function ExportPage() {
 
         } catch (e: any) {
           console.error("[EXPORT][XLSX] download failed", e);
+          console.error("[EXPORT][XLSX] failed status=", e?.response?.status);
+          console.error("[EXPORT][XLSX] failed data=", e?.response?.data);
+          console.error("[EXPORT][XLSX] failed detail=", e?.response?.data?.detail);
           setError("Download failed: " + (e.message || "Unknown error"));
         } finally {
           setDownloading(null);
@@ -737,10 +649,8 @@ export default function ExportPage() {
             filename = `Amazon-${mfrName.replace(/\s+/g, '_')}.csv`;
           }
 
-          const sig = response.headers['x-export-signature'];
-          const tCode = response.headers['x-export-template-code'];
-          if (sig) setLastDownloadSignature(sig);
-          if (tCode) setLastDownloadTemplateCode(tCode);
+
+
 
           // CSV Blob Config
           const blob = new Blob([response.data], { type: 'text/csv;charset=utf-8;' });
@@ -846,48 +756,7 @@ export default function ExportPage() {
         const ext = getExtension(format)
         const fixExt = (name: string) => name.replace(/\.xlsx$/i, `.${ext}`)
 
-        // Helper for verification
-        const verifyBlob = async (blob: Blob, headers: any, expectedTemplateCode?: string): Promise<{ verified: boolean, reason?: string }> => {
-          try {
-            const sigHeader = headers['x-export-signature']
-            const tmplHeader = headers['x-export-template-code']
 
-            if (!sigHeader) return { verified: false, reason: "Missing signature header" }
-
-            const ab = await blob.arrayBuffer()
-            const hashBuffer = await crypto.subtle.digest('SHA-256', ab)
-            const hashArray = Array.from(new Uint8Array(hashBuffer))
-            const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('')
-
-            // Header might be hex or base64. Python usually sends hex if we set it up that way, 
-            // but standard is often hex for simple sigs. Let's assume hex first as per our backend logic.
-            // If backend sends base64, we'd need to convert. 
-            // The prompt says "support hex-64 and base64/base64url formats".
-
-            let sigHex = sigHeader.toLowerCase()
-            // Simple auto-detect: if it has non-hex chars or ends with =, likely base64. 
-            // However, easiest is to check length. SHA256 hex is 64 chars. Base64 is 44 chars.
-            if (sigHeader.length !== 64 && /^[a-zA-Z0-9+/=_-]+$/.test(sigHeader)) {
-              // Decode base64 to hex
-              const binary = atob(sigHeader.replace(/-/g, '+').replace(/_/g, '/'))
-              const bytes = new Uint8Array(binary.length)
-              for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
-              sigHex = Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('')
-            }
-
-            if (hashHex !== sigHex) {
-              return { verified: false, reason: "Hash mismatch (corrupt download)" }
-            }
-
-            if (expectedTemplateCode && tmplHeader && expectedTemplateCode !== tmplHeader) {
-              return { verified: false, reason: `Template mismatch (Server used ${tmplHeader}, expected ${expectedTemplateCode})` }
-            }
-
-            return { verified: true }
-          } catch (e: any) {
-            return { verified: false, reason: "Verification error: " + e.message }
-          }
-        }
 
         setFsStatus("Writing files...");
 
@@ -931,10 +800,7 @@ export default function ExportPage() {
               else if (format === 'xlsm') masterRes = await exportApi.downloadXlsm(modelIds, listingType)
               else masterRes = await exportApi.downloadCsv(modelIds, listingType)
 
-              const sig = masterRes.headers['x-export-signature']
-              const tCode = masterRes.headers['x-export-template-code']
-              if (sig) setLastDownloadSignature(sig)
-              if (tCode) setLastDownloadTemplateCode(tCode)
+
 
               const masterFolderParts = activePlan.master!.folder.split(/[\\/]/).filter((p: string) => p)
               const masterDir = await ensureSubdirectory(dirHandle, masterFolderParts)
@@ -943,10 +809,7 @@ export default function ExportPage() {
               const result = await writeFileAtomic(masterDir, fixExt(activePlan.master!.filename), new Blob([masterRes.data]))
               if (result.warning) console.warn(result.warning)
 
-              // Verify
-              const ver = await verifyBlob(new Blob([masterRes.data]), masterRes.headers) // Pass blob again or reuse? Reuse ideally but blob is cheap pointer usually.
-
-              updateResult(masterKey, activePlan.master!.filename, 'success', undefined, result.warning, ver)
+              updateResult(masterKey, activePlan.master!.filename, 'success', undefined, result.warning, undefined)
             } catch (e: any) {
               console.error("Master write failed", e)
               updateResult(masterKey, activePlan.master!.filename, 'failed', e.message || 'Write failed')
@@ -986,10 +849,7 @@ export default function ExportPage() {
               const result = await writeFileAtomic(childDir, fixExt(child.filename), new Blob([childRes.data]))
               if (result.warning) console.warn(result.warning)
 
-              // Verify
-              const ver = await verifyBlob(new Blob([childRes.data]), childRes.headers)
-
-              updateResult(childKey, child.filename, 'success', undefined, result.warning, ver)
+              updateResult(childKey, child.filename, 'success', undefined, result.warning, undefined)
             } catch (e: any) {
               console.error(`Series ${childSeriesId} write failed`, e)
               updateResult(childKey, child.filename, 'failed', e.message || 'Write failed')
@@ -1006,10 +866,7 @@ export default function ExportPage() {
               else if (format === 'xlsm') res = await exportApi.downloadXlsm(modelIds, listingType)
               else res = await exportApi.downloadCsv(modelIds, listingType)
 
-              const sig = res.headers['x-export-signature']
-              const tCode = res.headers['x-export-template-code']
-              if (sig) setLastDownloadSignature(sig)
-              if (tCode) setLastDownloadTemplateCode(tCode)
+
 
               const folderParts = activePlan.plan!.folder.split(/[\\/]/).filter((p: string) => p)
               const dir = await ensureSubdirectory(dirHandle, folderParts)
@@ -1018,10 +875,7 @@ export default function ExportPage() {
               const result = await writeFileAtomic(dir, fixExt(activePlan.plan!.filename), new Blob([res.data]))
               if (result.warning) console.warn(result.warning)
 
-              // Verify
-              const ver = await verifyBlob(new Blob([res.data]), res.headers)
-
-              updateResult(key, activePlan.plan!.filename, 'success', undefined, result.warning, ver)
+              updateResult(key, activePlan.plan!.filename, 'success', undefined, result.warning, undefined)
             } catch (e: any) {
               console.error("Single write failed", e)
               updateResult(key, activePlan.plan!.filename, 'failed', e.message || 'Write failed')
@@ -1185,19 +1039,10 @@ export default function ExportPage() {
               <Box sx={{ maxHeight: 200, overflowY: 'auto', mb: 2 }}>
                 {writeResults.filter(r => r.status === 'success').map(r => (
                   <Box key={r.key} sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
-                    {r.verified ? (
-                      <VerifiedUserIcon color="success" fontSize="small" titleAccess="Verified: Signature Matches" />
-                    ) : (
-                      <GppBadIcon color="error" fontSize="small" titleAccess={r.verificationReason || "Verification Failed"} />
-                    )}
+                    <CheckCircleIcon color="success" fontSize="small" />
                     <Typography variant="caption" sx={{ flexGrow: 1 }}>
                       {r.filename}
                     </Typography>
-                    {!r.verified && (
-                      <Typography variant="caption" color="error">
-                        {r.verificationReason}
-                      </Typography>
-                    )}
                     {r.warning && (
                       <Typography variant="caption" color="warning.main">
                         (Cleanup Warning: {r.warning})
@@ -1285,7 +1130,7 @@ export default function ExportPage() {
               )
             })}
           </Box>
-          <Button color="inherit" size="small" sx={{ mt: 1 }} onClick={handleRecalcAndPreview} disabled={recalculating}>
+          <Button color="inherit" size="small" sx={{ mt: 1 }} onClick={handleRecalculateSelected} disabled={recalculating}>
             {recalculating ? 'Fixing...' : 'Run Recalculate Now'}
           </Button>
         </Alert>
@@ -1364,7 +1209,7 @@ export default function ExportPage() {
                   onClick={() => handleFileSystemDownload('csv')}
                   disabled={downloading !== null}
                 >
-                  CSV
+                  {downloading === 'csv' ? 'Downloading...' : 'CSV'}
                 </Button>
                 <Button
                   variant="outlined"
@@ -1372,7 +1217,7 @@ export default function ExportPage() {
                   onClick={() => handleFileSystemDownload('xlsx')}
                   disabled={downloading !== null}
                 >
-                  XLSX
+                  {downloading === 'xlsx' ? 'Downloading...' : 'XLSX'}
                 </Button>
               </Box>
             </Box>
@@ -1531,14 +1376,7 @@ export default function ExportPage() {
               >
                 {recalculating ? 'Recalculating...' : 'Recalc Prices'}
               </Button>
-              <Button
-                variant="contained"
-                startIcon={<PreviewIcon />}
-                onClick={handleGeneratePreview}
-                disabled={selectedModels.size === 0 || generating}
-              >
-                {generating ? 'Generating...' : 'Generate Preview'}
-              </Button>
+
               <Button
                 variant="outlined"
                 color="info"
@@ -1694,286 +1532,7 @@ export default function ExportPage() {
         </TableContainer>
       </Paper>
 
-      {previewOpen && previewData && (
-        <Dialog
-          open={previewOpen}
-          onClose={() => setPreviewOpen(false)}
-          maxWidth={false}
-          fullWidth
-          PaperProps={{
-            sx: {
-              maxWidth: '95vw',
-              height: '85vh',
-              resize: 'both',
-              overflow: 'auto',
-              minWidth: 600,
-              minHeight: 400
-            }
-          }}
-        >
-          <DialogTitle sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <Box>
-              <Typography variant="h6">
-                Export Preview - {previewData.template_code}
-              </Typography>
-              <Typography variant="body2" color="text.secondary">
-                {previewData.rows.length} model{previewData.rows.length !== 1 ? 's' : ''} ready for export
-              </Typography>
-            </Box>
-            <IconButton onClick={() => setPreviewOpen(false)}><CloseIcon /></IconButton>
-          </DialogTitle>
-          <DialogContent sx={{ p: 0 }}>
-            <Box sx={{ p: 2, bgcolor: '#f5f5f5', borderBottom: '1px solid #ddd' }}>
-              <Grid container spacing={2} alignItems="center">
-                <Grid item>
-                  <Typography variant="subtitle2">Verification Status:</Typography>
-                </Grid>
-                <Grid item>
-                  {lastDownloadSignature ? (
-                    lastDownloadSignature === previewData.export_signature ? (
-                      <Chip label="✅ Verified: Download matches Preview" color="success" size="small" />
-                    ) : (
-                      <Chip label="❌ Mismatch: Download differs from Preview" color="error" size="small" />
-                    )
-                  ) : (
-                    <Chip label="Waiting for download..." size="small" variant="outlined" />
-                  )}
-                </Grid>
-              </Grid>
-              <Grid container spacing={2} sx={{ mt: 1 }}>
-                <Grid item xs={12} md={6}>
-                  <Typography variant="caption" display="block">Preview Signature:</Typography>
-                  <Typography variant="body2" sx={{ fontFamily: 'monospace', wordBreak: 'break-all' }}>
-                    {previewData.export_signature || "—"}
-                  </Typography>
-                </Grid>
-                <Grid item xs={12} md={6}>
-                  <Typography variant="caption" display="block">Downloaded Signature:</Typography>
-                  <Typography variant="body2" sx={{ fontFamily: 'monospace', wordBreak: 'break-all' }}>
-                    {lastDownloadSignature || "—"}
-                  </Typography>
-                </Grid>
-                <Grid item xs={12} md={6}>
-                  <Typography variant="caption" display="block">Template Code (Preview):</Typography>
-                  <Typography variant="body2" sx={{ fontFamily: 'monospace' }}>
-                    {previewData.template_code}
-                  </Typography>
-                </Grid>
-                <Grid item xs={12} md={6}>
-                  <Typography variant="caption" display="block">Template Code (Download):</Typography>
-                  <Typography variant="body2" sx={{ fontFamily: 'monospace' }}>
-                    {lastDownloadTemplateCode || "—"}
-                  </Typography>
-                </Grid>
-              </Grid>
 
-              {previewData.audit && (
-                <Accordion sx={{ mt: 2, bgcolor: 'white', '&:before': { display: 'none' } }} elevation={1}>
-                  <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-                    <Box>
-                      <Typography variant="subtitle2">Why these values?</Typography>
-                      <Typography variant="caption" color="text.secondary">
-                        Explains which template columns were filled and the source rules.
-                      </Typography>
-                    </Box>
-                  </AccordionSummary>
-                  <AccordionDetails>
-                    <Box sx={{ mb: 2 }}>
-                      <Typography variant="caption" display="block" color="text.secondary" gutterBottom>ROW MODE</Typography>
-                      <Chip
-                        label={previewData.audit.row_mode}
-                        size="small"
-                        color="default"
-                        variant="outlined"
-                        sx={{ fontWeight: 'bold' }}
-                      />
-                    </Box>
-
-                    <Box sx={{ mb: 3 }}>
-                      <Typography variant="caption" display="block" color="text.secondary" gutterBottom>PRICING MAPPING</Typography>
-                      {previewData.audit.pricing.matched_price_fields.length > 0 ? (
-                        previewData.audit.pricing.matched_price_fields.map((field) => (
-                          <Box key={field.column_index} sx={{ mb: 1, p: 1, bgcolor: '#f8f9fa', borderRadius: 1 }}>
-                            <Typography variant="body2" sx={{ fontWeight: 500 }}>
-                              Column {field.column_index}: {field.field_name}
-                            </Typography>
-                            <Typography variant="caption" display="block" color="text.secondary" sx={{ mt: 0.5 }}>
-                              {field.rule_explanation}
-                            </Typography>
-                            {field.source && (
-                              <Box sx={{ mt: 0.5, display: 'flex', gap: 0.5 }}>
-                                <Chip label={field.source.marketplace} size="small" sx={{ height: 20, fontSize: '0.625rem' }} />
-                                <Chip label={field.source.variant_key} size="small" sx={{ height: 20, fontSize: '0.625rem' }} />
-                              </Box>
-                            )}
-                          </Box>
-                        ))
-                      ) : (
-                        <Typography variant="body2" color="text.secondary" sx={{ fontStyle: 'italic' }}>
-                          No price fields detected in this template.
-                        </Typography>
-                      )}
-                    </Box>
-
-                    <Box sx={{ mb: 3 }}>
-                      <Typography variant="caption" display="block" color="text.secondary" gutterBottom>SKU MAPPING</Typography>
-                      {previewData.audit.sku.matched_sku_fields.length > 0 ? (
-                        previewData.audit.sku.matched_sku_fields.map((field) => (
-                          <Box key={field.column_index} sx={{ mb: 1, p: 1, bgcolor: '#f8f9fa', borderRadius: 1 }}>
-                            <Typography variant="body2" sx={{ fontWeight: 500 }}>
-                              Column {field.column_index}: {field.field_name}
-                            </Typography>
-                            <Typography variant="caption" display="block" color="text.secondary" sx={{ mt: 0.5 }}>
-                              {field.rule_explanation}
-                            </Typography>
-                          </Box>
-                        ))
-                      ) : (
-                        <Typography variant="body2" color="text.secondary" sx={{ fontStyle: 'italic' }}>
-                          No SKU fields detected in this template.
-                        </Typography>
-                      )}
-                    </Box>
-
-                    <Box>
-                      <Typography variant="caption" display="block" color="text.secondary" gutterBottom>SAMPLE ROWS (AUDITED VALUES)</Typography>
-                      <TableContainer component={Paper} variant="outlined" sx={{ maxHeight: 200 }}>
-                        <Table size="small" stickyHeader>
-                          <TableHead>
-                            <TableRow>
-                              <TableCell sx={{ fontSize: '11px', fontWeight: 'bold' }}>Model ID</TableCell>
-                              <TableCell sx={{ fontSize: '11px', fontWeight: 'bold' }}>Model Name</TableCell>
-                              <TableCell sx={{ fontSize: '11px', fontWeight: 'bold' }}>Audited Values</TableCell>
-                            </TableRow>
-                          </TableHead>
-                          <TableBody>
-                            {previewData.audit.row_samples.map((sample) => (
-                              <TableRow key={sample.model_id}>
-                                <TableCell sx={{ fontSize: '11px' }}>{sample.model_id}</TableCell>
-                                <TableCell sx={{ fontSize: '11px' }}>{sample.model_name}</TableCell>
-                                <TableCell sx={{ fontSize: '11px' }}>
-                                  {Object.entries(sample.key_values).map(([key, val]) => (
-                                    <Box key={key} sx={{ display: 'flex', gap: 1, mb: 0.5 }}>
-                                      <Typography variant="caption" sx={{ fontWeight: 'bold', color: '#555' }}>
-                                        {key}:
-                                      </Typography>
-                                      <Typography variant="caption" sx={{ fontFamily: 'monospace' }}>
-                                        {val}
-                                      </Typography>
-                                    </Box>
-                                  ))}
-                                </TableCell>
-                              </TableRow>
-                            ))}
-                          </TableBody>
-                        </Table>
-                      </TableContainer>
-                    </Box>
-                  </AccordionDetails>
-                </Accordion>
-              )}
-            </Box>
-            <Box sx={{ overflowX: 'auto', overflowY: 'auto', maxHeight: 'calc(85vh - 350px)' }}>
-              <Table size="small" sx={{ minWidth: previewData.headers[0]?.length * 140 || 1000, tableLayout: 'fixed' }}>
-                <TableBody>
-                  {previewData.headers.map((row, rowIdx) => (
-                    <TableRow key={`header-${rowIdx}`}>
-                      {row.map((cell, colIdx) => (
-                        <TableCell
-                          key={colIdx}
-                          sx={{
-                            ...rowStyles[rowIdx] || {},
-                            border: '1px solid #ccc',
-                            padding: '4px 8px',
-                            width: 140,
-                            minWidth: 140,
-                            maxWidth: 140,
-                            overflow: 'hidden',
-                            textOverflow: 'ellipsis',
-                            whiteSpace: 'nowrap',
-                          }}
-                          title={cell || ''}
-                        >
-                          {cell || ''}
-                        </TableCell>
-                      ))}
-                    </TableRow>
-                  ))}
-                  {previewData.rows.map((row) => (
-                    <TableRow key={`data-${row.model_id}`} sx={{ '&:nth-of-type(odd)': { backgroundColor: '#fafafa' } }}>
-                      {row.data.map((cell, colIdx) => (
-                        <TableCell
-                          key={colIdx}
-                          sx={{
-                            border: '1px solid #ccc',
-                            padding: '4px 8px',
-                            width: 140,
-                            minWidth: 140,
-                            maxWidth: 140,
-                            overflow: 'hidden',
-                            textOverflow: 'ellipsis',
-                            whiteSpace: 'nowrap',
-                            fontSize: '11px',
-                          }}
-                          title={cell || ''}
-                        >
-                          {cell || ''}
-                        </TableCell>
-                      ))}
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </Box>
-          </DialogContent>
-          <DialogActions sx={{ px: 3, py: 2, flexDirection: 'column', alignItems: 'stretch', gap: 1 }}>
-            {includeCustomization && allSelectedModelsMissingCustomization && (
-              <Alert severity="warning" sx={{ mb: 0 }}>
-                Customization export selected, but no default customization template is assigned.
-              </Alert>
-            )}
-            <Box sx={{ display: 'flex', width: '100%', gap: 1, alignItems: 'center' }}>
-              <Button onClick={() => setPreviewOpen(false)}>Close</Button>
-              <Box sx={{ flex: 1 }} />
-              {!validationReport || validationReport.status !== 'errors' ? (
-                <>
-                  <Button
-                    variant="contained"
-                    color="primary"
-                    startIcon={<DownloadIcon />}
-                    onClick={handleZipDownload}
-                    disabled={downloading !== null}
-                    sx={{ mr: 2 }}
-                  >
-                    {downloading === 'zip' ? 'Zipping...' : 'Download ZIP Package'}
-                  </Button>
-
-                  <Button
-                    variant="outlined"
-                    startIcon={<DownloadIcon />}
-                    onClick={() => handleFileSystemDownload('csv')}
-                    disabled={downloading !== null}
-                  >
-                    {downloading === 'csv' ? 'Downloading...' : 'CSV'}
-                  </Button>
-                  <Button
-                    variant="outlined"
-                    startIcon={<DownloadIcon />}
-                    onClick={() => handleFileSystemDownload('xlsx')}
-                    disabled={downloading !== null}
-                  >
-                    {downloading === 'xlsx' ? 'Downloading...' : 'XLSX'}
-                  </Button>
-                </>
-              ) : (
-                <Button disabled color="error" variant="contained">
-                  Fix Export Errors to Download
-                </Button>
-              )}
-            </Box>
-          </DialogActions>
-        </Dialog>
-      )}
 
       {/* Image Failure Warnings Popup */}
       <Dialog
