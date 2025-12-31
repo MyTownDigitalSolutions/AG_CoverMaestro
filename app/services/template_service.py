@@ -136,6 +136,25 @@ class TemplateService:
         if upload_sha256 != persisted_sha256:
             raise HTTPException(status_code=500, detail=f"Persisted file hash mismatch: mem={upload_sha256} disk={persisted_sha256}")
 
+        # [PT_IMPORT] A) & B) Identification & Sheet Discovery
+        print(f"[PT_IMPORT] START: product_code={product_code} filename='{file.filename}'")
+        try:
+            wb_temp = load_workbook(BytesIO(contents), read_only=True)
+            sheet_names = wb_temp.sheetnames
+            print(f"[PT_IMPORT] Sheets found: {sheet_names}")
+            
+            # [PT_IMPORT] Check for required sheets
+            req_sheets = ["Data Definitions", "Valid Values", "Template", "Default Values"]
+            for req in req_sheets:
+                found_exact = req in sheet_names
+                found_loose = any(s.lower() == req.lower() for s in sheet_names)
+                used_name = next((s for s in sheet_names if s.lower() == req.lower()), "None")
+                print(f"[PT_IMPORT] Sheet '{req}': Found={found_loose} (Exact={found_exact}) -> Using: '{used_name}'")
+
+            wb_temp.close()
+        except Exception as e:
+            print(f"[PT_IMPORT] Sheet discovery error: {e}")
+
         # 4. Use BytesIO for processing
         try:
             excel_file = BytesIO(contents)
@@ -196,6 +215,7 @@ class TemplateService:
         fields_imported = 0
         keywords_imported = 0
         valid_values_imported = 0
+        vv_mapping_misses = 0  # [PT_IMPORT] Track valid value mapping failures
 
         field_definitions = {}
         local_label_to_field = {}
@@ -262,10 +282,15 @@ class TemplateService:
                         local_label_to_field[local_label] = field_name
 
             print(f"  TOTAL: {len(field_definitions)} field definitions")
+            
+            # [PT_IMPORT] Data Defs Details
+            print(f"[PT_IMPORT] Data Definitions loaded. Mapping size: {len(local_label_to_field)}")
+            print(f"[PT_IMPORT] Sample Mappings: {list(local_label_to_field.items())[:5]}")
         except Exception as e:
             print(f"  ERROR parsing Data Definitions: {e}")
 
         valid_values_by_field = {}
+        vv_distinct_labels = set()
 
         print("=" * 60)
         print("STEP 2: Parsing VALID VALUES sheet")
@@ -276,7 +301,7 @@ class TemplateService:
             vv_df = pd.read_excel(excel_file, sheet_name="Valid Values", header=None)
             excel_file.seek(0)
 
-            print(f"[TEMPLATE_IMPORT] Valid Values shape={vv_df.shape}")
+            print(f"[PT_IMPORT] Valid Values shape={vv_df.shape}")
 
             current_group = None
             for row_idx in range(1, len(vv_df)):
@@ -293,6 +318,8 @@ class TemplateService:
 
                 # Extract local label from "Local Label - [field_hint]"
                 local_label = col_b_local_hint.split(" - ")[0].strip() if " - " in col_b_local_hint else col_b_local_hint
+                vv_distinct_labels.add(local_label)
+                
                 field_name = local_label_to_field.get(local_label)
 
                 if not field_name:
@@ -303,6 +330,8 @@ class TemplateService:
                             break
 
                 if not field_name:
+                    vv_mapping_misses += 1
+                    print(f"[PT_IMPORT][VV_MISS] local_label='{local_label}' (no match in local_label_to_field)")
                     continue
 
                 values = [str(v).strip() for v in row.iloc[2:] if pd.notna(v)]
@@ -318,6 +347,7 @@ class TemplateService:
                 valid_values_imported += len(values)
 
             print(f"  TOTAL: {len(valid_values_by_field)} fields with valid values")
+            print(f"[PT_IMPORT] Valid Values Summary: Misses={vv_mapping_misses}, Distinct Labels={len(vv_distinct_labels)}, Fields Populated={len(valid_values_by_field)}")
         except Exception as e:
             print(f"  Valid Values sheet: {e}")
 
@@ -455,7 +485,15 @@ class TemplateService:
         print("STEP 5: Creating database records")
         print("=" * 60)
 
+        print("[PT_IMPORT] About to insert valid values...")
+        max_field_id_inserted = 0
+        total_vv_inserted_count = 0
+
         field_name_to_db = {}
+
+        # [PT_IMPORT] Helper for fan-out
+        def _group_key(fn: str) -> str:
+            return fn.split("#")[0]
 
         for field_name, template_info in template_field_order.items():
             dd_info = field_definitions.get(field_name, {})
@@ -467,17 +505,42 @@ class TemplateService:
 
             prev_settings = existing_field_settings.get(field_name, {})
 
+            # [PT_IMPORT] Fan-out prep
+            direct_vv = valid_values_by_field.get(field_name, [])
+            fanout_values = []
+            
+            if not direct_vv:
+                gk = _group_key(field_name)
+                # Check for other fields sharing this group key
+                src_keys_count = 0
+                seen_fanout = set()
+                
+                for k, vals in valid_values_by_field.items():
+                    if _group_key(k) == gk:
+                        src_keys_count += 1
+                        for v in vals:
+                            if v not in seen_fanout:
+                                seen_fanout.add(v)
+                                fanout_values.append(v)
+                
+                if fanout_values:
+                     print(f"[PT_IMPORT][VV_FANOUT] field_name='{field_name}' used_group='{gk}' src_keys={src_keys_count} values={len(fanout_values)}")
+
             # Determine whether this field should behave like a selectable dropdown.
             # Deterministic rule: if the template provides ANY valid/other values for this field,
             # we treat it as selectable and store defaults in selected_value (NOT custom_value).
             has_selectable_values = (
-                field_name in valid_values_by_field or field_name in other_values_by_field
+                bool(direct_vv) or bool(fanout_values) or field_name in other_values_by_field
             )
 
             # Build the final list of values for this field (used for reconciliation below)
             all_values = []
-            if field_name in valid_values_by_field:
-                all_values.extend(valid_values_by_field[field_name])
+            
+            if direct_vv:
+                all_values.extend(direct_vv)
+            elif fanout_values:
+                all_values.extend(fanout_values)
+                
             if field_name in other_values_by_field:
                 for ov in other_values_by_field[field_name]:
                     if ov not in all_values:
@@ -489,24 +552,36 @@ class TemplateService:
             # Critical fix: if a previous selected_value no longer exists in the new valid values,
             # we MUST clear it and choose the template default (or first available value) so the
             # main page doesn't show a stale selection.
+            # [PT_IMPORT] Application of Defaults
             if has_selectable_values:
-                selected_value = default_value or prev_settings.get('selected_value')
-
-                # If stale (not present in values), reconcile deterministically.
-                if selected_value and selected_value not in all_values:
-                    selected_value = None
-
-                if not selected_value:
-                    if default_value and default_value in all_values:
-                        selected_value = default_value
-                    elif len(all_values) > 0:
-                        selected_value = all_values[0]
+                # Logic: Default Sheet > None (Authoritative Reset)
+                
+                if default_value:
+                     selected_value = default_value
+                     # Check strict validity for logging warning
+                     is_strictly_valid = (default_value in direct_vv) or (default_value in fanout_values)
+                     if not is_strictly_valid and field_name in other_values_by_field:
+                         is_strictly_valid = default_value in other_values_by_field[field_name]
+                         
+                     if is_strictly_valid:
+                         print(f"[PT_IMPORT][DEFAULT_SET] field='{field_name}' value='{default_value}' source='Default Values'")
+                     else:
+                         print(f"[PT_IMPORT][DEFAULT_WARN] field='{field_name}' default='{default_value}' note='Default not in valid values list'")
+                else:
+                     print(f"[PT_IMPORT][DEFAULT_CLEARED] field='{field_name}' reason='Missing/blank in Default Values sheet'")
+                     selected_value = None
 
                 custom_value = None
             else:
                 # Free-text field: store defaults in custom_value
-                selected_value = prev_settings.get('selected_value')
-                custom_value = default_value if default_value else prev_settings.get('custom_value')
+                if default_value:
+                    print(f"[PT_IMPORT][DEFAULT_SET] field='{field_name}' value='{default_value}' source='Default Values'")
+                    custom_value = default_value
+                else:
+                    print(f"[PT_IMPORT][DEFAULT_CLEARED] field='{field_name}' reason='Missing/blank in Default Values sheet'")
+                    custom_value = None
+                
+                selected_value = None
 
             field = ProductTypeField(
                 product_type_id=product_type.id,
@@ -522,6 +597,16 @@ class TemplateService:
             self.db.flush()
             field_name_to_db[field_name] = field
             fields_imported += 1
+            if field.id > max_field_id_inserted:
+                max_field_id_inserted = field.id
+            
+            # [PT_IMPORT]
+            if len(all_values) == 0:
+                 has_default = len(default_values_by_field.get(field_name, "")) > 0
+                 print(f"[PT_IMPORT][NO_VALUES] field_name='{field_name}' -> all_values empty (valid=0 other=0 default_present={has_default})")
+            elif len(all_values) > 0:
+                 # Minimal log for success to verify process
+                 pass
 
             # all_values already built above
             for value in all_values:
@@ -530,10 +615,13 @@ class TemplateService:
                     value=value
                 )
                 self.db.add(field_value)
+                total_vv_inserted_count += 1
 
         self.db.commit()
 
         print(f"  Created {fields_imported} fields")
+        print(f"[PT_IMPORT] Inserted {total_vv_inserted_count} product_type_field_values rows. Max ID: {max_field_id_inserted}")
+        print(f"[PT_IMPORT] Final Summary: fields_created={fields_imported}, values_inserted={total_vv_inserted_count}, vv_fields_count={len(valid_values_by_field)}, vv_miss_count={vv_mapping_misses}")
         print("=" * 60)
         print(f"DONE: {fields_imported} fields, {keywords_imported} keywords, {valid_values_imported} valid values")
         print("=" * 60)
