@@ -1389,40 +1389,73 @@ def _generate_customization_xlsx(template_path: str, skus: List[str]) -> io.Byte
         raise HTTPException(status_code=500, detail=f"Customization template file missing: {template_path}")
         
     wb = load_workbook(template_path)
-    ws = wb.active # Assume active sheet
     
-    # Blueprint Row: Row 2 (1-based index)
-    blueprint_row_idx = 2
+    # 1. Worksheet Selection (STRICT: "Template", case-insensitive)
+    target_sheet_name = "Template"
+    ws = None
+    for sheet in wb.sheetnames:
+        if sheet.strip().lower() == target_sheet_name.lower():
+            ws = wb[sheet]
+            break
+            
+    if ws is None:
+        raise HTTPException(status_code=500, detail="Customization workbook missing 'Template' worksheet")
+        
+    # 2. Data Start Row Detection (SellerSku in Column A)
+    data_start_row = 4 # Default
+    seller_sku_found = False
+    
+    # Scan first 20 rows
+    for r in range(1, 21):
+        cell_val = ws.cell(row=r, column=1).value
+        # Check normalized value (case-insensitive)
+        if cell_val and str(cell_val).strip().lower() == "sellersku":
+            data_start_row = r + 2
+            seller_sku_found = True
+            break
+            
+    if not seller_sku_found:
+        print(f"[CUSTOMIZATION][WARN] 'SellerSku' not found; defaulting data_start_row={data_start_row}")
+
+    blueprint_row_idx = data_start_row
+    
+    # Determine max columns to copy from blueprint
     max_col = ws.max_column
     
-    # We assume Row 2 contains the formatting/formulas we want to replicate.
-    # We iterate SKUs.
-    for sku_idx, sku in enumerate(skus):
-        current_row_idx = blueprint_row_idx + sku_idx
+    # 3. Blueprint Row Copy Rules
+    for i, sku in enumerate(skus):
+        target_row_idx = blueprint_row_idx + i
+        source_row_idx = blueprint_row_idx
         
-        # Ensure row exists
-        if current_row_idx > ws.max_row:
-             # Just writing to new row implicitly creates it
-             pass
+        # Copy Row Dimensions (Height) for new rows
+        if i > 0:
+            if source_row_idx in ws.row_dimensions:
+                 src_dim = ws.row_dimensions[source_row_idx]
+                 tgt_dim = ws.row_dimensions[target_row_idx]
+                 if src_dim.height is not None:
+                     tgt_dim.height = src_dim.height
+                 tgt_dim.customHeight = src_dim.customHeight
 
-        if current_row_idx == blueprint_row_idx:
-            # Editing the blueprint row directly (First SKU)
-            ws.cell(row=current_row_idx, column=1, value=sku)
+        if i == 0:
+            # First SKU: Use the existing blueprint row as-is (Overwrite Col A)
+            ws.cell(row=target_row_idx, column=1, value=sku)
+            # Do NOT modify other columns or style (preserve original blueprint)
         else:
-            # For subsequent rows, we copy the blueprint row logic
+            # Subsequent SKUs: Create new row by copying blueprint
             for col in range(1, max_col + 1):
-                 source_cell = ws.cell(row=blueprint_row_idx, column=col)
-                 target_cell = ws.cell(row=current_row_idx, column=col)
-                 
-                 # Copy value (except Col 1)
-                 if col == 1:
-                     target_cell.value = sku
-                 else:
-                     target_cell.value = source_cell.value
-                     
-                 # Copy styles using internal _style proxy for performance/safety
-                 if source_cell.has_style:
-                     target_cell._style = copy.copy(source_cell._style)
+                source_cell = ws.cell(row=source_row_idx, column=col)
+                target_cell = ws.cell(row=target_row_idx, column=col)
+                
+                # Copy values AND formulas (except Col A)
+                # 4. SKU Injection Rules (Template!Column A)
+                if col == 1:
+                    target_cell.value = sku
+                else:
+                    target_cell.value = source_cell.value
+                    
+                # 5. Formatting Safety (Copy styles)
+                if source_cell.has_style:
+                    target_cell._style = copy.copy(source_cell._style)
                      
     output = io.BytesIO()
     wb.save(output)
