@@ -5,7 +5,7 @@ import {
   Alert, CircularProgress, FormControl, InputLabel, Select, MenuItem,
   Chip, IconButton, Dialog, DialogTitle, DialogContent, DialogActions,
   ToggleButton, ToggleButtonGroup, Tooltip, Divider,
-  Accordion, AccordionSummary, AccordionDetails, Switch, FormControlLabel, Stack
+  Accordion, AccordionSummary, AccordionDetails, Switch, FormControlLabel, Stack, Radio
 } from '@mui/material'
 import { Link as RouterLink } from 'react-router-dom'
 import DownloadIcon from '@mui/icons-material/Download'
@@ -43,6 +43,12 @@ const compareByNameThenId = (a: { name?: string | null, id: number }, b: { name?
   if (nameA < nameB) return -1
   if (nameA > nameB) return 1
   return a.id - b.id
+}
+
+const triggerDownloadWithYield = async (fn: () => Promise<void> | void) => {
+  await fn()
+  await new Promise(resolve => requestAnimationFrame(resolve))
+  await new Promise(resolve => setTimeout(resolve, 250))
 }
 
 export default function ExportPage() {
@@ -95,7 +101,14 @@ export default function ExportPage() {
   const [loadError, setLoadError] = useState<string | null>(null)
 
   // Customization Format State
-  const [localCustomizationFormat, setLocalCustomizationFormat] = useState<string>('xlsx')
+  const [customizationDefaultFormat, setCustomizationDefaultFormat] = useState<'txt' | 'xlsx'>('xlsx')
+  const [productDefaultFormat, setProductDefaultFormat] = useState<'csv' | 'xlsx'>('xlsx')
+  const [runningBoth, setRunningBoth] = useState(false)
+  const [runBothProgress, setRunBothProgress] = useState<string>('')
+
+  // Legacy Alias (Maintains compatibility)
+  const localCustomizationFormat = customizationDefaultFormat
+  const setLocalCustomizationFormat = (fmt: string) => setCustomizationDefaultFormat(fmt as 'txt' | 'xlsx')
   const [custCopyCopied, setCustCopyCopied] = useState(false)
 
   // Computed Status Logic (Phase 4 - Chunk 3)
@@ -916,6 +929,42 @@ export default function ExportPage() {
     }
   }
 
+  const handleRunBothExports = async () => {
+    if (selectedModels.size === 0) return
+    setRunningBoth(true)
+    setRunBothProgress('Initializing...')
+    setError(null)
+
+    try {
+      // 1. Product Export
+      setRunBothProgress('Downloading product export...')
+      await triggerDownloadWithYield(async () => {
+        if (productDefaultFormat === 'csv') {
+          await handleFileSystemDownload('csv')
+        } else {
+          await handleFileSystemDownload('xlsx')
+        }
+      })
+
+      // 2. Customization Export
+      setRunBothProgress('Downloading customization export...')
+      await triggerDownloadWithYield(async () => {
+        if (customizationDefaultFormat === 'txt') {
+          console.warn('TXT run-both skipped (not supported independently)')
+        } else {
+          await handleDownloadCustomizationXlsx()
+        }
+      })
+
+    } catch (err: any) {
+      console.error(err)
+      setError('Run Both: Sequence failed. ' + (err.message || ''))
+    } finally {
+      setRunningBoth(false)
+      setRunBothProgress('')
+    }
+  }
+
   const handleDownloadCustomizationXlsx = async () => {
     if (selectedModels.size === 0) return
     setLocalCustomizationFormat('xlsx')
@@ -1169,178 +1218,7 @@ export default function ExportPage() {
         </Alert>
       )}
 
-      {/* Export Actions & Settings */}
-      <Paper sx={{ p: 3, mb: 3 }}>
-        <Typography variant="h6" gutterBottom>Export Actions ({listingType === 'individual' ? 'Individual' : 'Parent/Child'})</Typography>
-
-        <Box sx={{ display: 'flex', flexDirection: { xs: 'column', md: 'row' }, alignItems: 'flex-end', gap: 3, mb: 3 }}>
-          {/* Left group: Customization Template Export */}
-          <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1 }}>
-            <Typography variant="caption" sx={{ fontWeight: 600, color: 'text.secondary' }}>
-              Customization Template Export
-            </Typography>
-            <Box sx={{ display: 'flex', gap: 1 }}>
-              <Button
-                variant={localCustomizationFormat === 'txt' ? 'contained' : 'outlined'}
-                size="small"
-                startIcon={<DownloadIcon />}
-                onClick={() => setLocalCustomizationFormat('txt')}
-              >
-                TXT
-              </Button>
-              <Button
-                variant={localCustomizationFormat === 'xlsx' ? 'contained' : 'outlined'}
-                size="small"
-                startIcon={<DownloadIcon />}
-                onClick={handleDownloadCustomizationXlsx}
-                disabled={downloading !== null}
-              >
-                {downloading === 'custom_xlsx' ? 'Downloading...' : 'XLSX'}
-              </Button>
-            </Box>
-          </Box>
-
-          <Divider orientation="vertical" flexItem sx={{ display: { xs: 'none', md: 'block' } }} />
-          <Divider orientation="horizontal" flexItem sx={{ display: { xs: 'block', md: 'none' }, width: '100%' }} />
-
-          {/* Right group: Product Template Export */}
-          <Box sx={{ display: 'flex', alignItems: 'flex-end', gap: 3, flexWrap: 'wrap', width: '100%' }}>
-
-            {/* Toggle + ZIP */}
-            <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1, flexGrow: 1 }}>
-              <FormControlLabel
-                control={
-                  <Switch
-                    checked={includeCustomization}
-                    onChange={(e) => setIncludeCustomization(e.target.checked)}
-                    size="small"
-                  />
-                }
-                label={<Typography variant="body2" sx={{ whiteSpace: 'nowrap' }}>Include Customization</Typography>}
-                sx={{ m: 0 }}
-              />
-              <Button
-                variant="contained"
-                color="primary"
-                startIcon={<DownloadIcon />}
-                onClick={handleZipDownload}
-                disabled={downloading !== null}
-                sx={{ width: '100%', maxWidth: 400 }}
-              >
-                {downloading === 'zip' ? 'Zipping...' : 'DOWNLOAD ZIP PACKAGE'}
-              </Button>
-            </Box>
-
-            {/* Product CSV/XLSX */}
-            <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1 }}>
-              <Typography variant="caption" sx={{ fontWeight: 600, color: 'text.secondary' }}>
-                Product Template Export
-              </Typography>
-              <Box sx={{ display: 'flex', gap: 1 }}>
-                <Button
-                  variant="outlined"
-                  startIcon={<DownloadIcon />}
-                  onClick={() => handleFileSystemDownload('csv')}
-                  disabled={downloading !== null}
-                >
-                  {downloading === 'csv' ? 'Downloading...' : 'CSV'}
-                </Button>
-                <Button
-                  variant="outlined"
-                  startIcon={<DownloadIcon />}
-                  onClick={() => handleFileSystemDownload('xlsx')}
-                  disabled={downloading !== null}
-                >
-                  {downloading === 'xlsx' ? 'Downloading...' : 'XLSX'}
-                </Button>
-              </Box>
-            </Box>
-          </Box>
-        </Box>
-
-        {/* TXT Warning */}
-        {includeCustomization && localCustomizationFormat === 'txt' && (
-          <Alert
-            severity="warning"
-            sx={{ mt: 1, mb: 2 }}
-            action={
-              <Button
-                size="small"
-                onClick={async () => {
-                  const text =
-                    "To avoid blank TXT exports:\n" +
-                    "1) Open the customization template in Excel\n" +
-                    "2) Force recalculation (Ctrl+Alt+F9)\n" +
-                    "3) Save the file\n"
-
-                  try {
-                    await navigator.clipboard.writeText(text)
-                    setCustCopyCopied(true)
-                    window.setTimeout(() => setCustCopyCopied(false), 1500)
-                  } catch {
-                    // no-op
-                  }
-                }}
-              >
-                {custCopyCopied ? 'Copied!' : 'Copy steps'}
-              </Button>
-            }
-          >
-            <Stack spacing={0.5}>
-              <Typography variant="body2">
-                TXT generation uses cached values.
-              </Typography>
-            </Stack>
-          </Alert>
-        )}
-
-        {/* Missing Templates Warning (Full Width) */}
-        {includeCustomization && missingTemplateNames.length > 0 && (
-          <Alert severity="error" sx={{ mt: 3 }}>
-            <Typography variant="subtitle2">Missing Default Customization Templates</Typography>
-            <Typography variant="body2" paragraph>
-              The following equipment types have no default template assigned:
-            </Typography>
-            <ul style={{ margin: '4px 0 12px 20px', padding: 0, fontSize: '0.875rem' }}>
-              {missingTemplateNames.map(name => <li key={name}>{name}</li>)}
-            </ul>
-            <Box sx={{ display: 'flex', gap: 1 }}>
-              <Button component={RouterLink} to="/templates" size="small" variant="outlined">
-                Manage Templates
-              </Button>
-            </Box>
-          </Alert>
-        )}
-
-        {/* Path Settings (Collapsed) */}
-        <Box sx={{ mt: 3, pt: 1, borderTop: '1px solid #eee' }}>
-          <Accordion elevation={0} sx={{ '&:before': { display: 'none' }, bgcolor: 'transparent' }}>
-            <AccordionSummary expandIcon={<ExpandMoreIcon />} sx={{ px: 0 }}>
-              <Typography variant="caption" color="text.secondary">Advanced: Output Path Settings</Typography>
-            </AccordionSummary>
-            <AccordionDetails sx={{ px: 0 }}>
-              <Grid container spacing={2} alignItems="center">
-                <Grid item xs={12} md={9}>
-                  <TextField
-                    fullWidth
-                    label="Default Save Path Template"
-                    value={localSavePathTemplate}
-                    onChange={(e) => setLocalSavePathTemplate(e.target.value)}
-                    helperText="Supported: [Marketplace], [Manufacturer_Name], [Series_Name]"
-                    size="small"
-                  />
-                </Grid>
-                <Grid item xs={12} md={3}>
-                  <Button variant="outlined" onClick={handleSaveExportSettings} fullWidth>
-                    Save Path
-                  </Button>
-                </Grid>
-              </Grid>
-            </AccordionDetails>
-          </Accordion>
-        </Box>
-      </Paper>
-
+      {/* Filter Models */}
       <Paper sx={{ p: 3, mb: 3 }}>
         <Typography variant="h6" gutterBottom>
           Filter Models
@@ -1495,75 +1373,267 @@ export default function ExportPage() {
         </Box>
       </Paper>
 
-      <Paper sx={{ p: 2 }}>
-        <Box sx={{ px: 1, py: 1, borderBottom: '1px solid #f0f0f0', mb: 1 }}>
-          <Typography variant="body2" color="text.secondary" sx={{ fontStyle: 'italic' }}>
-            {!selectedManufacturer
-              ? "Select a manufacturer to view models."
-              : !selectedSeries
-                ? `Showing all models for ${manufacturers.find(m => m.id === selectedManufacturer)?.name || 'Manufacturer'} (all series)`
-                : `Showing models for ${manufacturers.find(m => m.id === selectedManufacturer)?.name || 'Manufacturer'} → ${allSeries.find(s => s.id === selectedSeries)?.name || 'Series'}`
-            }
-          </Typography>
-        </Box>
-        <TableContainer sx={{ maxHeight: 500 }}>
-          <Table stickyHeader size="small">
-            <TableHead>
-              <TableRow>
-                <TableCell padding="checkbox">
-                  <Checkbox
-                    checked={allSelected}
-                    indeterminate={someSelected && !allSelected}
-                    onChange={(e) => handleSelectAll(e.target.checked)}
-                  />
-                </TableCell>
-                <TableCell>Model</TableCell>
-                <TableCell>Series</TableCell>
-                <TableCell>Manufacturer</TableCell>
-                <TableCell>Dimensions (W×D×H)</TableCell>
-                <TableCell>Template</TableCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {filteredModels.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={6} align="center">
-                    <Typography color="text.secondary">No models found</Typography>
-                  </TableCell>
-                </TableRow>
-              ) : (
-                filteredModels.map(model => {
-                  const templateCode = getTemplateForEquipmentType(model.equipment_type_id)
-                  return (
-                    <TableRow
-                      key={model.id}
-                      hover
-                      selected={selectedModels.has(model.id)}
-                    >
-                      <TableCell padding="checkbox">
-                        <Checkbox
-                          checked={selectedModels.has(model.id)}
-                          onChange={(e) => handleSelectModel(model.id, e.target.checked)}
-                        />
-                      </TableCell>
-                      <TableCell>{model.name}</TableCell>
-                      <TableCell>{getSeriesName(model.series_id)}</TableCell>
-                      <TableCell>{getManufacturerName(model.series_id)}</TableCell>
-                      <TableCell>{model.width}" × {model.depth}" × {model.height}"</TableCell>
-                      <TableCell>
-                        {templateCode ? (
-                          <Chip label={templateCode} size="small" color="primary" variant="outlined" />
-                        ) : (
-                          <Chip label="No template" size="small" color="warning" variant="outlined" />
-                        )}
+      {/* Models Table (Accordion) */}
+      <Accordion defaultExpanded={false} sx={{ mb: 3 }}>
+        <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+          <Typography>Models ({selectedModels.size} selected)</Typography>
+        </AccordionSummary>
+        <AccordionDetails sx={{ p: 0 }}>
+          <Paper sx={{ p: 2, boxShadow: 'none' }}>
+            <Box sx={{ px: 1, py: 1, borderBottom: '1px solid #f0f0f0', mb: 1 }}>
+              <Typography variant="body2" color="text.secondary" sx={{ fontStyle: 'italic' }}>
+                {!selectedManufacturer
+                  ? "Select a manufacturer to view models."
+                  : !selectedSeries
+                    ? `Showing all models for ${manufacturers.find(m => m.id === selectedManufacturer)?.name || 'Manufacturer'} (all series)`
+                    : `Showing models for ${manufacturers.find(m => m.id === selectedManufacturer)?.name || 'Manufacturer'} → ${allSeries.find(s => s.id === selectedSeries)?.name || 'Series'}`
+                }
+              </Typography>
+            </Box>
+            <TableContainer sx={{ maxHeight: 500 }}>
+              <Table stickyHeader size="small">
+                <TableHead>
+                  <TableRow>
+                    <TableCell padding="checkbox">
+                      <Checkbox
+                        checked={allSelected}
+                        indeterminate={someSelected && !allSelected}
+                        onChange={(e) => handleSelectAll(e.target.checked)}
+                      />
+                    </TableCell>
+                    <TableCell>Model</TableCell>
+                    <TableCell>Series</TableCell>
+                    <TableCell>Manufacturer</TableCell>
+                    <TableCell>Dimensions (W×D×H)</TableCell>
+                    <TableCell>Template</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {filteredModels.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={6} align="center">
+                        <Typography color="text.secondary">No models found</Typography>
                       </TableCell>
                     </TableRow>
-                  )
-                })
-              )}
-            </TableBody>
-          </Table>
-        </TableContainer>
+                  ) : (
+                    filteredModels.map(model => {
+                      const templateCode = getTemplateForEquipmentType(model.equipment_type_id)
+                      return (
+                        <TableRow
+                          key={model.id}
+                          hover
+                          selected={selectedModels.has(model.id)}
+                        >
+                          <TableCell padding="checkbox">
+                            <Checkbox
+                              checked={selectedModels.has(model.id)}
+                              onChange={(e) => handleSelectModel(model.id, e.target.checked)}
+                            />
+                          </TableCell>
+                          <TableCell>{model.name}</TableCell>
+                          <TableCell>{getSeriesName(model.series_id)}</TableCell>
+                          <TableCell>{getManufacturerName(model.series_id)}</TableCell>
+                          <TableCell>{model.width}" × {model.depth}" × {model.height}"</TableCell>
+                          <TableCell>
+                            {templateCode ? (
+                              <Chip label={templateCode} size="small" color="primary" variant="outlined" />
+                            ) : (
+                              <Chip label="No template" size="small" color="warning" variant="outlined" />
+                            )}
+                          </TableCell>
+                        </TableRow>
+                      )
+                    })
+                  )}
+                </TableBody>
+              </Table>
+            </TableContainer>
+          </Paper>
+        </AccordionDetails>
+      </Accordion>
+
+      {/* Export Actions */}
+      <Paper sx={{ p: 3, mb: 3 }}>
+        <Typography variant="h6" gutterBottom>Export Actions ({listingType === 'individual' ? 'Individual' : 'Parent/Child'})</Typography>
+
+        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 4, mb: 3 }}>
+          {/* Run Both Button */}
+          <Box sx={{ display: 'flex', justifyContent: 'center' }}>
+            <Button
+              variant="contained"
+              color="secondary"
+              size="large"
+              onClick={handleRunBothExports}
+              disabled={selectedModels.size === 0 || downloading !== null || runningBoth}
+              startIcon={runningBoth ? <CircularProgress size={20} color="inherit" /> : <DownloadIcon />}
+              sx={{ px: 4, py: 1.5 }}
+            >
+              {runningBoth ? (runBothProgress || 'Running Exports...') : 'RUN BOTH EXPORTS'}
+            </Button>
+          </Box>
+
+          <Box sx={{ display: 'flex', flexDirection: { xs: 'column', md: 'row' }, alignItems: 'flex-start', justifyContent: 'center', gap: 6 }}>
+
+            {/* Customization Template Export */}
+            <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
+              <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>Customization Template</Typography>
+              <Box sx={{ display: 'flex', gap: 2 }}>
+                <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                  <Button
+                    variant={customizationDefaultFormat === 'txt' ? 'contained' : 'outlined'}
+                    size="small"
+                    startIcon={<DownloadIcon />}
+                    onClick={() => setCustomizationDefaultFormat('txt')}
+                  >
+                    TXT
+                  </Button>
+                  <Radio
+                    checked={customizationDefaultFormat === 'txt'}
+                    onChange={() => setCustomizationDefaultFormat('txt')}
+                    size="small"
+                  />
+                </Box>
+                <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                  <Button
+                    variant={customizationDefaultFormat === 'xlsx' ? 'contained' : 'outlined'}
+                    size="small"
+                    startIcon={<DownloadIcon />}
+                    onClick={handleDownloadCustomizationXlsx}
+                    disabled={downloading !== null}
+                  >
+                    {downloading === 'custom_xlsx' ? 'Wait' : 'XLSX'}
+                  </Button>
+                  <Radio
+                    checked={customizationDefaultFormat === 'xlsx'}
+                    onChange={() => setCustomizationDefaultFormat('xlsx')}
+                    size="small"
+                  />
+                </Box>
+              </Box>
+            </Box>
+
+            <Divider orientation="vertical" flexItem sx={{ display: { xs: 'none', md: 'block' } }} />
+
+            {/* Product Template Export */}
+            <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
+              <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>Product Template</Typography>
+              <Box sx={{ display: 'flex', gap: 2 }}>
+                <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                  <Button
+                    variant="outlined"
+                    startIcon={<DownloadIcon />}
+                    onClick={() => handleFileSystemDownload('csv')}
+                    disabled={downloading !== null}
+                  >
+                    CSV
+                  </Button>
+                  <Radio
+                    checked={productDefaultFormat === 'csv'}
+                    onChange={() => setProductDefaultFormat('csv')}
+                    size="small"
+                  />
+                </Box>
+                <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                  <Button
+                    variant="outlined"
+                    startIcon={<DownloadIcon />}
+                    onClick={() => handleFileSystemDownload('xlsx')}
+                    disabled={downloading !== null}
+                  >
+                    XLSX
+                  </Button>
+                  <Radio
+                    checked={productDefaultFormat === 'xlsx'}
+                    onChange={() => setProductDefaultFormat('xlsx')}
+                    size="small"
+                  />
+                </Box>
+              </Box>
+            </Box>
+          </Box>
+        </Box>
+
+        {/* TXT Warning */}
+        {includeCustomization && customizationDefaultFormat === 'txt' && (
+          <Alert
+            severity="warning"
+            sx={{ mt: 1, mb: 2 }}
+            action={
+              <Button
+                size="small"
+                onClick={async () => {
+                  const text =
+                    "To avoid blank TXT exports:\n" +
+                    "1) Open the customization template in Excel\n" +
+                    "2) Force recalculation (Ctrl+Alt+F9)\n" +
+                    "3) Save the file\n"
+
+                  try {
+                    await navigator.clipboard.writeText(text)
+                    setCustCopyCopied(true)
+                    window.setTimeout(() => setCustCopyCopied(false), 1500)
+                  } catch {
+                    // no-op
+                  }
+                }}
+              >
+                {custCopyCopied ? 'Copied!' : 'Copy steps'}
+              </Button>
+            }
+          >
+            <Stack spacing={0.5}>
+              <Typography variant="body2">
+                TXT generation uses cached values.
+              </Typography>
+            </Stack>
+          </Alert>
+        )}
+
+        {/* Missing Templates Warning (Full Width) */}
+        {includeCustomization && missingTemplateNames.length > 0 && (
+          <Alert severity="error" sx={{ mt: 3 }}>
+            <Typography variant="subtitle2">Missing Default Customization Templates</Typography>
+            <Typography variant="body2" paragraph>
+              The following equipment types have no default template assigned:
+            </Typography>
+            <ul style={{ margin: '4px 0 12px 20px', padding: 0, fontSize: '0.875rem' }}>
+              {missingTemplateNames.map(name => <li key={name}>{name}</li>)}
+            </ul>
+            <Box sx={{ display: 'flex', gap: 1 }}>
+              <Button component={RouterLink} to="/templates" size="small" variant="outlined">
+                Manage Templates
+              </Button>
+            </Box>
+          </Alert>
+        )}
+
+        {/* Path Settings (Collapsed) */}
+        <Box sx={{ mt: 3, pt: 1, borderTop: '1px solid #eee' }}>
+          <Accordion elevation={0} sx={{ '&:before': { display: 'none' }, bgcolor: 'transparent' }}>
+            <AccordionSummary expandIcon={<ExpandMoreIcon />} sx={{ px: 0 }}>
+              <Typography variant="caption" color="text.secondary">Advanced: Output Path Settings</Typography>
+            </AccordionSummary>
+            <AccordionDetails sx={{ px: 0 }}>
+              <Grid container spacing={2} alignItems="center">
+                <Grid item xs={12} md={9}>
+                  <TextField
+                    fullWidth
+                    label="Default Save Path Template"
+                    value={localSavePathTemplate}
+                    onChange={(e) => setLocalSavePathTemplate(e.target.value)}
+                    helperText="Supported: [Marketplace], [Manufacturer_Name], [Series_Name]"
+                    size="small"
+                  />
+                </Grid>
+                <Grid item xs={12} md={3}>
+                  <Button variant="outlined" onClick={handleSaveExportSettings} fullWidth>
+                    Save Path
+                  </Button>
+                </Grid>
+              </Grid>
+            </AccordionDetails>
+          </Accordion>
+        </Box>
       </Paper>
 
 

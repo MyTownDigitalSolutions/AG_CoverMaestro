@@ -1343,6 +1343,28 @@ def get_amazon_us_baseline_price_str(db: Session, model_id: int) -> str:
 def get_field_value(field: ProductTypeField, model: Model, series, manufacturer, equipment_type=None, listing_type: str = "individual", db: Session = None) -> str | None:
     field_name_lower = field.field_name.lower()
     is_image_field = is_image_url_field(field.field_name)
+
+    # DEBUG INSTRUMENTATION FOR PART NUMBER
+    if "part_number" in field_name_lower:
+        print(f"\n[EXPORT_DEBUG] Field: {field.field_name} | Model: {model.name}")
+        print(f"  selected_value: {field.selected_value!r}")
+        print(f"  custom_value:   {field.custom_value!r}")
+        print(f"  valid_values:   {getattr(field, 'valid_values', 'N/A')!r}")
+        
+        # Speculative resolution logic match
+        chosen_pre = field.selected_value if field.selected_value else field.custom_value
+        print(f"  CHOSEN PRE-SUB: {chosen_pre!r}")
+        
+        if chosen_pre:
+            # Re-run substitution for logging visibility
+            try:
+                final_sub = substitute_placeholders(chosen_pre, model, series, manufacturer, equipment_type, is_image_url=is_image_field)
+                print(f"  FINAL POST-SUB: {final_sub!r}")
+            except Exception as e:
+                print(f"  FINAL POST-SUB ERROR: {e}")
+        else:
+            print("  FINAL POST-SUB: None")
+        print("-" * 40)
     
     # Phase 9: Amazon Baseline Price Logic
     # check specific field key parts
