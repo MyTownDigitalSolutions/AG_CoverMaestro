@@ -1,0 +1,12 @@
+INFO:     Started server process [43472]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+ERROR:    [Errno 10048] error while attempting to bind on address ('127.0.0.1', 8000): [winerror 10048] only one usage of each socket address (protocol/network address/port) is normally permitted
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+🔥🔥 EXPORT PREVIEW PROOF v7 LOADED 🔥🔥
+PID: 43472
+CWD: C:\Users\ksmar\Proton Drive\ksmartz7072\My files\Code Repositories\GGC\Antigravity\AG_CoverMaestro
+Export module path: C:\Users\ksmar\Proton Drive\ksmartz7072\My files\Code Repositories\GGC\Antigravity\AG_CoverMaestro\app\api\export.py
+[STORAGE_POLICY] Storage directories verified/created
+[SPA] Serving static assets from: C:\Users\ksmar\Proton Drive\ksmartz7072\My files\Code Repositories\GGC\Antigravity\AG_CoverMaestro\client\dist\assets

@@ -5,16 +5,17 @@ import zipfile
 import io
 import csv
 import json
+import copy
 import hashlib
 import requests # Added for image validation
 import concurrent.futures
 import time
 import traceback
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from typing import List, Dict, Any
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from app.schemas.core import ModelPricingSnapshotResponse
 from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Font, PatternFill, Alignment
@@ -91,90 +92,7 @@ class ExportPreviewRequest(BaseModel):
     model_ids: List[int]
     listing_type: str = "individual"  # "individual" or "parent_child"
 
-class ExportRowData(BaseModel):
-    model_id: int
-    model_name: str
-    data: List[str | None]
 
-class ExportPreviewResponse(BaseModel):
-    headers: List[List[str | None]]
-    rows: List[ExportRowData]
-    template_code: str
-    export_signature: str
-    field_map: Dict[str, int]
-    audit: Dict[str, Any]
-    recalc_performed: bool = False
-    recalc_model_count: int = 0
-
-def compute_export_signature(template_code: str, header_rows: list, data_rows: list) -> str:
-    """
-    Compute a deterministic SHA256 signature for the export content.
-    Normalization Rules: None -> "", all values to strings, no trimming.
-    """
-    def normalize_row(row):
-        return [str(val) if val is not None else "" for val in row]
-
-    payload = {
-        "template_code": template_code,
-        "headers": [normalize_row(r) for r in header_rows],
-        "rows": [normalize_row(r) for r in data_rows]
-    }
-    
-    # Serialize to JSON with sorted keys to ensure determinism if we expanded payload
-    # For now, keys are fixed. separators=(",", ":") removes whitespace.
-    serialized = json.dumps(payload, separators=(",", ":"), ensure_ascii=False)
-    
-    return hashlib.sha256(serialized.encode('utf-8')).hexdigest()
-
-def is_price_field(field_name: str) -> bool:
-    """Exact logic from get_field_value triggering price population."""
-    field_name_lower = field_name.lower()
-    return "purchasable_offer[marketplace_id=atvpdkikx0der]" in field_name_lower and \
-           "our_price#1.schedule#1.value_with_tax" in field_name_lower
-
-def is_sku_related_field(field_name: str) -> bool:
-    """True if field relates to SKU logic."""
-    lower = field_name.lower()
-    keys = ["item_sku", "contribution_sku", "parent_sku", "parent_child", "relationship_type"]
-    return any(k in lower for k in keys)
-
-def build_audit_columns(ordered_field_names: List[str], ordered_required_flags: List[bool]) -> List[dict]:
-    """Identify which columns correspond to price and sku fields."""
-    audited = []
-    for idx, (name, required) in enumerate(zip(ordered_field_names, ordered_required_flags)):
-        if not required:
-            # Skip audit for fields that are not exported/populated
-            continue
-            
-        if is_price_field(name):
-            audited.append({"field_name": name, "column_index": idx, "type": "PRICE"})
-        elif is_sku_related_field(name):
-            audited.append({"field_name": name, "column_index": idx, "type": "SKU"})
-    return audited
-
-# Example usage:
-# signature = compute_export_signature(code, headers, rows)
-
-def get_field_source_audit(field: ProductTypeField, model: Model, series, manufacturer, equipment_type, is_image_field: bool) -> dict | None:
-    """Determine the source of a field value for audit purposes."""
-    if not field.required:
-        return None
-        
-    lower = field.field_name.lower()
-    # Focus audit on specific content fields prone to template defaults
-    target_keys = ["product_description", "bullet_point", "generic_keyword"]
-    if not any(k in lower for k in target_keys):
-        return None
-
-    if field.selected_value:
-        val = substitute_placeholders(field.selected_value, model, series, manufacturer, equipment_type, is_image_url=is_image_field)
-        return {"field_name": field.field_name, "source": "selected_value", "preview": val[:100]}
-        
-    if field.custom_value:
-         val = substitute_placeholders(field.custom_value, model, series, manufacturer, equipment_type, is_image_url=is_image_field)
-         return {"field_name": field.field_name, "source": "custom_value", "preview": val[:100]}
-    
-    return {"field_name": field.field_name, "source": "none", "preview": ""}
 
 class ExportValidationIssue(BaseModel):
     severity: str  # "error", "warning"
@@ -403,113 +321,7 @@ def validate_export(request: ExportPreviewRequest, db: Session = Depends(get_db)
         items=issues
     )
 
-@router.post("/preview", response_model=ExportPreviewResponse)
-def generate_export_preview(request: ExportPreviewRequest, db: Session = Depends(get_db)):
-    recalc_performed, recalc_count = ensure_models_fresh_for_export(request, db)
 
-    header_rows, data_rows, filename_base, template_code, models, ordered_field_names, ordered_required_flags = build_export_data(request, db)
-    
-    signature = compute_export_signature(template_code, header_rows, data_rows)
-    field_map = {name: idx for idx, name in enumerate(ordered_field_names)}
-    
-    # Audit Construction
-    audit_columns = build_audit_columns(ordered_field_names, ordered_required_flags)
-    matched_price_fields = []
-    matched_sku_fields = []
-    
-    for col in audit_columns:
-        if col["type"] == "PRICE":
-            matched_price_fields.append({
-                "field_name": col["field_name"],
-                "column_index": col["column_index"],
-                "rule_explanation": (
-                    "Price is populated from the Amazon US baseline pricing snapshot "
-                    "(variant: choice_no_padding). Export fails if snapshot is missing."
-                ),
-                "source": {
-                    "marketplace": "amazon",
-                    "variant_key": "choice_no_padding",
-                    "entity": "ModelPricingSnapshot",
-                    "field": "retail_price_cents"
-                }
-            })
-        elif col["type"] == "SKU":
-             explanation = "Value is derived from the model base SKU."
-             if "contribution_sku" in col["field_name"].lower() and request.listing_type == "individual":
-                 explanation += " In individual listings, contribution_sku uses the base/parent SKU."
-                 
-             matched_sku_fields.append({
-                "field_name": col["field_name"],
-                "column_index": col["column_index"],
-                "rule_explanation": explanation
-            })
-
-    row_samples = []
-    for i in range(min(5, len(data_rows))):
-        row = data_rows[i]
-        model = models[i]
-        
-        key_values = {}
-        for col in audit_columns:
-            # Safely get value if index is within bounds, though it should be
-            idx = col["column_index"]
-            if idx < len(row):
-                key_values[col["field_name"]] = row[idx]
-        
-        row_samples.append({
-            "model_id": model.id,
-            "model_name": model.name,
-            "key_values": key_values
-        })
-
-    # Field Source Audit (for first model)
-    field_sources = []
-    if models:
-        audit_model = models[0]
-        audit_series = db.query(Series).filter(Series.id == audit_model.series_id).first()
-        audit_mfr = db.query(Manufacturer).filter(Manufacturer.id == audit_series.manufacturer_id).first() if audit_series else None
-        audit_equip = db.query(EquipmentType).filter(EquipmentType.id == audit_model.equipment_type_id).first()
-        
-        link = db.query(EquipmentTypeProductType).filter(EquipmentTypeProductType.equipment_type_id == audit_model.equipment_type_id).first()
-        if link:
-            audit_fields = db.query(ProductTypeField).filter(ProductTypeField.product_type_id == link.product_type_id).all()
-            for f in audit_fields:
-               src = get_field_source_audit(f, audit_model, audit_series, audit_mfr, audit_equip, is_image_url_field(f.field_name))
-               if src:
-                   field_sources.append(src)
-
-    audit = {
-        "row_mode": "BASE",
-        "pricing": {
-            "matched_price_fields": matched_price_fields
-        },
-        "sku": {
-            "matched_sku_fields": matched_sku_fields
-        },
-        "row_samples": row_samples,
-        "field_sources": field_sources
-    }
-    
-    rows = []
-    # Reconstruct ExportRowData objects from the raw data and model objects
-    # We rely on the order of 'models' and 'data_rows' matching, which they do in build_export_data
-    for i, row_data in enumerate(data_rows):
-        rows.append(ExportRowData(
-            model_id=models[i].id,
-            model_name=models[i].name,
-            data=row_data
-        ))
-    
-    return ExportPreviewResponse(
-        headers=header_rows,
-        rows=rows,
-        template_code=template_code,
-        export_signature=signature,
-        field_map=field_map,
-        audit=audit,
-        recalc_performed=recalc_performed,
-        recalc_model_count=recalc_count
-    )
 
 
 from datetime import datetime
@@ -562,7 +374,64 @@ def build_export_data(request: ExportPreviewRequest, db: Session):
         ProductTypeField.product_type_id == product_type.id
     ).order_by(ProductTypeField.order_index).all()
     
-    header_rows = product_type.header_rows or []
+    
+    # --- PHASE 3 FIX: Load headers from File ---
+    header_rows = []
+    header_source = "db_header_rows"
+    
+    if product_type.file_path and os.path.exists(product_type.file_path):
+        try:
+            wb_h = load_workbook(product_type.file_path, read_only=True, data_only=True)
+            ws_h = None
+            
+            if product_type.export_sheet_name_override and product_type.export_sheet_name_override in wb_h.sheetnames:
+                ws_h = wb_h[product_type.export_sheet_name_override]
+            else:
+                blacklist = ["data definitions", "instructions", "readme"]
+                for sn in wb_h.sheetnames:
+                    if any(b in sn.lower() for b in blacklist): continue
+                    ws_temp = wb_h[sn]
+                    if ws_temp.sheet_state == 'visible':
+                        ws_h = ws_temp
+                        break
+            
+            if not ws_h:
+                ws_h = wb_h.active
+                
+            if ws_h:
+                # Extract Rows 2-5 (Amazon Headers)
+                max_col = ws_h.max_column
+                # Optimize max_col: scan Row 4 (Labels) backwards for last value
+                try: 
+                    # Scan last 20 columns of max_col to check empty? Or just trust max_col.
+                    # max_col can be large. Let's trust it or cap it.
+                    if max_col > 100: max_col = 100 
+                except: pass
+                
+                file_headers = []
+                for r in range(2, 6):
+                    row_vals = []
+                    for c in range(1, max_col + 1):
+                        val = ws_h.cell(row=r, column=c).value
+                        row_vals.append(str(val) if val is not None else "")
+                    file_headers.append(row_vals)
+                
+                if file_headers:
+                    header_rows = file_headers
+                    header_source = f"file_path sheet={ws_h.title}"
+            
+            wb_h.close()
+        except Exception as e:
+            logger.warning(f"[BUILD_EXPORT] Failed to load headers from file: {e}")
+            header_rows = product_type.header_rows or []
+    else:
+        header_rows = product_type.header_rows or []
+
+    if not header_rows:
+        header_rows = product_type.header_rows or []
+        
+    logger.info(f"[EXPORT][PREVIEW] header_source={header_source} file={product_type.file_path}")
+    # ------------------------------------------
     
     equipment_type = db.query(EquipmentType).filter(EquipmentType.id == equipment_type_id).first()
     
@@ -596,67 +465,159 @@ def build_export_data(request: ExportPreviewRequest, db: Session):
     return header_rows, data_rows, filename_base, product_type.code, models, ordered_field_names, ordered_required_flags
 
 
+def _generate_xlsx_artifact(request: ExportPreviewRequest, db: Session):
+    """
+    Shared logic to generate the final filled XLSX bytes.
+    Used by both download_xlsx (stream) and preview (visual verification).
+    """
+    import os
+    # 1. Resolve Data
+    ensure_models_fresh_for_export(request, db)
+    header_rows, data_rows, filename_base, template_code, models, ordered_fields, ordered_flags = build_export_data(request, db)
+    
+    # 2. Resolve Template
+    if not models:
+         raise HTTPException(400, detail="No models to export.")
+    
+    product_type = db.query(AmazonProductType).filter(AmazonProductType.code == template_code).first()
+    if not product_type:
+        raise HTTPException(404, detail="No product type template linked.")
+        
+    file_path = product_type.file_path
+    if not file_path or not os.path.exists(file_path):
+         raise HTTPException(404, detail=f"Template file missing: {file_path}")
+
+    # 3. Load & Write (In-Memory)
+    try:
+        wb = load_workbook(file_path) # keep_vba default is False for plain load, or use data_only? 
+        # For writing, we want to preserve styles/structure. Default is good.
+    except Exception:
+        raise HTTPException(422, detail="Could not open template file.")
+
+    # Determine sheets (Reuse logic)
+    eligible_sheets = []
+    override_sheet = product_type.export_sheet_name_override
+    
+    if override_sheet:
+        if override_sheet in wb.sheetnames:
+            ws = wb[override_sheet]
+            anchor = None
+            for r in range(1, 51):
+                if is_anchor_row(ws, r):
+                    anchor = r
+                    break
+            setattr(ws, "_anchor_row", anchor)
+            eligible_sheets.append(ws)
+    else:
+         blacklist = ["data definitions", "data definition", "instructions", "readme", "example", "sample", "notes"]
+         for sname in wb.sheetnames:
+            ws = wb[sname]
+            if ws.sheet_state != "visible": continue
+            if any(b in sname.lower() for b in blacklist): continue
+            anchor = None
+            try:
+                for r in range(1, 51):
+                   if is_anchor_row(ws, r):
+                       anchor = r
+                       break
+            except: continue
+            if anchor:
+                setattr(ws, "_anchor_row", anchor)
+                eligible_sheets.append(ws)
+    
+    if not eligible_sheets:
+         raise HTTPException(422, detail="No eligible export sheet detected.")
+
+    cols_to_write = len(data_rows[0]) if data_rows else 1
+    
+    for ws in eligible_sheets:
+        anchor = getattr(ws, "_anchor_row", None)
+        start_scan = product_type.export_start_row_override or (anchor + 1 if anchor else 1)
+        
+        first_writable = None
+        max_search = max(start_scan + 5000, ws.max_row + 5000)
+        for r in range(start_scan, max_search):
+            if is_row_empty(ws, r, cols_to_write):
+                first_writable = r
+                break
+        
+        if not first_writable:
+             raise HTTPException(422, detail=f"No empty row found on sheet '{ws.title}'.")
+        
+        curr = first_writable
+        for dr in data_rows:
+            for ci, val in enumerate(dr):
+                try:
+                    c = ws.cell(row=curr, column=ci+1)
+                    if not isinstance(c, MergedCell):
+                        c.value = val or ''
+                except: pass
+            curr += 1
+            
+    out = io.BytesIO()
+    wb.save(out)
+    out.seek(0)
+    raw_bytes = out.getvalue()
+    
+    # Compute Safe Byte Signature
+    sig = hashlib.sha256(raw_bytes).hexdigest()
+
+    # Compute Header Snapshot Hash (Rows 2-5, Cols 1-25)
+    header_trace = []
+    for ws in eligible_sheets:
+        header_trace.append(f"SHEET:{ws.title}")
+        for r in range(2, 6):
+            row_vals = []
+            for c in range(1, 26): # Limit to 25 cols
+                try: 
+                    val = ws.cell(row=r, column=c).value
+                    row_vals.append(str(val) if val is not None else "")
+                except: 
+                    row_vals.append("")
+            header_trace.append("|".join(row_vals))
+    
+    header_string = "\n".join(header_trace)
+    header_hash = hashlib.sha256(header_string.encode('utf-8')).hexdigest()
+
+    # Input Trace
+    input_trace = f"models={len(models)}|first10={','.join(str(m.id) for m in models[:10])}|type={request.listing_type}|cust={getattr(request, 'include_customization', False)}"
+
+    return {
+        "bytes": raw_bytes,
+        "signature": sig,
+        "filename": f"{filename_base}.xlsx",
+        "template_code": template_code,
+        "models": models,
+        "data_rows": data_rows,
+        "headers_db": header_rows,
+        "ordered_fields": ordered_fields,
+        "ordered_flags": ordered_flags,
+        "header_hash": header_hash,
+        "input_trace": input_trace
+    }
+    
 @router.post("/download/xlsx")
 def download_xlsx(request: ExportPreviewRequest, db: Session = Depends(get_db)):
-    """Download export as XLSX file."""
-    ensure_models_fresh_for_export(request, db)
-    header_rows, data_rows, filename_base, template_code, _, _, _ = build_export_data(request, db)
+    """Download export as XLSX file using consistent helper."""
+    artifact = _generate_xlsx_artifact(request, db)
     
-    sig = compute_export_signature(template_code, header_rows, data_rows)
+    # Debug Log
+    logger.warning(f"[EXPORT][DOWNLOAD_XLSX][DEBUG] template={artifact['template_code']} code={artifact['template_code']} "
+                   f"filled_xlsx_sha256={artifact['signature']} header_hash={artifact['header_hash']} "
+                   f"inputs={artifact['input_trace']}")
+
+    bio = io.BytesIO(artifact["bytes"])
     
-    wb = Workbook()
-    ws = wb.active
-    ws.title = "Template"
-    
-    row_styles = [
-        (Font(bold=True, color="FFFFFF"), PatternFill(start_color="1976D2", end_color="1976D2", fill_type="solid")),
-        (Font(color="FFFFFF"), PatternFill(start_color="2196F3", end_color="2196F3", fill_type="solid")),
-        (Font(bold=True, color="FFFFFF"), PatternFill(start_color="4CAF50", end_color="4CAF50", fill_type="solid")),
-        (Font(bold=True), PatternFill(start_color="8BC34A", end_color="8BC34A", fill_type="solid")),
-        (Font(size=9), PatternFill(start_color="C8E6C9", end_color="C8E6C9", fill_type="solid")),
-        (Font(italic=True, size=9), PatternFill(start_color="FFF9C4", end_color="FFF9C4", fill_type="solid")),
-    ]
-    
-    current_row = 1
-    for row_idx, header_row in enumerate(header_rows):
-        for col_idx, value in enumerate(header_row):
-            cell = ws.cell(row=current_row, column=col_idx + 1, value=value or '')
-            if row_idx < len(row_styles):
-                cell.font = row_styles[row_idx][0]
-                cell.fill = row_styles[row_idx][1]
-            cell.alignment = Alignment(horizontal='left', vertical='center')
-        current_row += 1
-    
-    for data_row in data_rows:
-        for col_idx, value in enumerate(data_row):
-            ws.cell(row=current_row, column=col_idx + 1, value=value or '')
-        current_row += 1
-    
-    for col in ws.columns:
-        max_length = 0
-        column = col[0].column_letter
-        for cell in col:
-            try:
-                if len(str(cell.value)) > max_length:
-                    max_length = min(len(str(cell.value)), 50)
-            except:
-                pass
-        adjusted_width = max_length + 2
-        ws.column_dimensions[column].width = adjusted_width
-    
-    output = io.BytesIO()
-    wb.save(output)
-    output.seek(0)
-    
-    filename = f"{filename_base}.xlsx"
     response = StreamingResponse(
-        output,
+        bio,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": f"attachment; filename={filename}"}
+        headers={"Content-Disposition": f"attachment; filename={artifact['filename']}"}
     )
-    response.headers["X-Export-Signature"] = sig
-    response.headers["X-Export-Template-Code"] = template_code
+    response.headers["X-Export-Signature"] = artifact["signature"]
+    response.headers["X-Export-Template-Code"] = artifact["template_code"]
     return response
+
+
 
 
 # Helper functions for XLSM export logic
@@ -1382,6 +1343,28 @@ def get_amazon_us_baseline_price_str(db: Session, model_id: int) -> str:
 def get_field_value(field: ProductTypeField, model: Model, series, manufacturer, equipment_type=None, listing_type: str = "individual", db: Session = None) -> str | None:
     field_name_lower = field.field_name.lower()
     is_image_field = is_image_url_field(field.field_name)
+
+    # DEBUG INSTRUMENTATION FOR PART NUMBER
+    if "part_number" in field_name_lower:
+        print(f"\n[EXPORT_DEBUG] Field: {field.field_name} | Model: {model.name}")
+        print(f"  selected_value: {field.selected_value!r}")
+        print(f"  custom_value:   {field.custom_value!r}")
+        print(f"  valid_values:   {getattr(field, 'valid_values', 'N/A')!r}")
+        
+        # Speculative resolution logic match
+        chosen_pre = field.selected_value if field.selected_value else field.custom_value
+        print(f"  CHOSEN PRE-SUB: {chosen_pre!r}")
+        
+        if chosen_pre:
+            # Re-run substitution for logging visibility
+            try:
+                final_sub = substitute_placeholders(chosen_pre, model, series, manufacturer, equipment_type, is_image_url=is_image_field)
+                print(f"  FINAL POST-SUB: {final_sub!r}")
+            except Exception as e:
+                print(f"  FINAL POST-SUB ERROR: {e}")
+        else:
+            print("  FINAL POST-SUB: None")
+        print("-" * 40)
     
     # Phase 9: Amazon Baseline Price Logic
     # check specific field key parts
@@ -1421,3 +1404,170 @@ def get_field_value(field: ProductTypeField, model: Model, series, manufacturer,
             return manufacturer.name if manufacturer else None
     
     return None
+
+
+def _generate_customization_xlsx(template_path: str, skus: List[str]) -> io.BytesIO:
+    if not os.path.exists(template_path):
+        raise HTTPException(status_code=500, detail=f"Customization template file missing: {template_path}")
+        
+    wb = load_workbook(template_path)
+    
+    # 1. Worksheet Selection (STRICT: "Template", case-insensitive)
+    target_sheet_name = "Template"
+    ws = None
+    for sheet in wb.sheetnames:
+        if sheet.strip().lower() == target_sheet_name.lower():
+            ws = wb[sheet]
+            break
+            
+    if ws is None:
+        raise HTTPException(status_code=500, detail="Customization workbook missing 'Template' worksheet")
+        
+    # 2. Data Start Row Detection (SellerSku in Column A)
+    data_start_row = 4 # Default
+    seller_sku_found = False
+    
+    # Scan first 20 rows
+    for r in range(1, 21):
+        cell_val = ws.cell(row=r, column=1).value
+        # Check normalized value (case-insensitive)
+        if cell_val and str(cell_val).strip().lower() == "sellersku":
+            data_start_row = r + 2
+            seller_sku_found = True
+            break
+            
+    if not seller_sku_found:
+        print(f"[CUSTOMIZATION][WARN] 'SellerSku' not found; defaulting data_start_row={data_start_row}")
+
+    blueprint_row_idx = data_start_row
+    
+    # Determine max columns to copy from blueprint
+    max_col = ws.max_column
+    
+    # 3. Blueprint Row Copy Rules
+    for i, sku in enumerate(skus):
+        target_row_idx = blueprint_row_idx + i
+        source_row_idx = blueprint_row_idx
+        
+        # Copy Row Dimensions (Height) for new rows
+        if i > 0:
+            if source_row_idx in ws.row_dimensions:
+                 src_dim = ws.row_dimensions[source_row_idx]
+                 tgt_dim = ws.row_dimensions[target_row_idx]
+                 if src_dim.height is not None:
+                     tgt_dim.height = src_dim.height
+                 tgt_dim.customHeight = src_dim.customHeight
+
+        if i == 0:
+            # First SKU: Use the existing blueprint row as-is (Overwrite Col A)
+            ws.cell(row=target_row_idx, column=1, value=sku)
+            # Do NOT modify other columns or style (preserve original blueprint)
+        else:
+            # Subsequent SKUs: Create new row by copying blueprint
+            for col in range(1, max_col + 1):
+                source_cell = ws.cell(row=source_row_idx, column=col)
+                target_cell = ws.cell(row=target_row_idx, column=col)
+                
+                # Copy values AND formulas (except Col A)
+                # 4. SKU Injection Rules (Template!Column A)
+                if col == 1:
+                    target_cell.value = sku
+                else:
+                    target_cell.value = source_cell.value
+                    
+                # 5. Formatting Safety (Copy styles)
+                if source_cell.has_style:
+                    target_cell._style = copy.copy(source_cell._style)
+                     
+    output = io.BytesIO()
+    wb.save(output)
+    output.seek(0)
+    return output
+
+@router.post("/download/customization/xlsx")
+def download_customization_xlsx(request: ExportPreviewRequest, db: Session = Depends(get_db)):
+    """
+    Download filled Customization Template (XLSX).
+    Logic:
+    1. Resolve Models & Template.
+    2. Extract SKUs from Export Data (Authoritative).
+    3. Load Template, Clone Blueprint Row, Inject SKUs.
+    4. Return XLSX.
+    """
+    # 1. Reuse Build Export Data (to get data_rows and match ZIP behavior)
+    ensure_models_fresh_for_export(request, db)
+    header_rows, data_rows, filename_base, _, models, _, _ = build_export_data(request, db)
+    
+    if not models:
+        raise HTTPException(status_code=400, detail="No models found.")
+
+    # 2. Extract SKUs (Logic mirrored from download_zip)
+    ordered_field_names = header_rows[0] if header_rows else []
+    sku_col_idx = -1
+    target_fields = ["item_sku", "contribution_sku", "external_product_id"]
+    for target in target_fields:
+        for idx, field_name in enumerate(ordered_field_names):
+            if target in field_name.lower():
+                sku_col_idx = idx
+                break
+        if sku_col_idx != -1:
+            break
+            
+    if sku_col_idx == -1 and ordered_field_names and "sku" in ordered_field_names[0].lower():
+        sku_col_idx = 0
+        
+    skus = []
+    if sku_col_idx != -1:
+        for row in data_rows:
+            if sku_col_idx < len(row):
+                 val = row[sku_col_idx]
+                 skus.append(str(val) if val is not None else "")
+            else:
+                 skus.append("")
+    
+    # Filter empty? ZIP logic doesn't strictly filter, but appends empty string.
+    # However, customization usually implies valid items.
+    # We keeps skus aligned with export rows 1:1 if needed, 
+    # OR we assume 1 row per export row.
+    # We keep them.
+    
+    if not skus:
+        # Fallback to model parent_sku if extraction failed?
+        # User said "Reuse existing logic". 
+        # Existing logic in download_zip logs error if skus_count != worksheet_count.
+        # We proceed if we have count > 0.
+        if not data_rows:
+             raise HTTPException(status_code=400, detail="No data rows generated.")
+        # If extraction failed (sku_col_idx == -1), we have empty list or need fallback?
+        # If sku_col_idx is -1, loop above didn't run.
+        if sku_col_idx == -1:
+             # Try falling back to model.parent_sku for each model
+             # But models list matches data_rows 1:1?
+             # build_export_data returns models.
+             skus = [m.parent_sku for m in models]
+
+    # 3. Resolve Template
+    first_model = models[0]
+    equip_type = db.query(EquipmentType).filter(EquipmentType.id == first_model.equipment_type_id).first()
+    
+    if not equip_type or not equip_type.amazon_customization_template_id:
+         raise HTTPException(status_code=400, detail=f"No customization template assigned to Equipment Type: {equip_type.name if equip_type else 'Unknown'}")
+         
+    template = equip_type.amazon_customization_template
+    if not template or not template.file_path:
+        raise HTTPException(status_code=500, detail="Customization template record invalid.")
+        
+    # 4. Generate
+    try:
+        xlsx_buffer = _generate_customization_xlsx(template.file_path, skus)
+    except Exception as e:
+        logger.exception("Failed to generate customization XLSX")
+        raise HTTPException(status_code=500, detail=f"Generation failed: {str(e)}")
+    
+    filename = f"{filename_base}_Customization.xlsx"
+    
+    return StreamingResponse(
+        xlsx_buffer,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename={filename}"}
+    )

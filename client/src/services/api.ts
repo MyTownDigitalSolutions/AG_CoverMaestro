@@ -340,17 +340,7 @@ export const settingsApi = {
     api.delete(`/settings/equipment-types/${equipmentTypeId}/amazon-customization-templates/${templateId}`).then(r => r.data),
 }
 
-export interface ExportRowData {
-  model_id: number
-  model_name: string
-  data: (string | null)[]
-}
 
-export interface ExportPreviewResponse {
-  headers: (string | null)[][]
-  rows: ExportRowData[]
-  template_code: string
-}
 
 
 export interface ExportValidationIssue {
@@ -375,8 +365,7 @@ export const exportApi = {
   validateExport: (modelIds: number[], listingType: 'individual' | 'parent_child' = 'individual') =>
     api.post<ExportValidationResponse>('/export/validate', { model_ids: modelIds, listing_type: listingType }).then(r => r.data),
 
-  generatePreview: (modelIds: number[], listingType: 'individual' | 'parent_child' = 'individual') =>
-    api.post<ExportPreviewResponse>('/export/preview', { model_ids: modelIds, listing_type: listingType }).then(r => r.data),
+
 
   downloadXlsx: async (modelIds: number[], listingType: 'individual' | 'parent_child' = 'individual') => {
     const response = await api.post('/export/download/xlsx', { model_ids: modelIds, listing_type: listingType }, { responseType: 'blob' })
@@ -395,6 +384,11 @@ export const exportApi = {
 
   downloadCsv: async (modelIds: number[], listingType: 'individual' | 'parent_child' = 'individual') => {
     const response = await api.post('/export/download/csv', { model_ids: modelIds, listing_type: listingType }, { responseType: 'blob' })
+    return response
+  },
+
+  downloadCustomizationXlsx: async (modelIds: number[], listingType: 'individual' | 'parent_child' = 'individual') => {
+    const response = await api.post('/export/download/customization/xlsx', { model_ids: modelIds, listing_type: listingType }, { responseType: 'blob' })
     return response
   },
 
