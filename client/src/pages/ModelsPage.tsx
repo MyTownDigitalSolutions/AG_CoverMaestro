@@ -5,7 +5,8 @@ import {
   DialogContent, DialogActions, FormControl, InputLabel, Select,
   MenuItem, Grid, IconButton, Table, TableBody, TableCell,
   TableContainer, TableHead, TableRow, Tabs, Tab, CircularProgress, Chip, Stack,
-  Snackbar, Alert, Tooltip, ToggleButton, ToggleButtonGroup
+  Snackbar, Alert, Tooltip, ToggleButton, ToggleButtonGroup, Checkbox,
+  FormControlLabel, FormGroup, FormHelperText
 } from '@mui/material'
 import DeleteIcon from '@mui/icons-material/Delete'
 import EditIcon from '@mui/icons-material/Edit'
@@ -20,6 +21,9 @@ import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward'
 import ArrowDownwardIcon from '@mui/icons-material/ArrowDownward'
 import RemoveIcon from '@mui/icons-material/Remove'
 import LocalShippingIcon from '@mui/icons-material/LocalShipping'
+import SaveIcon from '@mui/icons-material/Save'
+import CloseIcon from '@mui/icons-material/Close'
+import BoltIcon from '@mui/icons-material/Bolt'
 import PricingAdminPanel from '../components/PricingAdminPanel'
 
 
@@ -787,6 +791,300 @@ export default function ModelsPage() {
   const [validationErrors, setValidationErrors] = useState<string[]>([])
   const [isSaving, setIsSaving] = useState(false)
 
+  // Bulk Edit State
+  const [selectedModelIds, setSelectedModelIds] = useState<Set<number>>(new Set())
+  const [bulkEditOpen, setBulkEditOpen] = useState(false)
+  const [bulkEditApplying, setBulkEditApplying] = useState(false)
+  const [bulkEditState, setBulkEditState] = useState({
+    amazonAsin: { enabled: false, mode: 'set' as const, value: '' },
+    measurements: { enabled: false, width: '' as number | '', depth: '' as number | '', height: '' as number | '' },
+    notes: { enabled: false, mode: 'replace' as const, value: '' }
+  })
+
+  // Row Edit State
+  const [editingRowId, setEditingRowId] = useState<number | null>(null)
+  const [editingRowData, setEditingRowData] = useState({ asin: '', notes: '' })
+  const [rowSaveError, setRowSaveError] = useState<string | null>(null)
+
+  // Bulk Edit Columns Mode
+  const [isBulkEditMode, setIsBulkEditMode] = useState(false)
+  const [selectedBulkColumns, setSelectedBulkColumns] = useState<Set<string>>(new Set())
+  const [bulkDrafts, setBulkDrafts] = useState<Record<number, any>>({})
+  const [savingRowId, setSavingRowId] = useState<number | null>(null)
+
+  const handleColumnToggle = (col: string) => {
+    const newSet = new Set(selectedBulkColumns)
+    if (newSet.has(col)) {
+      newSet.delete(col)
+    } else {
+      if (newSet.size >= 2) return
+      newSet.add(col)
+    }
+    setSelectedBulkColumns(newSet)
+    if (newSet.size === 0 && isBulkEditMode) setIsBulkEditMode(false)
+  }
+
+  const handleBulkDraftChange = (id: number, field: string, value: any) => {
+    setBulkDrafts(prev => ({
+      ...prev,
+      [id]: { ...prev[id], [field]: value }
+    }))
+  }
+
+  const handleRowBulkSave = async (id: number) => {
+    setSavingRowId(id)
+    const draft = bulkDrafts[id] || {}
+    const model = models.find(m => m.id === id)
+    if (!model) {
+      setSavingRowId(null)
+      return
+    }
+
+    try {
+      // Prepare payload
+      let listings = model.marketplace_listings ? [...model.marketplace_listings] : []
+      let updateData: any = {}
+
+      // Amazon ASIN
+      if (selectedBulkColumns.has('amazon_asin')) {
+        const val = draft.asin !== undefined ? draft.asin : (model.marketplace_listings?.find(l => l.marketplace === 'amazon')?.external_id || '')
+        if (val.trim()) {
+          listings = listings.filter(l => l.marketplace !== 'amazon')
+          listings.push({ marketplace: 'amazon', external_id: val.trim() } as any)
+        } else {
+          listings = listings.filter(l => l.marketplace !== 'amazon')
+        }
+      }
+
+      // eBay ID
+      if (selectedBulkColumns.has('ebay_id')) {
+        const val = draft.ebay !== undefined ? draft.ebay : (model.marketplace_listings?.find(l => l.marketplace === 'ebay')?.external_id || '')
+        if (val.trim()) {
+          listings = listings.filter(l => l.marketplace !== 'ebay')
+          listings.push({ marketplace: 'ebay', external_id: val.trim() } as any)
+        } else {
+          listings = listings.filter(l => l.marketplace !== 'ebay')
+        }
+      }
+
+      // Reverb ID
+      if (selectedBulkColumns.has('reverb_id')) {
+        const val = draft.reverb !== undefined ? draft.reverb : (model.marketplace_listings?.find(l => l.marketplace === 'reverb')?.external_id || '')
+        if (val.trim()) {
+          listings = listings.filter(l => l.marketplace !== 'reverb')
+          listings.push({ marketplace: 'reverb', external_id: val.trim() } as any)
+        } else {
+          listings = listings.filter(l => l.marketplace !== 'reverb')
+        }
+      }
+
+      // Model Notes
+      if (selectedBulkColumns.has('model_notes')) {
+        const val = draft.notes !== undefined ? draft.notes : (model.model_notes || '')
+        updateData.model_notes = val || null
+      }
+
+      // Dimensions
+      if (selectedBulkColumns.has('dimensions')) {
+        // Only update if draft has values, else keep model values (or update if explicit)
+        if (draft.width !== undefined) updateData.width = Number(draft.width)
+        if (draft.depth !== undefined) updateData.depth = Number(draft.depth)
+        if (draft.height !== undefined) updateData.height = Number(draft.height)
+      }
+
+      // Equipment Type
+      if (selectedBulkColumns.has('equipment_type')) {
+        if (draft.equipment_type_id) updateData.equipment_type_id = Number(draft.equipment_type_id)
+      }
+
+      const payload = {
+        ...model,
+        ...updateData,
+        marketplace_listings: listings
+      }
+
+      await modelsApi.update(id, payload)
+      // Clean draft
+      setBulkDrafts(prev => {
+        const next = { ...prev }
+        delete next[id]
+        return next
+      })
+      loadData()
+    } catch (e) {
+      console.error(e)
+      alert("Save failed")
+    } finally {
+      setSavingRowId(null)
+    }
+  }
+
+  const startRowEdit = (model: Model) => {
+    const amazon = model.marketplace_listings?.find(l => l.marketplace === 'amazon')?.external_id || ''
+    setEditingRowId(model.id)
+    setEditingRowData({ asin: amazon, notes: model.model_notes || '' })
+    setRowSaveError(null)
+  }
+
+  const cancelRowEdit = () => {
+    setEditingRowId(null)
+    setEditingRowData({ asin: '', notes: '' })
+    setRowSaveError(null)
+  }
+
+  const saveRowEdit = async (id: number) => {
+    try {
+      const model = models.find(m => m.id === id)
+      if (!model) return
+
+      // Prepare Payload via cloning
+      let listings = model.marketplace_listings ? [...model.marketplace_listings] : []
+      // Handle ASIN
+      if (editingRowData.asin.trim()) {
+        listings = listings.filter(l => l.marketplace !== 'amazon')
+        listings.push({ marketplace: 'amazon', external_id: editingRowData.asin.trim() } as any)
+      } else {
+        listings = listings.filter(l => l.marketplace !== 'amazon')
+      }
+
+      const payload = {
+        ...model,
+        model_notes: editingRowData.notes || null,
+        marketplace_listings: listings
+      }
+
+      await modelsApi.update(id, payload)
+
+      // Advance
+      // Recalculate index from current filtered list
+      const currentIndex = filteredModels.findIndex(m => m.id === id)
+      if (currentIndex >= 0 && currentIndex < filteredModels.length - 1) {
+        const nextModel = filteredModels[currentIndex + 1]
+        startRowEdit(nextModel)
+      } else {
+        cancelRowEdit()
+      }
+
+      loadData()
+
+    } catch (e) {
+      console.error("Row save failed", e)
+      setRowSaveError("Save failed")
+    }
+  }
+
+  // Selection Handlers
+  const handleSelectAll = (checked: boolean) => {
+    if (checked) {
+      const ids = new Set(filteredModels.map(m => m.id))
+      setSelectedModelIds(ids)
+    } else {
+      setSelectedModelIds(new Set())
+    }
+  }
+
+  const handleSelectRow = (id: number, checked: boolean) => {
+    const newSelected = new Set(selectedModelIds)
+    if (checked) newSelected.add(id)
+    else newSelected.delete(id)
+    setSelectedModelIds(newSelected)
+  }
+
+  // Bulk Apply
+  const handleBulkApply = async () => {
+    // Validation
+    if (bulkEditState.measurements.enabled) {
+      const { width, depth, height } = bulkEditState.measurements
+      if (!width || !depth || !height || width <= 0 || depth <= 0 || height <= 0) {
+        alert("Default Measurements: All dimensions are required and must be > 0.")
+        return
+      }
+    }
+    if (bulkEditState.amazonAsin.enabled && bulkEditState.amazonAsin.mode === 'set' && !bulkEditState.amazonAsin.value.trim()) {
+      alert("Amazon ASIN: Value is required when mode is 'Set'.")
+      return
+    }
+    if (bulkEditState.notes.enabled && (bulkEditState.notes.mode === 'replace' || bulkEditState.notes.mode === 'append') && !bulkEditState.notes.value.trim()) {
+      alert("Model Notes: Value is required.")
+      return
+    }
+
+    setBulkEditApplying(true)
+    const targets = Array.from(selectedModelIds)
+    const failures: number[] = []
+
+    // Loop and update
+    for (const id of targets) {
+      try {
+        // 1. Get current model data (safest)
+        const model = models.find(m => m.id === id)
+        if (!model) continue
+
+        // 2. Prepare Payload
+        // Clone existing listings
+        let listings = model.marketplace_listings ? [...model.marketplace_listings] : []
+
+        // Apply ASIN
+        if (bulkEditState.amazonAsin.enabled) {
+          if (bulkEditState.amazonAsin.mode === 'set') {
+            // Remove existing amazon
+            listings = listings.filter(l => l.marketplace !== 'amazon')
+            listings.push({ marketplace: 'amazon', external_id: bulkEditState.amazonAsin.value.trim() } as any)
+          } else if (bulkEditState.amazonAsin.mode === 'clear') {
+            listings = listings.filter(l => l.marketplace !== 'amazon')
+          }
+        }
+
+        // Apply Measurements
+        let dimUpdate = {}
+        if (bulkEditState.measurements.enabled) {
+          dimUpdate = {
+            width: Number(bulkEditState.measurements.width),
+            depth: Number(bulkEditState.measurements.depth),
+            height: Number(bulkEditState.measurements.height)
+          }
+        }
+
+        // Apply Notes
+        let notesUpdate = {}
+        if (bulkEditState.notes.enabled) {
+          let newNotes = model.model_notes || ''
+          const val = bulkEditState.notes.value
+          if (bulkEditState.notes.mode === 'replace') newNotes = val
+          else if (bulkEditState.notes.mode === 'append') newNotes = newNotes ? newNotes + '\n' + val : val
+          else if (bulkEditState.notes.mode === 'clear') newNotes = ''
+
+          notesUpdate = { model_notes: newNotes || null }
+        }
+
+        const payload = {
+          ...model,
+          ...dimUpdate,
+          ...notesUpdate,
+          marketplace_listings: listings
+        }
+
+        await modelsApi.update(id, payload)
+
+      } catch (e) {
+        console.error(`Failed to update model ${id}`, e)
+        failures.push(id)
+      }
+    }
+
+    setBulkEditApplying(false)
+    setBulkEditOpen(false)
+
+    if (failures.length === 0) {
+      alert(`Successfully updated ${targets.length} models.`)
+      setSelectedModelIds(new Set()) // Deselect all
+      loadData()
+    } else {
+      alert(`Updated ${targets.length - failures.length} models. Failed: ${failures.length}. Check console.`)
+      loadData()
+    }
+  }
+
   const ALLOWED_HANDLE_TYPES = new Set([
     'guitar amplifier',
     'bass amplifier',
@@ -1245,6 +1543,16 @@ export default function ModelsPage() {
           </Box>
         </Box>
         <Box>
+          {false && (
+            <Button
+              variant="outlined"
+              onClick={() => setBulkEditOpen(true)}
+              disabled={selectedModelIds.size === 0}
+              sx={{ mr: 2 }}
+            >
+              Bulk Edit ({selectedModelIds.size})
+            </Button>
+          )}
           <Button
             variant="outlined"
             startIcon={<MonetizationOnIcon />}
@@ -1303,38 +1611,199 @@ export default function ModelsPage() {
             </FormControl>
           </Grid>
         </Grid>
+
+        {/* Bulk Edit Columns Selector */}
+        <Box sx={{ mt: 2, pt: 2, borderTop: 1, borderColor: 'divider' }}>
+          <Typography variant="subtitle2" sx={{ mb: 1 }}>Bulk Edit Columns (Select up to 2)</Typography>
+          <FormGroup row>
+            <FormControlLabel
+              control={<Checkbox checked={selectedBulkColumns.has('amazon_asin')} onChange={() => handleColumnToggle('amazon_asin')} disabled={isBulkEditMode} />}
+              label="Amazon ASIN"
+            />
+            <FormControlLabel
+              control={<Checkbox checked={selectedBulkColumns.has('model_notes')} onChange={() => handleColumnToggle('model_notes')} disabled={isBulkEditMode} />}
+              label="Model Notes"
+            />
+            <FormControlLabel
+              control={<Checkbox checked={selectedBulkColumns.has('dimensions')} onChange={() => handleColumnToggle('dimensions')} disabled={isBulkEditMode} />}
+              label="Dimensions"
+            />
+            <FormControlLabel
+              control={<Checkbox checked={selectedBulkColumns.has('equipment_type')} onChange={() => handleColumnToggle('equipment_type')} disabled={isBulkEditMode || equipmentTypes.length === 0} />}
+              label="Equipment Type"
+            />
+            <FormControlLabel
+              control={<Checkbox checked={selectedBulkColumns.has('ebay_id')} onChange={() => handleColumnToggle('ebay_id')} disabled={isBulkEditMode} />}
+              label="eBay ID"
+            />
+            <FormControlLabel
+              control={<Checkbox checked={selectedBulkColumns.has('reverb_id')} onChange={() => handleColumnToggle('reverb_id')} disabled={isBulkEditMode} />}
+              label="Reverb ID"
+            />
+          </FormGroup>
+          {selectedBulkColumns.size >= 2 && !isBulkEditMode && (
+            <FormHelperText>Max 2 columns selected.</FormHelperText>
+          )}
+          <Stack direction="row" spacing={2} alignItems="center" sx={{ mt: 1 }}>
+            <Button
+              variant="contained"
+              size="small"
+              onClick={() => setIsBulkEditMode(!isBulkEditMode)}
+              disabled={selectedBulkColumns.size === 0}
+              color={isBulkEditMode ? 'warning' : 'primary'}
+            >
+              {isBulkEditMode ? 'Exit Bulk Edit' : 'Start Bulk Edit'}
+            </Button>
+            {selectedBulkColumns.size > 0 && (
+              <Button
+                variant="text"
+                size="small"
+                onClick={() => {
+                  setSelectedBulkColumns(new Set())
+                  setIsBulkEditMode(false)
+                  setBulkDrafts({})
+                }}
+              >
+                Clear Selection
+              </Button>
+            )}
+          </Stack>
+        </Box>
       </Paper>
 
       <TableContainer component={Paper}>
         <Table>
           <TableHead>
             <TableRow>
-              <TableCell>Name</TableCell>
-              <TableCell>Series</TableCell>
-              <TableCell>Manufacturer</TableCell>
-              <TableCell>Dimensions (W x D x H)</TableCell>
+              <TableCell>Model Name</TableCell>
+              {isBulkEditMode && <TableCell>Series</TableCell>}
+
+              {isBulkEditMode && selectedBulkColumns.has('amazon_asin') && <TableCell>Amazon ASIN</TableCell>}
+              {isBulkEditMode && selectedBulkColumns.has('model_notes') && <TableCell>Model Notes</TableCell>}
+              {isBulkEditMode && selectedBulkColumns.has('dimensions') && <TableCell>Dimensions (W x D x H)</TableCell>}
+              {isBulkEditMode && selectedBulkColumns.has('equipment_type') && <TableCell>Equipment Type</TableCell>}
+              {isBulkEditMode && selectedBulkColumns.has('ebay_id') && <TableCell>eBay ID</TableCell>}
+              {isBulkEditMode && selectedBulkColumns.has('reverb_id') && <TableCell>Reverb ID</TableCell>}
+
+              {!isBulkEditMode && (
+                <>
+                  <TableCell>Series</TableCell>
+                  <TableCell>Manufacturer</TableCell>
+                  <TableCell>Dimensions (W x D x H)</TableCell>
+                </>
+              )}
               <TableCell align="right">Actions</TableCell>
             </TableRow>
           </TableHead>
           <TableBody>
             {filteredModels.map((model) => (
-              <TableRow key={model.id}>
+              <TableRow key={model.id} selected={selectedModelIds.has(model.id)}>
                 <TableCell>{model.name}</TableCell>
-                <TableCell>{series.find(s => s.id === model.series_id)?.name || 'Unknown'}</TableCell>
-                <TableCell>{manufacturers.find(m => m.id === series.find(s => s.id === model.series_id)?.manufacturer_id)?.name || 'Unknown'}</TableCell>
-                <TableCell>{`${model.width}" x ${model.depth}" x ${model.height}"`}</TableCell>
+                {isBulkEditMode && <TableCell>{series.find(s => s.id === model.series_id)?.name || 'Unknown'}</TableCell>}
+
+                {isBulkEditMode && selectedBulkColumns.has('amazon_asin') && (
+                  <TableCell>
+                    <TextField
+                      size="small"
+                      value={bulkDrafts[model.id]?.asin !== undefined ? bulkDrafts[model.id].asin : (model.marketplace_listings?.find(l => l.marketplace === 'amazon')?.external_id || '')}
+                      onChange={(e) => handleBulkDraftChange(model.id, 'asin', e.target.value)}
+                      placeholder="ASIN"
+                      sx={{ minWidth: 100 }}
+                    />
+                  </TableCell>
+                )}
+
+                {isBulkEditMode && selectedBulkColumns.has('model_notes') && (
+                  <TableCell>
+                    <TextField
+                      size="small" multiline minRows={2}
+                      value={bulkDrafts[model.id]?.notes !== undefined ? bulkDrafts[model.id].notes : (model.model_notes || '')}
+                      onChange={(e) => handleBulkDraftChange(model.id, 'notes', e.target.value)}
+                      placeholder="Notes"
+                      sx={{ minWidth: 150 }}
+                    />
+                  </TableCell>
+                )}
+
+                {isBulkEditMode && selectedBulkColumns.has('dimensions') && (
+                  <TableCell>
+                    <Stack direction="row" spacing={1}>
+                      <TextField size="small" sx={{ width: 60 }} type="number" placeholder="W"
+                        value={bulkDrafts[model.id]?.width !== undefined ? bulkDrafts[model.id].width : model.width}
+                        onChange={(e) => handleBulkDraftChange(model.id, 'width', e.target.value)} />
+                      <TextField size="small" sx={{ width: 60 }} type="number" placeholder="D"
+                        value={bulkDrafts[model.id]?.depth !== undefined ? bulkDrafts[model.id].depth : model.depth}
+                        onChange={(e) => handleBulkDraftChange(model.id, 'depth', e.target.value)} />
+                      <TextField size="small" sx={{ width: 60 }} type="number" placeholder="H"
+                        value={bulkDrafts[model.id]?.height !== undefined ? bulkDrafts[model.id].height : model.height}
+                        onChange={(e) => handleBulkDraftChange(model.id, 'height', e.target.value)} />
+                    </Stack>
+                  </TableCell>
+                )}
+
+                {isBulkEditMode && selectedBulkColumns.has('equipment_type') && (
+                  <TableCell>
+                    <Select size="small"
+                      value={bulkDrafts[model.id]?.equipment_type_id !== undefined ? bulkDrafts[model.id].equipment_type_id : model.equipment_type_id}
+                      onChange={(e) => handleBulkDraftChange(model.id, 'equipment_type_id', e.target.value)}
+                      sx={{ minWidth: 120 }}
+                    >
+                      {equipmentTypes.map(et => <MenuItem key={et.id} value={et.id}>{et.name}</MenuItem>)}
+                    </Select>
+                  </TableCell>
+                )}
+
+                {isBulkEditMode && selectedBulkColumns.has('ebay_id') && (
+                  <TableCell>
+                    <TextField
+                      size="small"
+                      value={bulkDrafts[model.id]?.ebay !== undefined ? bulkDrafts[model.id].ebay : (model.marketplace_listings?.find(l => l.marketplace === 'ebay')?.external_id || '')}
+                      onChange={(e) => handleBulkDraftChange(model.id, 'ebay', e.target.value)}
+                      placeholder="eBay ID"
+                      sx={{ minWidth: 100 }}
+                    />
+                  </TableCell>
+                )}
+
+                {isBulkEditMode && selectedBulkColumns.has('reverb_id') && (
+                  <TableCell>
+                    <TextField
+                      size="small"
+                      value={bulkDrafts[model.id]?.reverb !== undefined ? bulkDrafts[model.id].reverb : (model.marketplace_listings?.find(l => l.marketplace === 'reverb')?.external_id || '')}
+                      onChange={(e) => handleBulkDraftChange(model.id, 'reverb', e.target.value)}
+                      placeholder="Reverb ID"
+                      sx={{ minWidth: 100 }}
+                    />
+                  </TableCell>
+                )}
+
+                {!isBulkEditMode && (
+                  <>
+                    <TableCell>{series.find(s => s.id === model.series_id)?.name || 'Unknown'}</TableCell>
+                    <TableCell>{manufacturers.find(m => m.id === series.find(s => s.id === model.series_id)?.manufacturer_id)?.name || 'Unknown'}</TableCell>
+                    <TableCell>{`${model.width}" x ${model.depth}" x ${model.height}"`}</TableCell>
+                  </>
+                )}
+
                 <TableCell align="right">
-                  <Tooltip title="Pricing Analysis">
-                    <IconButton onClick={() => setPricingModel(model)} color="info">
-                      <MonetizationOnIcon />
-                    </IconButton>
-                  </Tooltip>
-                  <IconButton onClick={() => openEdit(model)}>
-                    <EditIcon />
-                  </IconButton>
-                  <IconButton onClick={() => handleDeleteClick(model.id)}>
-                    <DeleteIcon />
-                  </IconButton>
+                  {isBulkEditMode ? (
+                    savingRowId === model.id ? <CircularProgress size={24} /> :
+                      <IconButton onClick={() => handleRowBulkSave(model.id)} color="primary"><SaveIcon /></IconButton>
+                  ) : (
+                    <Box sx={{ display: 'flex' }}>
+                      <Tooltip title="Pricing Analysis">
+                        <IconButton onClick={() => setPricingModel(model)} color="info">
+                          <MonetizationOnIcon />
+                        </IconButton>
+                      </Tooltip>
+                      <IconButton onClick={() => openEdit(model)}>
+                        <EditIcon />
+                      </IconButton>
+                      <IconButton onClick={() => handleDeleteClick(model.id)}>
+                        <DeleteIcon />
+                      </IconButton>
+                    </Box>
+                  )}
                 </TableCell>
               </TableRow>
             ))}
@@ -1891,6 +2360,130 @@ export default function ModelsPage() {
         model={pricingModel}
         onClose={() => setPricingModel(null)}
       />
+
+      {/* BULK EDIT DIALOG */}
+      <Dialog open={bulkEditOpen} onClose={() => setBulkEditOpen(false)} maxWidth="sm" fullWidth>
+        <DialogTitle>Bulk Edit ({selectedModelIds.size} models)</DialogTitle>
+        <DialogContent dividers>
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+
+            {/* Amazon ASIN */}
+            <Paper variant="outlined" sx={{ p: 2 }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
+                <Checkbox
+                  checked={bulkEditState.amazonAsin.enabled}
+                  onChange={(e) => setBulkEditState(prev => ({ ...prev, amazonAsin: { ...prev.amazonAsin, enabled: e.target.checked } }))}
+                />
+                <Typography variant="subtitle1" fontWeight="bold">Amazon ASIN</Typography>
+              </Box>
+              {bulkEditState.amazonAsin.enabled && (
+                <Grid container spacing={2} sx={{ pl: 5 }}>
+                  <Grid item xs={12}>
+                    <ToggleButtonGroup
+                      value={bulkEditState.amazonAsin.mode}
+                      exclusive
+                      onChange={(_, v) => v && setBulkEditState(prev => ({ ...prev, amazonAsin: { ...prev.amazonAsin, mode: v } }))}
+                      size="small"
+                      sx={{ mb: 2 }}
+                    >
+                      <ToggleButton value="set">Set</ToggleButton>
+                      <ToggleButton value="clear">Clear</ToggleButton>
+                    </ToggleButtonGroup>
+                  </Grid>
+                  {bulkEditState.amazonAsin.mode === 'set' && (
+                    <Grid item xs={12}>
+                      <TextField
+                        label="ASIN"
+                        fullWidth size="small"
+                        value={bulkEditState.amazonAsin.value}
+                        onChange={(e) => setBulkEditState(prev => ({ ...prev, amazonAsin: { ...prev.amazonAsin, value: e.target.value } }))}
+                      />
+                    </Grid>
+                  )}
+                </Grid>
+              )}
+            </Paper>
+
+            {/* Default Measurements */}
+            <Paper variant="outlined" sx={{ p: 2 }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
+                <Checkbox
+                  checked={bulkEditState.measurements.enabled}
+                  onChange={(e) => setBulkEditState(prev => ({ ...prev, measurements: { ...prev.measurements, enabled: e.target.checked } }))}
+                />
+                <Typography variant="subtitle1" fontWeight="bold">Default Measurements</Typography>
+              </Box>
+              {bulkEditState.measurements.enabled && (
+                <Grid container spacing={2} sx={{ pl: 5 }}>
+                  <Grid item xs={4}>
+                    <TextField label="Width" type="number" fullWidth size="small"
+                      value={bulkEditState.measurements.width}
+                      onChange={(e) => setBulkEditState(prev => ({ ...prev, measurements: { ...prev.measurements, width: Number(e.target.value) } }))}
+                    />
+                  </Grid>
+                  <Grid item xs={4}>
+                    <TextField label="Depth" type="number" fullWidth size="small"
+                      value={bulkEditState.measurements.depth}
+                      onChange={(e) => setBulkEditState(prev => ({ ...prev, measurements: { ...prev.measurements, depth: Number(e.target.value) } }))}
+                    />
+                  </Grid>
+                  <Grid item xs={4}>
+                    <TextField label="Height" type="number" fullWidth size="small"
+                      value={bulkEditState.measurements.height}
+                      onChange={(e) => setBulkEditState(prev => ({ ...prev, measurements: { ...prev.measurements, height: Number(e.target.value) } }))}
+                    />
+                  </Grid>
+                </Grid>
+              )}
+            </Paper>
+
+            {/* Model Notes */}
+            <Paper variant="outlined" sx={{ p: 2 }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
+                <Checkbox
+                  checked={bulkEditState.notes.enabled}
+                  onChange={(e) => setBulkEditState(prev => ({ ...prev, notes: { ...prev.notes, enabled: e.target.checked } }))}
+                />
+                <Typography variant="subtitle1" fontWeight="bold">Model Notes</Typography>
+              </Box>
+              {bulkEditState.notes.enabled && (
+                <Grid container spacing={2} sx={{ pl: 5 }}>
+                  <Grid item xs={12}>
+                    <ToggleButtonGroup
+                      value={bulkEditState.notes.mode}
+                      exclusive
+                      onChange={(_, v) => v && setBulkEditState(prev => ({ ...prev, notes: { ...prev.notes, mode: v } }))}
+                      size="small"
+                      sx={{ mb: 2 }}
+                    >
+                      <ToggleButton value="replace">Replace</ToggleButton>
+                      <ToggleButton value="append">Append</ToggleButton>
+                      <ToggleButton value="clear">Clear</ToggleButton>
+                    </ToggleButtonGroup>
+                  </Grid>
+                  {(bulkEditState.notes.mode === 'replace' || bulkEditState.notes.mode === 'append') && (
+                    <Grid item xs={12}>
+                      <TextField
+                        label="Notes"
+                        fullWidth multiline minRows={3}
+                        value={bulkEditState.notes.value}
+                        onChange={(e) => setBulkEditState(prev => ({ ...prev, notes: { ...prev.notes, value: e.target.value } }))}
+                      />
+                    </Grid>
+                  )}
+                </Grid>
+              )}
+            </Paper>
+
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setBulkEditOpen(false)} disabled={bulkEditApplying}>Cancel</Button>
+          <Button onClick={handleBulkApply} variant="contained" disabled={bulkEditApplying}>
+            {bulkEditApplying ? 'Applying...' : `Apply to ${selectedModelIds.size} Models`}
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       <PricingAdminPanel
         open={pricingAdminOpen}
