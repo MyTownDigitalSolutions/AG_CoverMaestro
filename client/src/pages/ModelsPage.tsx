@@ -1838,20 +1838,21 @@ export default function ModelsPage() {
                   </Grid>
                 ))}
 
-                {/* PART B: Universal Model Notes - Always visible */}
-                <Grid item xs={12} sx={{ mt: 2 }}>
-                  <TextField
-                    fullWidth
-                    label="Model Notes"
-                    multiline
-                    minRows={3}
-                    value={formData.model_notes}
-                    onChange={(e) => setFormData({ ...formData, model_notes: e.target.value })}
-                    helperText="General notes for this model (fabrication, handling, or special considerations)."
-                  />
-                </Grid>
               </>
             )}
+
+            {/* PART B: Universal Model Notes - Always visible */}
+            <Grid item xs={12} sx={{ mt: 2 }}>
+              <TextField
+                fullWidth
+                label="Model Notes"
+                multiline
+                minRows={3}
+                value={formData.model_notes}
+                onChange={(e) => setFormData({ ...formData, model_notes: e.target.value })}
+                helperText="General notes for this model (fabrication, handling, or special considerations)."
+              />
+            </Grid>
           </Grid>
         </DialogContent>
         <DialogActions>
