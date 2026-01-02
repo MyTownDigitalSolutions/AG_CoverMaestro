@@ -5,7 +5,7 @@ from typing import List, Optional
 from datetime import datetime
 import traceback
 from app.database import get_db
-from app.models.core import Model, Series, Manufacturer, ModelPricingSnapshot, ModelPricingHistory, DesignOption, MarketplaceListing
+from app.models.core import Model, Series, Manufacturer, ModelPricingSnapshot, ModelPricingHistory, DesignOption, MarketplaceListing, ModelAmazonAPlusContent
 from app.schemas.core import ModelCreate, ModelResponse, ModelPricingSnapshotResponse, ModelPricingHistoryResponse, MarketplaceListingCreate
 from app.schemas.pricing_diff import PricingDiffResponse
 
@@ -395,6 +395,29 @@ def update_model(id: int, data: ModelCreate, db: Session = Depends(get_db)):
         # Sync marketplace listings if provided
         if data.marketplace_listings is not None:
             sync_marketplace_listings(model.id, data.marketplace_listings, db)
+            
+        # Sync Amazon A+ Content if provided
+        if data.amazon_a_plus_content is not None:
+             print(f"[MODEL] Syncing {len(data.amazon_a_plus_content)} A+ Content items")
+             for content_data in data.amazon_a_plus_content:
+                # Find existing
+                existing_content = db.query(ModelAmazonAPlusContent).filter(
+                    ModelAmazonAPlusContent.model_id == model.id,
+                    ModelAmazonAPlusContent.content_type == content_data.content_type
+                ).first()
+                
+                if existing_content:
+                    existing_content.is_uploaded = content_data.is_uploaded
+                    existing_content.notes = content_data.notes
+                    existing_content.updated_at = datetime.utcnow()
+                else:
+                    new_content = ModelAmazonAPlusContent(
+                        model_id=model.id,
+                        content_type=content_data.content_type,
+                        is_uploaded=content_data.is_uploaded,
+                        notes=content_data.notes
+                    )
+                    db.add(new_content)
         
         print("[MODEL] Committing model changes...")
         # CRITICAL: Commit model changes BEFORE pricing logic

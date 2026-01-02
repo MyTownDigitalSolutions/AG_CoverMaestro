@@ -111,6 +111,14 @@ export default function ExportPage() {
   const setLocalCustomizationFormat = (fmt: string) => setCustomizationDefaultFormat(fmt as 'txt' | 'xlsx')
   const [custCopyCopied, setCustCopyCopied] = useState(false)
 
+  const [quickCsvFields, setQuickCsvFields] = useState({
+    asin: false,
+    sku: false,
+    manufacturer: false,
+    series: false,
+    model: false
+  })
+
   // Computed Status Logic (Phase 4 - Chunk 3)
   const missingTemplateNames = useMemo(() => {
     if (!includeCustomization) return []
@@ -998,6 +1006,68 @@ export default function ExportPage() {
     }
   }
 
+  const handleQuickCsvExport = () => {
+    const fields: string[] = []
+    if (quickCsvFields.asin) fields.push('ASIN')
+    if (quickCsvFields.sku) fields.push('SKU')
+    if (quickCsvFields.manufacturer) fields.push('Manufacturer')
+    if (quickCsvFields.series) fields.push('Series')
+    if (quickCsvFields.model) fields.push('Model')
+
+    if (fields.length === 0 || selectedModels.size === 0) return
+
+    const lines: string[] = []
+    // NO Header Row
+
+    const modelsToExport = filteredModels.filter(m => selectedModels.has(m.id))
+
+    modelsToExport.forEach(m => {
+      const row: string[] = []
+
+      if (quickCsvFields.asin) {
+        const asin = m.marketplace_listings?.find(l => l.marketplace === 'amazon')?.external_id || ''
+        row.push(asin)
+      }
+      if (quickCsvFields.sku) {
+        row.push(m.parent_sku || '')
+      }
+      if (quickCsvFields.manufacturer) {
+        const series = allSeries.find(s => s.id === m.series_id)
+        const mfr = series ? manufacturers.find(mf => mf.id === series.manufacturer_id) : undefined
+        row.push(mfr?.name || '')
+      }
+      if (quickCsvFields.series) {
+        const series = allSeries.find(s => s.id === m.series_id)
+        row.push(series?.name || '')
+      }
+      if (quickCsvFields.model) {
+        row.push(m.name)
+      }
+
+      const escapedRow = row.map(val => {
+        const s = String(val || '')
+        if (s.includes('"') || s.includes(',') || s.includes('\n') || s.includes('\r')) {
+          return `"${s.replace(/"/g, '""')}"`
+        }
+        return s
+      })
+      lines.push(escapedRow.join(','))
+    })
+
+    const csvContent = lines.join('\n')
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.setAttribute('download', 'amazon_export_selection.csv')
+    document.body.appendChild(link)
+    link.click()
+    setTimeout(() => {
+      link.parentNode?.removeChild(link)
+      URL.revokeObjectURL(url)
+    }, 100)
+  }
+
   const allSelected = filteredModels.length > 0 && filteredModels.every(m => selectedModels.has(m.id))
   const someSelected = filteredModels.some(m => selectedModels.has(m.id))
 
@@ -1550,6 +1620,27 @@ export default function ExportPage() {
                 </Box>
               </Box>
             </Box>
+          </Box>
+        </Box>
+
+        {/* Quick CSV Export */}
+        <Box sx={{ mt: 4, pt: 2, borderTop: '1px solid #eee' }}>
+          <Typography variant="subtitle2" gutterBottom>Quick CSV Export (No Header)</Typography>
+          <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap', alignItems: 'center' }}>
+            <FormControlLabel control={<Checkbox checked={quickCsvFields.asin} onChange={(e) => setQuickCsvFields({ ...quickCsvFields, asin: e.target.checked })} />} label="ASIN" />
+            <FormControlLabel control={<Checkbox checked={quickCsvFields.sku} onChange={(e) => setQuickCsvFields({ ...quickCsvFields, sku: e.target.checked })} />} label="SKU" />
+            <FormControlLabel control={<Checkbox checked={quickCsvFields.manufacturer} onChange={(e) => setQuickCsvFields({ ...quickCsvFields, manufacturer: e.target.checked })} />} label="Manufacturer" />
+            <FormControlLabel control={<Checkbox checked={quickCsvFields.series} onChange={(e) => setQuickCsvFields({ ...quickCsvFields, series: e.target.checked })} />} label="Series" />
+            <FormControlLabel control={<Checkbox checked={quickCsvFields.model} onChange={(e) => setQuickCsvFields({ ...quickCsvFields, model: e.target.checked })} />} label="Model" />
+
+            <Button
+              variant="contained"
+              onClick={handleQuickCsvExport}
+              disabled={selectedModels.size === 0 || !Object.values(quickCsvFields).some(Boolean)}
+              startIcon={<DownloadIcon />}
+            >
+              EXPORT
+            </Button>
           </Box>
         </Box>
 

@@ -87,6 +87,9 @@ class Model(Base):
     # Marketplace listings
     marketplace_listings = relationship("MarketplaceListing", back_populates="model", cascade="all, delete-orphan")
     
+    # Amazon A+ Content
+    amazon_a_plus_content = relationship("ModelAmazonAPlusContent", back_populates="model", cascade="all, delete-orphan")
+    
     __table_args__ = (UniqueConstraint('series_id', 'name', name='uq_model_series_name'),)
 
 class Material(Base):
@@ -438,6 +441,23 @@ class ModelPricingHistory(Base):
     
     __table_args__ = (
         Index('ix_model_pricing_history_lookup', 'model_id', 'marketplace', 'variant_key', 'calculated_at'),
+    )
+
+class ModelAmazonAPlusContent(Base):
+    __tablename__ = "model_amazon_a_plus_content"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    model_id = Column(Integer, ForeignKey("models.id", ondelete="CASCADE"), nullable=False)
+    content_type = Column(String(20), nullable=False) # BRAND_STORY, EBC
+    is_uploaded = Column(Boolean, default=False, nullable=False)
+    notes = Column(String, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    
+    model = relationship("Model", back_populates="amazon_a_plus_content")
+    
+    __table_args__ = (
+        UniqueConstraint('model_id', 'content_type', name='uq_model_aplus_content_type'),
     )
 
 class MarketplaceListing(Base):
