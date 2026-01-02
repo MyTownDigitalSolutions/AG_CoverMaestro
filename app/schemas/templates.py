@@ -127,6 +127,9 @@ class EbayFieldValueResponse(BaseModel):
     class Config:
         from_attributes = True
 
+# Alias for clarity in delete operations
+EbayValidValueDetailed = EbayFieldValueResponse
+
 class EbayFieldResponse(BaseModel):
     id: int
     ebay_template_id: int
@@ -142,6 +145,8 @@ class EbayFieldResponse(BaseModel):
     # The user asked for "allowed_values: List[str]".
     # The DB model has relationship "valid_values".
     allowed_values: List[str] = []
+    # Detailed version with IDs for delete operations
+    allowed_values_detailed: List[EbayValidValueDetailed] = []
 
     @field_validator('allowed_values', mode='before')
     def map_valid_values(cls, v):
@@ -186,3 +191,18 @@ class EbayFieldResponse(BaseModel):
 class EbayTemplateFieldsResponse(BaseModel):
     template_id: int
     fields: List[EbayFieldResponse]
+
+class EbayFieldUpdateRequest(BaseModel):
+    """
+    Request schema for updating eBay field properties.
+    All fields are optional - only provided fields will be updated.
+    """
+    required: Optional[bool] = None
+    selected_value: Optional[str] = None
+    custom_value: Optional[str] = None
+
+class EbayValidValueCreateRequest(BaseModel):
+    """
+    Request schema for adding a valid value to an eBay field.
+    """
+    value: str

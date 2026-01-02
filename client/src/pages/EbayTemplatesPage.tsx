@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react'
 import {
-    Box, Typography, Paper, Button, Alert, CircularProgress,
-    Divider, IconButton, Tooltip, Table, TableBody, TableCell,
+    Box, Typography, Paper, Button, Alert,
+    Divider, IconButton, Table, TableBody, TableCell,
     TableContainer, TableHead, TableRow, Chip, Stack, TextField,
     InputAdornment, Dialog, DialogTitle, DialogContent,
     DialogActions, Switch, FormControlLabel
@@ -16,18 +16,47 @@ import AddIcon from '@mui/icons-material/Add'
 
 import {
     ebayTemplatesApi, EbayTemplateResponse, EbayTemplateParseSummary,
-    EbayFieldResponse
+    EbayFieldResponse, EbayValidValueDetailed
 } from '../services/api'
 
 // --- Component: Valid Values Section in Modal ---
-const ValidValuesSection = ({ values }: { values: string[] }) => {
+const ValidValuesSection = ({
+    values,
+    valuesDetailed,
+    selectedValue,
+    onChipClick,
+    onDeleteValue,
+    newValue,
+    onNewValueChange,
+    onAddValue,
+    savingAdd
+}: {
+    values: string[],
+    valuesDetailed?: EbayValidValueDetailed[],
+    selectedValue: string | null | undefined,
+    onChipClick: (value: string) => void,
+    onDeleteValue: (valueId: number, valueName: string) => void,
+    newValue: string,
+    onNewValueChange: (value: string) => void,
+    onAddValue: () => void,
+    savingAdd: boolean
+}) => {
     const [searchTerm, setSearchTerm] = useState('')
 
     const filteredValues = useMemo(() => {
-        if (!values) return []
-        if (!searchTerm) return values
-        return values.filter(v => v.toLowerCase().includes(searchTerm.toLowerCase()))
-    }, [values, searchTerm])
+        if (valuesDetailed && valuesDetailed.length > 0) {
+            // Use detailed values if available
+            if (!searchTerm) return valuesDetailed
+            return valuesDetailed.filter(v => v.value.toLowerCase().includes(searchTerm.toLowerCase()))
+        } else {
+            // Fallback to string array
+            if (!values) return []
+            if (!searchTerm) return values.map((v, i) => ({ id: i, value: v }))
+            return values.filter(v => v.toLowerCase().includes(searchTerm.toLowerCase())).map((v, i) => ({ id: i, value: v }))
+        }
+    }, [values, valuesDetailed, searchTerm])
+
+    const canAdd = newValue.trim().length > 0 && !savingAdd
 
     return (
         <Box sx={{ mt: 2 }}>
@@ -62,16 +91,32 @@ const ValidValuesSection = ({ values }: { values: string[] }) => {
                 p: 1.5,
                 mb: 2
             }}>
-                {values && values.length > 0 ? (
+                {filteredValues && filteredValues.length > 0 ? (
                     <Stack direction="row" flexWrap="wrap" gap={1}>
-                        {filteredValues.map((v, idx) => (
+                        {/* Any/Clear option */}
+                        <Chip
+                            label="Any"
+                            size="small"
+                            color={!selectedValue ? "primary" : "default"}
+                            variant={!selectedValue ? "filled" : "outlined"}
+                            onClick={() => onChipClick("Any")}
+                            sx={{ cursor: 'pointer' }}
+                        />
+                        {filteredValues.map((v) => (
                             <Chip
-                                key={idx}
-                                label={v}
+                                key={v.id}
+                                label={v.value}
                                 size="small"
-                                variant="outlined"
-                                onClick={() => { }} // No-op, just consistent styling
-                                sx={{ cursor: 'not-allowed' }} // Indicate read-only
+                                color={selectedValue === v.value ? "primary" : "default"}
+                                variant={selectedValue === v.value ? "filled" : "outlined"}
+                                onClick={() => onChipClick(v.value)}
+                                onDelete={valuesDetailed && valuesDetailed.length > 0 ? (e) => {
+                                    e.stopPropagation()
+                                    if (window.confirm(`Delete value "${v.value}"?`)) {
+                                        onDeleteValue(v.id, v.value)
+                                    }
+                                } : undefined}
+                                sx={{ cursor: 'pointer' }}
                             />
                         ))}
                         {filteredValues.length === 0 && (
@@ -83,16 +128,28 @@ const ValidValuesSection = ({ values }: { values: string[] }) => {
                 )}
             </Box>
 
-            {/* Read-Only Add Area */}
+            {/* Add Value Area */}
             <Stack direction="row" spacing={1}>
                 <TextField
                     size="small"
                     placeholder="Add new value..."
-                    disabled
+                    value={newValue}
+                    onChange={(e) => onNewValueChange(e.target.value)}
+                    onKeyPress={(e) => {
+                        if (e.key === 'Enter' && canAdd) {
+                            onAddValue()
+                        }
+                    }}
+                    disabled={savingAdd}
                     fullWidth
-                    helperText="Changing defaults requires backend support (Phase 3)"
+                    helperText={savingAdd ? "Saving..." : "Press Enter or click Add"}
                 />
-                <Button variant="contained" disabled startIcon={<AddIcon />}>
+                <Button
+                    variant="contained"
+                    onClick={onAddValue}
+                    disabled={!canAdd}
+                    startIcon={<AddIcon />}
+                >
                     Add
                 </Button>
             </Stack>
@@ -101,49 +158,158 @@ const ValidValuesSection = ({ values }: { values: string[] }) => {
 }
 
 // --- Component: Field Details Modal ---
-const FieldDetailsModal = ({ open, field, onClose }: { open: boolean, field: EbayFieldResponse | null, onClose: () => void }) => {
-    if (!field) return null
+const FieldDetailsModal = ({
+    open,
+    field,
+    onClose,
+    onFieldUpdated
+}: {
+    open: boolean,
+    field: EbayFieldResponse | null,
+    onClose: () => void,
+    onFieldUpdated: (updatedField: EbayFieldResponse) => void
+}) => {
+    const [saving, setSaving] = useState(false)
+    const [error, setError] = useState<string | null>(null)
+    const [localField, setLocalField] = useState<EbayFieldResponse | null>(field)
+    const [newValue, setNewValue] = useState('')
+    const [savingAdd, setSavingAdd] = useState(false)
+
+    // Update local field when prop changes
+    useEffect(() => {
+        setLocalField(field)
+        setError(null)
+    }, [field])
+
+    if (!localField) return null
+
+    const handleRequiredToggle = async (checked: boolean) => {
+        setSaving(true)
+        setError(null)
+        try {
+            const updated = await ebayTemplatesApi.updateField(localField.id, { required: checked })
+            setLocalField(updated)
+            onFieldUpdated(updated)
+        } catch (err: any) {
+            setError(err.response?.data?.detail || 'Failed to update required status')
+            // Revert by resetting localField
+            setLocalField(localField)
+        } finally {
+            setSaving(false)
+        }
+    }
+
+    const handleChipClick = async (value: string) => {
+        setSaving(true)
+        setError(null)
+        try {
+            const updated = await ebayTemplatesApi.updateField(localField.id, {
+                selected_value: value,
+                custom_value: null
+            })
+            setLocalField(updated)
+            onFieldUpdated(updated)
+        } catch (err: any) {
+            setError(err.response?.data?.detail || 'Failed to update selected value')
+        } finally {
+            setSaving(false)
+        }
+    }
+
+    const handleAddValue = async () => {
+        const trimmedValue = newValue.trim()
+        if (!trimmedValue) return
+
+        setSavingAdd(true)
+        setError(null)
+        try {
+            const updated = await ebayTemplatesApi.addValidValue(localField.id, trimmedValue)
+            setLocalField(updated)
+            onFieldUpdated(updated)
+            setNewValue('') // Clear input on success
+        } catch (err: any) {
+            setError(err.response?.data?.detail || 'Failed to add valid value')
+        } finally {
+            setSavingAdd(false)
+        }
+    }
+
+    const handleDeleteValue = async (valueId: number, valueName: string) => {
+        setSaving(true)
+        setError(null)
+        try {
+            const updated = await ebayTemplatesApi.deleteValidValue(localField.id, valueId)
+            setLocalField(updated)
+            onFieldUpdated(updated)
+        } catch (err: any) {
+            setError(err.response?.data?.detail || `Failed to delete value "${valueName}"`)
+        } finally {
+            setSaving(false)
+        }
+    }
 
     return (
         <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
             <DialogTitle>
                 <Box display="flex" justifyContent="space-between" alignItems="center">
-                    <Typography variant="h6">{field.field_name}</Typography>
+                    <Typography variant="h6">{localField.field_name}</Typography>
                     <IconButton size="small" onClick={onClose}>
                         <CloseIcon />
                     </IconButton>
                 </Box>
                 <Typography variant="caption" color="text.secondary">
-                    Order Index: {field.order_index} | ID: {field.id}
+                    Order Index: {localField.order_index} | ID: {localField.id}
                 </Typography>
             </DialogTitle>
             <DialogContent dividers>
                 <Stack spacing={3}>
+                    {error && (
+                        <Alert severity="error" onClose={() => setError(null)}>
+                            {error}
+                        </Alert>
+                    )}
+
                     {/* Required Toggle */}
                     <Box>
                         <FormControlLabel
                             control={
-                                <Switch checked={field.required} disabled />
+                                <Switch
+                                    checked={localField.required}
+                                    onChange={(e) => handleRequiredToggle(e.target.checked)}
+                                    disabled={saving}
+                                />
                             }
                             label="Required"
                         />
-                        <Typography variant="caption" display="block" color="text.secondary" sx={{ ml: 4 }}>
-                            Editing requires backend support (coming in Phase 3)
-                        </Typography>
+                        {saving && (
+                            <Typography variant="caption" display="block" color="primary" sx={{ ml: 4 }}>
+                                Saving...
+                            </Typography>
+                        )}
                     </Box>
 
                     {/* Default Value */}
                     <TextField
                         label="Default / Selected Value"
                         fullWidth
-                        value={field.selected_value || "Any"}
+                        value={localField.selected_value || "Any"}
                         InputProps={{ readOnly: true }}
-                        disabled // Visually distinct as read-only
-                        helperText="Editing requires backend support (coming in Phase 3)"
+                        disabled={saving}
+                        helperText="Click a chip below to select a value"
                     />
 
                     {/* Valid Values */}
-                    <ValidValuesSection values={field.allowed_values} />
+                    <ValidValuesSection
+                        values={localField.allowed_values}
+                        valuesDetailed={localField.allowed_values_detailed}
+                        selectedValue={localField.selected_value}
+                        onChipClick={handleChipClick}
+                        onDeleteValue={handleDeleteValue}
+                        newValue={newValue}
+                        onNewValueChange={setNewValue}
+                        onAddValue={handleAddValue}
+                        savingAdd={savingAdd}
+                    />
                 </Stack>
             </DialogContent>
             <DialogActions>
@@ -369,6 +535,14 @@ export default function EbayTemplatesPage() {
                 open={modalOpen}
                 field={selectedField}
                 onClose={() => setModalOpen(false)}
+                onFieldUpdated={(updatedField) => {
+                    // Update the field in parsedFields array
+                    setParsedFields(prev => prev.map(f =>
+                        f.id === updatedField.id ? updatedField : f
+                    ))
+                    // Also update selectedField so modal shows latest data
+                    setSelectedField(updatedField)
+                }}
             />
         </Box>
     )

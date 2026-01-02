@@ -432,6 +432,11 @@ export interface EbayTemplateParseSummary {
   sheet_names: string[]
 }
 
+export interface EbayValidValueDetailed {
+  id: number
+  value: string
+}
+
 export interface EbayFieldResponse {
   id: number
   ebay_template_id: number
@@ -442,6 +447,7 @@ export interface EbayFieldResponse {
   selected_value?: string
   custom_value?: string
   allowed_values: string[]
+  allowed_values_detailed?: EbayValidValueDetailed[]
 }
 
 export interface EbayTemplateFieldsResponse {
@@ -459,6 +465,12 @@ export const ebayTemplatesApi = {
   parse: (id: number) => api.post<EbayTemplateParseSummary>(`/ebay-templates/${id}/parse`).then(r => r.data),
   getFields: (id: number) => api.get<EbayTemplateFieldsResponse>(`/ebay-templates/${id}/fields`).then(r => r.data),
   getCurrentFields: () => api.get<EbayTemplateFieldsResponse>('/ebay-templates/current/fields').then(r => r.data),
+  updateField: (fieldId: number, payload: { required?: boolean; selected_value?: string | null; custom_value?: string | null }) =>
+    api.patch<EbayFieldResponse>(`/ebay-templates/fields/${fieldId}`, payload).then(r => r.data),
+  addValidValue: (fieldId: number, value: string) =>
+    api.post<EbayFieldResponse>(`/ebay-templates/fields/${fieldId}/valid-values`, { value }).then(r => r.data),
+  deleteValidValue: (fieldId: number, valueId: number) =>
+    api.delete<EbayFieldResponse>(`/ebay-templates/fields/${fieldId}/valid-values/${valueId}`).then(r => r.data),
 }
 
 export default api

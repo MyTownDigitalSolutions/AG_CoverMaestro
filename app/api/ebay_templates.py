@@ -9,9 +9,11 @@ from app.schemas.templates import (
     EbayTemplateResponse,
     EbayTemplateParseSummary,
     EbayTemplateFieldsResponse,
-    EbayFieldResponse
+    EbayFieldResponse,
+    EbayFieldUpdateRequest,
+    EbayValidValueCreateRequest
 )
-from app.models.templates import EbayTemplate, EbayField
+from app.models.templates import EbayTemplate, EbayField, EbayFieldValue
 
 router = APIRouter(
     prefix="/ebay-templates",
@@ -47,6 +49,9 @@ def _build_ebay_template_fields_response(template_id: int, db: Session) -> EbayT
 
         # Map to List[str] as required by schema field 'allowed_values'
         allowed_strs = [v.value for v in sorted_values]
+        
+        # Map to detailed list with IDs for delete operations
+        allowed_detailed = [{"id": v.id, "value": v.value} for v in sorted_values]
 
         response_fields.append(
             EbayFieldResponse(
@@ -58,7 +63,8 @@ def _build_ebay_template_fields_response(template_id: int, db: Session) -> EbayT
                 order_index=f.order_index,
                 selected_value=f.selected_value,
                 custom_value=f.custom_value,
-                allowed_values=allowed_strs
+                allowed_values=allowed_strs,
+                allowed_values_detailed=allowed_detailed
             )
         )
 
@@ -134,3 +140,212 @@ def get_ebay_template_fields(template_id: int, db: Session = Depends(get_db)):
     Returns fields ordered by order_index.
     """
     return _build_ebay_template_fields_response(template_id, db)
+
+
+@router.patch("/fields/{field_id}", response_model=EbayFieldResponse)
+def update_ebay_field(
+    field_id: int,
+    updates: EbayFieldUpdateRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    Update eBay field properties (required, selected_value, custom_value).
+    
+    Validation rules:
+    - selected_value "Any" → stored as None
+    - selected_value must exist in valid_values OR custom_value must be set
+    - empty custom_value → stored as None
+    """
+    # Load field with valid values for validation
+    field = (
+        db.query(EbayField)
+        .options(selectinload(EbayField.valid_values))
+        .filter(EbayField.id == field_id)
+        .first()
+    )
+    
+    if not field:
+        raise HTTPException(status_code=404, detail="Field not found")
+    
+    # Update required if provided
+    if updates.required is not None:
+        field.required = updates.required
+    
+    # Update selected_value if provided
+    if updates.selected_value is not None:
+        if updates.selected_value == "Any" or updates.selected_value == "":
+            field.selected_value = None
+        else:
+            # Get list of valid values
+            valid_values_list = [v.value for v in field.valid_values]
+            
+            # Allow if it's in valid values OR if custom_value is being set
+            if updates.selected_value in valid_values_list or updates.custom_value is not None:
+                field.selected_value = updates.selected_value
+            else:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Invalid selected_value. Must be one of {valid_values_list} or set custom_value"
+                )
+    
+    # Update custom_value if provided
+    if updates.custom_value is not None:
+        field.custom_value = updates.custom_value if updates.custom_value else None
+    
+    # Commit changes
+    db.commit()
+    db.refresh(field)
+    
+    # Return updated field using same response structure
+    sorted_values = sorted((field.valid_values or []), key=lambda v: v.id)
+    allowed_strs = [v.value for v in sorted_values]
+    allowed_detailed = [{"id": v.id, "value": v.value} for v in sorted_values]
+    
+    return EbayFieldResponse(
+        id=field.id,
+        ebay_template_id=field.ebay_template_id,
+        field_name=field.field_name,
+        display_name=field.display_name,
+        required=field.required,
+        order_index=field.order_index,
+        selected_value=field.selected_value,
+        custom_value=field.custom_value,
+        allowed_values=allowed_strs,
+        allowed_values_detailed=allowed_detailed
+    )
+
+
+@router.post("/fields/{field_id}/valid-values", response_model=EbayFieldResponse)
+def add_valid_value_to_field(
+    field_id: int,
+    request: EbayValidValueCreateRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    Add a valid value to an eBay field.
+    
+    Rules:
+    - Trims whitespace
+    - Rejects empty values
+    - De-duplicates (case-sensitive)
+    - Returns updated field with all valid values
+    """
+    # Trim and validate
+    value = request.value.strip()
+    if not value:
+        raise HTTPException(status_code=400, detail="Value cannot be empty")
+    
+    # Load field with valid values
+    field = (
+        db.query(EbayField)
+        .options(selectinload(EbayField.valid_values))
+        .filter(EbayField.id == field_id)
+        .first()
+    )
+    
+    if not field:
+        raise HTTPException(status_code=404, detail="Field not found")
+    
+    # Check if value already exists (case-sensitive)
+    existing = (
+        db.query(EbayFieldValue)
+        .filter(
+            EbayFieldValue.ebay_field_id == field_id,
+            EbayFieldValue.value == value
+        )
+        .first()
+    )
+    
+    if not existing:
+        # Add new value
+        new_value = EbayFieldValue(ebay_field_id=field_id, value=value)
+        db.add(new_value)
+        db.commit()
+        db.refresh(field)
+    
+    # Return updated field
+    sorted_values = sorted((field.valid_values or []), key=lambda v: v.id)
+    allowed_strs = [v.value for v in sorted_values]
+    allowed_detailed = [{"id": v.id, "value": v.value} for v in sorted_values]
+    
+    return EbayFieldResponse(
+        id=field.id,
+        ebay_template_id=field.ebay_template_id,
+        field_name=field.field_name,
+        display_name=field.display_name,
+        required=field.required,
+        order_index=field.order_index,
+        selected_value=field.selected_value,
+        custom_value=field.custom_value,
+        allowed_values=allowed_strs,
+        allowed_values_detailed=allowed_detailed
+    )
+
+
+@router.delete("/fields/{field_id}/valid-values/{value_id}", response_model=EbayFieldResponse)
+def delete_valid_value_from_field(
+    field_id: int,
+    value_id: int,
+    db: Session = Depends(get_db)
+):
+    """
+    Delete a valid value from an eBay field.
+    
+    Rules:
+    - Ensures value exists and belongs to the field
+    - If deleted value equals field.selected_value, clears selected_value
+    - Returns updated field
+    """
+    # Load the value and verify it belongs to this field
+    value_obj = (
+        db.query(EbayFieldValue)
+        .filter(
+            EbayFieldValue.id == value_id,
+            EbayFieldValue.ebay_field_id == field_id
+        )
+        .first()
+    )
+    
+    if not value_obj:
+        raise HTTPException(
+            status_code=404,
+            detail="Valid value not found or does not belong to this field"
+        )
+    
+    # Load field
+    field = (
+        db.query(EbayField)
+        .options(selectinload(EbayField.valid_values))
+        .filter(EbayField.id == field_id)
+        .first()
+    )
+    
+    if not field:
+        raise HTTPException(status_code=404, detail="Field not found")
+    
+    # If this value is currently selected, clear selected_value
+    if field.selected_value == value_obj.value:
+        field.selected_value = None
+    
+    # Delete the value
+    db.delete(value_obj)
+    db.commit()
+    db.refresh(field)
+    
+    # Return updated field
+    sorted_values = sorted((field.valid_values or []), key=lambda v: v.id)
+    allowed_strs = [v.value for v in sorted_values]
+    allowed_detailed = [{"id": v.id, "value": v.value} for v in sorted_values]
+    
+    return EbayFieldResponse(
+        id=field.id,
+        ebay_template_id=field.ebay_template_id,
+        field_name=field.field_name,
+        display_name=field.display_name,
+        required=field.required,
+        order_index=field.order_index,
+        selected_value=field.selected_value,
+        custom_value=field.custom_value,
+        allowed_values=allowed_strs,
+        allowed_values_detailed=allowed_detailed
+    )
