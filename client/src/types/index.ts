@@ -58,6 +58,16 @@ export interface MarketplaceListing {
   updated_at: string
 }
 
+export interface AmazonAPlusContent {
+  id: number
+  model_id: number
+  content_type: string
+  is_uploaded: boolean
+  notes?: string
+  created_at: string
+  updated_at: string
+}
+
 export interface Model {
   id: number
   name: string
@@ -83,6 +93,7 @@ export interface Model {
   top_handle_rear_edge_to_center_in?: number | null
   model_notes?: string | null
   marketplace_listings?: MarketplaceListing[]
+  amazon_a_plus_content?: AmazonAPlusContent[]
 }
 
 export type MaterialType = 'fabric' | 'hardware' | 'packaging'

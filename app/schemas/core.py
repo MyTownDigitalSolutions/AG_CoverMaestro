@@ -91,6 +91,23 @@ class EquipmentTypeResponse(EquipmentTypeBase):
     class Config:
         from_attributes = True
 
+class AmazonAPlusContentBase(BaseModel):
+    content_type: str
+    is_uploaded: bool = False
+    notes: Optional[str] = None
+
+class AmazonAPlusContentCreate(AmazonAPlusContentBase):
+    pass
+
+class AmazonAPlusContentResponse(AmazonAPlusContentBase):
+    id: int
+    model_id: int
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
 class ModelBase(BaseModel):
     name: str
     series_id: int
@@ -134,12 +151,14 @@ class MarketplaceListingResponse(MarketplaceListingBase):
 
 class ModelCreate(ModelBase):
     marketplace_listings: Optional[List[MarketplaceListingCreate]] = []
+    amazon_a_plus_content: Optional[List[AmazonAPlusContentCreate]] = []
 
 class ModelResponse(ModelBase):
     id: int
     parent_sku: Optional[str] = None
     surface_area_sq_in: Optional[float] = None
     marketplace_listings: List[MarketplaceListingResponse] = []
+    amazon_a_plus_content: List[AmazonAPlusContentResponse] = []
     
     class Config:
         from_attributes = True

@@ -784,7 +784,11 @@ export default function ModelsPage() {
     marketplace_listings_amazon_external_id: '',
     marketplace_listings_ebay_external_id: '',
     marketplace_listings_reverb_external_id: '',
-    marketplace_listings_etsy_external_id: ''
+    marketplace_listings_etsy_external_id: '',
+    aplus_brand_story_uploaded: false,
+    aplus_brand_story_notes: '',
+    aplus_ebc_uploaded: false,
+    aplus_ebc_notes: ''
   })
 
   const [textOptionValues, setTextOptionValues] = useState<Record<number, string>>({})
@@ -895,6 +899,42 @@ export default function ModelsPage() {
       // Equipment Type
       if (selectedBulkColumns.has('equipment_type')) {
         if (draft.equipment_type_id) updateData.equipment_type_id = Number(draft.equipment_type_id)
+      }
+
+      // Amazon A+ Content
+      if (selectedBulkColumns.has('aplus_brand_story') || selectedBulkColumns.has('aplus_ebc')) {
+        const currentContent = model.amazon_a_plus_content || []
+        const newContent = []
+
+        const getEffective = (type: string, uploadedKey: string, notesKey: string) => {
+          const existing = currentContent.find(c => c.content_type === type)
+          const draftUploaded = draft[uploadedKey]
+          const draftNotes = draft[notesKey]
+
+          return {
+            content_type: type,
+            is_uploaded: draftUploaded !== undefined ? draftUploaded : (existing?.is_uploaded || false),
+            notes: draftNotes !== undefined ? draftNotes : (existing?.notes || null)
+          }
+        }
+
+        if (selectedBulkColumns.has('aplus_brand_story')) {
+          newContent.push(getEffective('BRAND_STORY', 'aplus_brand_story_uploaded', 'aplus_brand_story_notes'))
+        } else {
+          const exist = currentContent.find(c => c.content_type === 'BRAND_STORY')
+          if (exist) newContent.push(exist)
+        }
+
+        if (selectedBulkColumns.has('aplus_ebc')) {
+          newContent.push(getEffective('EBC', 'aplus_ebc_uploaded', 'aplus_ebc_notes'))
+        } else {
+          const exist = currentContent.find(c => c.content_type === 'EBC')
+          if (exist) newContent.push(exist)
+        }
+
+        if (newContent.length > 0) {
+          updateData.amazon_a_plus_content = newContent
+        }
       }
 
       const payload = {
@@ -1253,7 +1293,19 @@ export default function ModelsPage() {
           marketplace: 'etsy',
           external_id: formData.marketplace_listings_etsy_external_id.trim()
         }
-      ].filter(Boolean)
+      ].filter(Boolean),
+      amazon_a_plus_content: [
+        {
+          content_type: 'BRAND_STORY',
+          is_uploaded: formData.aplus_brand_story_uploaded,
+          notes: formData.aplus_brand_story_notes || null
+        },
+        {
+          content_type: 'EBC',
+          is_uploaded: formData.aplus_ebc_uploaded,
+          notes: formData.aplus_ebc_notes || null
+        }
+      ]
     } as any
 
     // Console logs for verification
@@ -1357,7 +1409,11 @@ export default function ModelsPage() {
       marketplace_listings_amazon_external_id: '',
       marketplace_listings_ebay_external_id: '',
       marketplace_listings_reverb_external_id: '',
-      marketplace_listings_etsy_external_id: ''
+      marketplace_listings_etsy_external_id: '',
+      aplus_brand_story_uploaded: false,
+      aplus_brand_story_notes: '',
+      aplus_ebc_uploaded: false,
+      aplus_ebc_notes: ''
     })
     setTextOptionValues({})
     setValidationErrors([])  // Clear validation errors
@@ -1391,7 +1447,11 @@ export default function ModelsPage() {
       marketplace_listings_amazon_external_id: model.marketplace_listings?.find(ml => ml.marketplace === 'amazon')?.external_id || '',
       marketplace_listings_ebay_external_id: model.marketplace_listings?.find(ml => ml.marketplace === 'ebay')?.external_id || '',
       marketplace_listings_reverb_external_id: model.marketplace_listings?.find(ml => ml.marketplace === 'reverb')?.external_id || '',
-      marketplace_listings_etsy_external_id: model.marketplace_listings?.find(ml => ml.marketplace === 'etsy')?.external_id || ''
+      marketplace_listings_etsy_external_id: model.marketplace_listings?.find(ml => ml.marketplace === 'etsy')?.external_id || '',
+      aplus_brand_story_uploaded: model.amazon_a_plus_content?.find(c => c.content_type === 'BRAND_STORY')?.is_uploaded ?? false,
+      aplus_brand_story_notes: model.amazon_a_plus_content?.find(c => c.content_type === 'BRAND_STORY')?.notes || '',
+      aplus_ebc_uploaded: model.amazon_a_plus_content?.find(c => c.content_type === 'EBC')?.is_uploaded ?? false,
+      aplus_ebc_notes: model.amazon_a_plus_content?.find(c => c.content_type === 'EBC')?.notes || ''
     })
 
     // Console log for load
@@ -1640,6 +1700,14 @@ export default function ModelsPage() {
               control={<Checkbox checked={selectedBulkColumns.has('reverb_id')} onChange={() => handleColumnToggle('reverb_id')} disabled={isBulkEditMode} />}
               label="Reverb ID"
             />
+            <FormControlLabel
+              control={<Checkbox checked={selectedBulkColumns.has('aplus_brand_story')} onChange={() => handleColumnToggle('aplus_brand_story')} disabled={isBulkEditMode || models.length === 0} />}
+              label="A+ Brand Story"
+            />
+            <FormControlLabel
+              control={<Checkbox checked={selectedBulkColumns.has('aplus_ebc')} onChange={() => handleColumnToggle('aplus_ebc')} disabled={isBulkEditMode || models.length === 0} />}
+              label="A+ EBC"
+            />
           </FormGroup>
           {selectedBulkColumns.size >= 2 && !isBulkEditMode && (
             <FormHelperText>Max 2 columns selected.</FormHelperText>
@@ -1684,6 +1752,8 @@ export default function ModelsPage() {
               {isBulkEditMode && selectedBulkColumns.has('equipment_type') && <TableCell>Equipment Type</TableCell>}
               {isBulkEditMode && selectedBulkColumns.has('ebay_id') && <TableCell>eBay ID</TableCell>}
               {isBulkEditMode && selectedBulkColumns.has('reverb_id') && <TableCell>Reverb ID</TableCell>}
+              {isBulkEditMode && selectedBulkColumns.has('aplus_brand_story') && <TableCell>Brand Story</TableCell>}
+              {isBulkEditMode && selectedBulkColumns.has('aplus_ebc') && <TableCell>EBC</TableCell>}
 
               {!isBulkEditMode && (
                 <>
@@ -1774,6 +1844,79 @@ export default function ModelsPage() {
                       placeholder="Reverb ID"
                       sx={{ minWidth: 100 }}
                     />
+                  </TableCell>
+                )}
+
+                {isBulkEditMode && selectedBulkColumns.has('aplus_brand_story') && (
+                  <TableCell sx={{ minWidth: 200 }}>
+                    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                      <FormControlLabel
+                        control={
+                          <Checkbox
+                            checked={
+                              bulkDrafts[model.id]?.aplus_brand_story_uploaded !== undefined
+                                ? bulkDrafts[model.id].aplus_brand_story_uploaded
+                                : (model.amazon_a_plus_content?.find(c => c.content_type === 'BRAND_STORY')?.is_uploaded || false)
+                            }
+                            onChange={(e) => handleBulkDraftChange(model.id, 'aplus_brand_story_uploaded', e.target.checked)}
+                            size="small"
+                          />
+                        }
+                        label="Uploaded"
+                        componentsProps={{ typography: { variant: 'caption' } }}
+                      />
+                      <TextField
+                        size="small"
+                        placeholder="Notes / Version"
+                        value={
+                          bulkDrafts[model.id]?.aplus_brand_story_notes !== undefined
+                            ? bulkDrafts[model.id].aplus_brand_story_notes
+                            : (model.amazon_a_plus_content?.find(c => c.content_type === 'BRAND_STORY')?.notes || '')
+                        }
+                        onChange={(e) => handleBulkDraftChange(model.id, 'aplus_brand_story_notes', e.target.value)}
+                        disabled={!(
+                          bulkDrafts[model.id]?.aplus_brand_story_uploaded !== undefined
+                            ? bulkDrafts[model.id].aplus_brand_story_uploaded
+                            : (model.amazon_a_plus_content?.find(c => c.content_type === 'BRAND_STORY')?.is_uploaded || false)
+                        )}
+                      />
+                    </Box>
+                  </TableCell>
+                )}
+                {isBulkEditMode && selectedBulkColumns.has('aplus_ebc') && (
+                  <TableCell sx={{ minWidth: 200 }}>
+                    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                      <FormControlLabel
+                        control={
+                          <Checkbox
+                            checked={
+                              bulkDrafts[model.id]?.aplus_ebc_uploaded !== undefined
+                                ? bulkDrafts[model.id].aplus_ebc_uploaded
+                                : (model.amazon_a_plus_content?.find(c => c.content_type === 'EBC')?.is_uploaded || false)
+                            }
+                            onChange={(e) => handleBulkDraftChange(model.id, 'aplus_ebc_uploaded', e.target.checked)}
+                            size="small"
+                          />
+                        }
+                        label="Uploaded"
+                        componentsProps={{ typography: { variant: 'caption' } }}
+                      />
+                      <TextField
+                        size="small"
+                        placeholder="Notes / Version"
+                        value={
+                          bulkDrafts[model.id]?.aplus_ebc_notes !== undefined
+                            ? bulkDrafts[model.id].aplus_ebc_notes
+                            : (model.amazon_a_plus_content?.find(c => c.content_type === 'EBC')?.notes || '')
+                        }
+                        onChange={(e) => handleBulkDraftChange(model.id, 'aplus_ebc_notes', e.target.value)}
+                        disabled={!(
+                          bulkDrafts[model.id]?.aplus_ebc_uploaded !== undefined
+                            ? bulkDrafts[model.id].aplus_ebc_uploaded
+                            : (model.amazon_a_plus_content?.find(c => c.content_type === 'EBC')?.is_uploaded || false)
+                        )}
+                      />
+                    </Box>
                   </TableCell>
                 )}
 
@@ -2320,6 +2463,58 @@ export default function ModelsPage() {
                 value={formData.model_notes}
                 onChange={(e) => setFormData({ ...formData, model_notes: e.target.value })}
                 helperText="General notes for this model (fabrication, handling, or special considerations)."
+              />
+            </Grid>
+
+            {/* Amazon A+ Content Section */}
+            <Grid item xs={12} sx={{ mt: 3, mb: 1 }}>
+              <Typography variant="h6" sx={{ fontSize: '1rem', fontWeight: 600 }}>Amazon A+ Content</Typography>
+              <Box sx={{ borderBottom: 1, borderColor: 'divider' }} />
+            </Grid>
+
+            {/* Brand Story */}
+            <Grid item xs={12} md={3} sx={{ display: 'flex', alignItems: 'center' }}>
+              <FormControlLabel
+                control={
+                  <Checkbox
+                    checked={formData.aplus_brand_story_uploaded}
+                    onChange={(e) => setFormData({ ...formData, aplus_brand_story_uploaded: e.target.checked })}
+                  />
+                }
+                label="Brand Story"
+              />
+            </Grid>
+            <Grid item xs={12} md={9}>
+              <TextField
+                fullWidth
+                size="small"
+                label="Brand Story Notes / Version"
+                value={formData.aplus_brand_story_notes}
+                onChange={(e) => setFormData({ ...formData, aplus_brand_story_notes: e.target.value })}
+                disabled={!formData.aplus_brand_story_uploaded}
+              />
+            </Grid>
+
+            {/* EBC */}
+            <Grid item xs={12} md={3} sx={{ display: 'flex', alignItems: 'center' }}>
+              <FormControlLabel
+                control={
+                  <Checkbox
+                    checked={formData.aplus_ebc_uploaded}
+                    onChange={(e) => setFormData({ ...formData, aplus_ebc_uploaded: e.target.checked })}
+                  />
+                }
+                label="EBC (Enhanced Brand Content)"
+              />
+            </Grid>
+            <Grid item xs={12} md={9}>
+              <TextField
+                fullWidth
+                size="small"
+                label="EBC Notes / Version"
+                value={formData.aplus_ebc_notes}
+                onChange={(e) => setFormData({ ...formData, aplus_ebc_notes: e.target.value })}
+                disabled={!formData.aplus_ebc_uploaded}
               />
             </Grid>
           </Grid>
