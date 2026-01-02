@@ -1,5 +1,6 @@
 from pydantic import BaseModel, field_validator
 from typing import Optional, List
+from datetime import datetime
 
 class ProductTypeFieldValueResponse(BaseModel):
     id: int
@@ -97,3 +98,91 @@ class ProductTypeExportConfigUpdate(BaseModel):
             if len(v) == 0:
                 return None
         return v
+
+class EbayTemplateResponse(BaseModel):
+    id: int
+    original_filename: str
+    file_size: int
+    sha256: Optional[str] = None
+    uploaded_at: Optional[datetime] = None
+    
+    class Config:
+        from_attributes = True
+
+class EbayTemplateParseSummary(BaseModel):
+    template_id: int
+    fields_inserted: int
+    values_inserted: int
+    defaults_applied: int
+    values_ignored_not_in_template: int
+    defaults_ignored_not_in_template: int
+    sheet_names: List[str]
+
+# --- New Schemas for Field Access ---
+
+class EbayFieldValueResponse(BaseModel):
+    id: int
+    value: str
+    
+    class Config:
+        from_attributes = True
+
+class EbayFieldResponse(BaseModel):
+    id: int
+    ebay_template_id: int
+    field_name: str
+    display_name: Optional[str] = None
+    required: bool
+    order_index: Optional[int] = None
+    selected_value: Optional[str] = None
+    custom_value: Optional[str] = None
+    
+    # We map 'valid_values' from DB model to 'allowed_values' list of strings here.
+    # But since nomenclature differs (valid_values vs allowed_values), we need to alias or validator.
+    # The user asked for "allowed_values: List[str]".
+    # The DB model has relationship "valid_values".
+    allowed_values: List[str] = []
+
+    @field_validator('allowed_values', mode='before')
+    def map_valid_values(cls, v):
+        """
+        Handle both cases:
+        1. ORM objects with .value attribute (when using from_attributes)
+        2. Already-processed list of strings (when API manually constructs)
+        """
+        if not v:
+            return []
+        
+        # If already strings, return as-is
+        if isinstance(v, list) and v and isinstance(v[0], str):
+            return v
+            
+        # Otherwise, extract .value from ORM objects
+        return [item.value for item in v if hasattr(item, 'value')]
+
+    # HACK: Because source is "valid_values" but target is "allowed_values",
+    # we need to tell Pydantic to look at "valid_values" if "allowed_values" is missing?
+    # Or we can use Field(alias='valid_values')?
+    # But alias is for input/serialization key.
+    # We can use a root_validator or pre-validator on the whole model, or just rely on API manual mapping.
+    # Manual mapping in API is safer. 
+    # BUT "from_attributes=True" is requested.
+    # So I will use Field(validation_alias='valid_values') 
+    # But wait, Pydantic v2 uses `validation_alias`.
+    
+    # Let's try to be simple: the API function will construct this Pydantic object, 
+    # or we trust 'from_attributes' with an aliased field.
+    
+    # Actually, simpler approach: 
+    # Define `valid_values` in schema to match ORM, then `allowed_values` as computed field? 
+    # But response shape must match requirements "allowed_values".
+    
+    # I'll stick to manual mapping in the route or a generic validator that tolerates missing source.
+    # Let's add `class Config` and see.
+    
+    class Config:
+        from_attributes = True
+
+class EbayTemplateFieldsResponse(BaseModel):
+    template_id: int
+    fields: List[EbayFieldResponse]

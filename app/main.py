@@ -4,7 +4,7 @@ from app.database import engine, Base
 from app.api import (
     manufacturers, series, equipment_types, models,
     materials, suppliers, customers, orders,
-    pricing, templates, enums, export, design_options, settings
+    pricing, templates, enums, export, design_options, settings, ebay_templates
 )
 from app.services.storage_policy import ensure_storage_dirs_exist, cleanup_tmp_dir
 
@@ -63,6 +63,7 @@ app.include_router(enums.router)
 app.include_router(export.router)
 app.include_router(design_options.router)
 app.include_router(settings.router)
+app.include_router(ebay_templates.router)
 
 # Serve static assets (JS, CSS, images) from React build
 from fastapi.staticfiles import StaticFiles

@@ -11,10 +11,10 @@ import requests # Added for image validation
 import concurrent.futures
 import time
 import traceback
-from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi import APIRouter, Depends, HTTPException, Response, Body
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from pydantic import BaseModel, Field
 from app.schemas.core import ModelPricingSnapshotResponse
 from openpyxl import Workbook, load_workbook
@@ -974,7 +974,7 @@ class DownloadZipRequest(BaseModel):
     customization_format: Optional[str] = "xlsx" # "xlsx" or "txt"
 
 @router.post("/download/zip")
-def download_zip(request: DownloadZipRequest, db: Session = Depends(get_db)):
+def download_zip(request: DownloadZipRequest = Body(...), db: Session = Depends(get_db)):
     """
     Download a ZIP package containing:
     1. XLSM (Macro-Enabled)
@@ -1571,3 +1571,6 @@ def download_customization_xlsx(request: ExportPreviewRequest, db: Session = Dep
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": f"attachment; filename={filename}"}
     )
+
+# Explicitly rebuild model to resolve recursive/deferred references for Pydantic v2
+DownloadZipRequest.model_rebuild()

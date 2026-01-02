@@ -105,3 +105,39 @@ class ProductTypeFieldValue(Base):
     value = Column(String, nullable=False)
     
     field = relationship("ProductTypeField", back_populates="valid_values")
+
+class EbayTemplate(Base):
+    __tablename__ = "ebay_templates"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    original_filename = Column(String, nullable=False)
+    file_path = Column(String, nullable=False)
+    file_size = Column(Integer, nullable=False)
+    sha256 = Column(String, nullable=True)
+    uploaded_at = Column(DateTime, default=datetime.utcnow)
+    
+    fields = relationship("EbayField", back_populates="ebay_template", cascade="all, delete-orphan")
+
+class EbayField(Base):
+    __tablename__ = "ebay_fields"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    ebay_template_id = Column(Integer, ForeignKey("ebay_templates.id"), nullable=False)
+    field_name = Column(String, nullable=False)
+    display_name = Column(String, nullable=True)
+    required = Column(Boolean, default=False)
+    order_index = Column(Integer, nullable=True)
+    selected_value = Column(String, nullable=True)
+    custom_value = Column(String, nullable=True)
+    
+    ebay_template = relationship("EbayTemplate", back_populates="fields")
+    valid_values = relationship("EbayFieldValue", back_populates="field", cascade="all, delete-orphan")
+
+class EbayFieldValue(Base):
+    __tablename__ = "ebay_field_values"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    ebay_field_id = Column(Integer, ForeignKey("ebay_fields.id"), nullable=False)
+    value = Column(String, nullable=False)
+    
+    field = relationship("EbayField", back_populates="valid_values")
