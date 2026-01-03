@@ -219,3 +219,25 @@ class EbayTemplatePreviewResponse(BaseModel):
     preview_row_count: int
     preview_column_count: int
     grid: List[List[str]]
+
+class EbayTemplateIntegrityResponse(BaseModel):
+    """
+    Response schema for eBay template file integrity information.
+    """
+    template_id: int
+    original_filename: str
+    file_size: int
+    sha256: Optional[str] = None
+    uploaded_at: Optional[str] = None
+
+class EbayTemplateVerificationResponse(BaseModel):
+    """
+    Response schema for eBay template file verification.
+    """
+    template_id: int
+    status: str  # "match", "mismatch", "missing", "unknown"
+    stored_sha256: Optional[str] = None
+    stored_file_size: Optional[int] = None
+    computed_sha256: Optional[str] = None
+    computed_file_size: Optional[int] = None
+    verified_at: str

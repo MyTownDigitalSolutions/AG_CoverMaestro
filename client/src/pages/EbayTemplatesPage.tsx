@@ -17,10 +17,15 @@ import VisibilityIcon from '@mui/icons-material/Visibility'
 import DownloadIcon from '@mui/icons-material/Download'
 import ArrowDropDownIcon from '@mui/icons-material/ArrowDropDown'
 import GridOnIcon from '@mui/icons-material/GridOn'
+import ContentCopyIcon from '@mui/icons-material/ContentCopy'
+import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline'
+import WarningAmberIcon from '@mui/icons-material/WarningAmber'
+import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined'
 
 import {
     ebayTemplatesApi, EbayTemplateResponse, EbayTemplateParseSummary,
-    EbayFieldResponse, EbayValidValueDetailed, EbayTemplatePreviewResponse
+    EbayFieldResponse, EbayValidValueDetailed, EbayTemplatePreviewResponse,
+    EbayTemplateIntegrityResponse, EbayTemplateVerificationResponse
 } from '../services/api'
 
 // --- Component: Valid Values Section in Modal ---
@@ -341,6 +346,12 @@ export default function EbayTemplatesPage() {
     const [previewError, setPreviewError] = useState<string | null>(null)
     const [previewData, setPreviewData] = useState<EbayTemplatePreviewResponse | null>(null)
 
+    const [integrityData, setIntegrityData] = useState<EbayTemplateIntegrityResponse | null>(null)
+    const [integrityLoading, setIntegrityLoading] = useState(false)
+
+    const [verificationData, setVerificationData] = useState<EbayTemplateVerificationResponse | null>(null)
+    const [verificationLoading, setVerificationLoading] = useState(false)
+
     const [menuAnchorEl, setMenuAnchorEl] = useState<null | HTMLElement>(null)
     const [snackbarMessage, setSnackbarMessage] = useState<string | null>(null)
 
@@ -460,7 +471,8 @@ export default function EbayTemplatesPage() {
             setSnackbarMessage('Popup blocked. Opening grid preview instead.')
             handleOpenGridPreview()
         } else {
-            setSnackbarMessage('Opened template in new tab. If it downloads instead, use Grid Preview.')
+            // Note: Most browsers will download XLSX files since they can't display them inline
+            setSnackbarMessage('Opening template. Note: Your browser may download the file since XLSX cannot be displayed inline.')
         }
     }
 
@@ -468,22 +480,53 @@ export default function EbayTemplatesPage() {
         setMenuAnchorEl(null)
         setPreviewOpen(true)
         setPreviewLoading(true)
+        setIntegrityLoading(true)
         setPreviewError(null)
         setPreviewData(null)
+        setIntegrityData(null)
 
         try {
-            const data = await ebayTemplatesApi.previewCurrentTemplate()
-            setPreviewData(data)
+            // Fetch both in parallel
+            const [previewResult, integrityResult] = await Promise.allSettled([
+                ebayTemplatesApi.previewCurrentTemplate(),
+                ebayTemplatesApi.getCurrentIntegrity()
+            ])
+
+            // Handle preview result
+            if (previewResult.status === 'fulfilled') {
+                setPreviewData(previewResult.value)
+            } else {
+                setPreviewError('Failed to load preview')
+            }
+
+            // Handle integrity result (don't fail if it errors)
+            if (integrityResult.status === 'fulfilled') {
+                setIntegrityData(integrityResult.value)
+            }
         } catch (err: any) {
             setPreviewError(err.response?.data?.detail || 'Failed to load preview')
         } finally {
             setPreviewLoading(false)
+            setIntegrityLoading(false)
         }
     }
 
     const handleDownloadXLSX = () => {
         setMenuAnchorEl(null)
         window.open(ebayTemplatesApi.downloadCurrentTemplateUrl(), '_blank')
+    }
+
+    const handleVerifyNow = async () => {
+        setVerificationLoading(true)
+        try {
+            const result = await ebayTemplatesApi.getCurrentVerification()
+            setVerificationData(result)
+        } catch (err: any) {
+            // Don't fail the whole modal - just show error in verification section
+            console.error('Verification failed:', err)
+        } finally {
+            setVerificationLoading(false)
+        }
     }
 
     return (
@@ -707,6 +750,206 @@ export default function EbayTemplatesPage() {
                             {previewError}
                         </Alert>
                     )}
+
+                    {/* File Integrity Section */}
+                    {integrityData && (
+                        <Paper sx={{ p: 2, mb: 2, border: 1, borderColor: 'divider' }} variant="outlined">
+                            <Typography variant="subtitle2" gutterBottom fontWeight="bold">
+                                File Integrity
+                            </Typography>
+                            <Stack spacing={1}>
+                                <Box>
+                                    <Typography variant="caption" color="text.secondary">Filename:</Typography>
+                                    <Typography variant="body2">{integrityData.original_filename}</Typography>
+                                </Box>
+                                <Box>
+                                    <Typography variant="caption" color="text.secondary">Size:</Typography>
+                                    <Typography variant="body2">
+                                        {integrityData.file_size.toLocaleString()} bytes ({(integrityData.file_size / 1024).toFixed(2)} KB)
+                                    </Typography>
+                                </Box>
+                                {integrityData.sha256 && (
+                                    <Box>
+                                        <Typography variant="caption" color="text.secondary">SHA256:</Typography>
+                                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                            <Typography
+                                                variant="body2"
+                                                sx={{
+                                                    fontFamily: 'monospace',
+                                                    fontSize: '0.75rem',
+                                                    wordBreak: 'break-all'
+                                                }}
+                                            >
+                                                {integrityData.sha256.substring(0, 16)}...{integrityData.sha256.substring(integrityData.sha256.length - 16)}
+                                            </Typography>
+                                            <IconButton
+                                                size="small"
+                                                onClick={() => {
+                                                    navigator.clipboard.writeText(integrityData.sha256!)
+                                                    setSnackbarMessage('SHA256 copied to clipboard')
+                                                }}
+                                                title="Copy full hash"
+                                            >
+                                                <ContentCopyIcon fontSize="small" />
+                                            </IconButton>
+                                        </Box>
+                                    </Box>
+                                )}
+                                {integrityData.uploaded_at && (
+                                    <Box>
+                                        <Typography variant="caption" color="text.secondary">Uploaded:</Typography>
+                                        <Typography variant="body2">
+                                            {new Date(integrityData.uploaded_at).toLocaleString()}
+                                        </Typography>
+                                    </Box>
+                                )}
+                            </Stack>
+                        </Paper>
+                    )}
+                    {integrityLoading && !integrityData && (
+                        <Typography variant="caption" color="text.secondary" sx={{ mb: 2, display: 'block' }}>
+                            Loading integrity information...
+                        </Typography>
+                    )}
+                    {!integrityData && !integrityLoading && previewData && (
+                        <Alert severity="warning" sx={{ mb: 2 }}>
+                            Integrity info unavailable.
+                        </Alert>
+                    )}
+
+                    {/* File Verification Section */}
+                    <Paper sx={{ p: 2, mb: 2, border: 1, borderColor: 'divider' }} variant="outlined">
+                        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
+                            <Typography variant="subtitle2" fontWeight="bold">
+                                🔍 File Verification
+                            </Typography>
+                            <Button
+                                size="small"
+                                variant="outlined"
+                                onClick={handleVerifyNow}
+                                disabled={verificationLoading}
+                            >
+                                {verificationLoading ? 'Verifying...' : 'Verify Now'}
+                            </Button>
+                        </Box>
+
+                        {verificationData && (
+                            <Stack spacing={1}>
+                                {/* Status Badge */}
+                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                    {verificationData.status === 'match' && (
+                                        <>
+                                            <CheckCircleOutlineIcon color="success" />
+                                            <Typography variant="body2" color="success.main">
+                                                Verified — file matches disk
+                                            </Typography>
+                                        </>
+                                    )}
+                                    {verificationData.status === 'mismatch' && (
+                                        <>
+                                            <WarningAmberIcon color="error" />
+                                            <Typography variant="body2" color="error.main">
+                                                Mismatch detected
+                                            </Typography>
+                                        </>
+                                    )}
+                                    {verificationData.status === 'missing' && (
+                                        <>
+                                            <WarningAmberIcon color="warning" />
+                                            <Typography variant="body2" color="warning.main">
+                                                File missing on disk
+                                            </Typography>
+                                        </>
+                                    )}
+                                    {verificationData.status === 'unknown' && (
+                                        <>
+                                            <InfoOutlinedIcon color="info" />
+                                            <Typography variant="body2" color="text.secondary">
+                                                No stored hash to verify against
+                                            </Typography>
+                                        </>
+                                    )}
+                                </Box>
+
+                                {/* Comparison Details */}
+                                {(verificationData.stored_sha256 || verificationData.computed_sha256) && (
+                                    <Box>
+                                        <Typography variant="caption" color="text.secondary">SHA256 Comparison:</Typography>
+                                        <Stack direction="row" spacing={2} sx={{ mt: 0.5 }}>
+                                            <Box sx={{ flex: 1 }}>
+                                                <Typography variant="caption" color="text.secondary">Stored:</Typography>
+                                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                                    <Typography variant="body2" sx={{ fontFamily: 'monospace', fontSize: '0.7rem' }}>
+                                                        {verificationData.stored_sha256 ?
+                                                            `${verificationData.stored_sha256.substring(0, 12)}...${verificationData.stored_sha256.substring(verificationData.stored_sha256.length - 12)}`
+                                                            : 'N/A'}
+                                                    </Typography>
+                                                    {verificationData.stored_sha256 && (
+                                                        <IconButton
+                                                            size="small"
+                                                            onClick={() => {
+                                                                navigator.clipboard.writeText(verificationData.stored_sha256!)
+                                                                setSnackbarMessage('Stored SHA256 copied')
+                                                            }}
+                                                        >
+                                                            <ContentCopyIcon fontSize="small" />
+                                                        </IconButton>
+                                                    )}
+                                                </Box>
+                                            </Box>
+                                            <Box sx={{ flex: 1 }}>
+                                                <Typography variant="caption" color="text.secondary">Computed:</Typography>
+                                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                                    <Typography variant="body2" sx={{ fontFamily: 'monospace', fontSize: '0.7rem' }}>
+                                                        {verificationData.computed_sha256 ?
+                                                            `${verificationData.computed_sha256.substring(0, 12)}...${verificationData.computed_sha256.substring(verificationData.computed_sha256.length - 12)}`
+                                                            : 'N/A'}
+                                                    </Typography>
+                                                    {verificationData.computed_sha256 && (
+                                                        <IconButton
+                                                            size="small"
+                                                            onClick={() => {
+                                                                navigator.clipboard.writeText(verificationData.computed_sha256!)
+                                                                setSnackbarMessage('Computed SHA256 copied')
+                                                            }}
+                                                        >
+                                                            <ContentCopyIcon fontSize="small" />
+                                                        </IconButton>
+                                                    )}
+                                                </Box>
+                                            </Box>
+                                        </Stack>
+                                    </Box>
+                                )}
+
+                                {/* File Size Comparison */}
+                                {(verificationData.stored_file_size !== undefined || verificationData.computed_file_size !== undefined) && (
+                                    <Box>
+                                        <Typography variant="caption" color="text.secondary">File Size:</Typography>
+                                        <Typography variant="body2">
+                                            Stored: {verificationData.stored_file_size !== undefined ? `${verificationData.stored_file_size.toLocaleString()} bytes` : 'N/A'} |
+                                            Computed: {verificationData.computed_file_size !== undefined ? `${verificationData.computed_file_size.toLocaleString()} bytes` : 'N/A'}
+                                        </Typography>
+                                    </Box>
+                                )}
+
+                                {/* Verification Timestamp */}
+                                <Box>
+                                    <Typography variant="caption" color="text.secondary">Verified at:</Typography>
+                                    <Typography variant="body2">
+                                        {new Date(verificationData.verified_at).toLocaleString()}
+                                    </Typography>
+                                </Box>
+                            </Stack>
+                        )}
+
+                        {!verificationData && !verificationLoading && (
+                            <Typography variant="body2" color="text.secondary">
+                                Click "Verify Now" to check if the file on disk matches stored integrity data.
+                            </Typography>
+                        )}
+                    </Paper>
+
                     {previewData && !previewLoading && (
                         <Box sx={{ overflowX: 'auto' }}>
                             <Table size="small" sx={{ minWidth: 650 }}>

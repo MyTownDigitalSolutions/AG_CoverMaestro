@@ -461,6 +461,24 @@ export interface EbayTemplatePreviewResponse {
   grid: string[][]
 }
 
+export interface EbayTemplateIntegrityResponse {
+  template_id: number
+  original_filename: string
+  file_size: number
+  sha256?: string
+  uploaded_at?: string
+}
+
+export interface EbayTemplateVerificationResponse {
+  template_id: number
+  status: string  // "match", "mismatch", "missing", "unknown"
+  stored_sha256?: string
+  stored_file_size?: number
+  computed_sha256?: string
+  computed_file_size?: number
+  verified_at: string
+}
+
 export interface EbayTemplateFieldsResponse {
   template_id: number
   fields: EbayFieldResponse[]
@@ -485,6 +503,8 @@ export const ebayTemplatesApi = {
   previewCurrentTemplateInlineUrl: () => '/api/ebay-templates/current/download?mode=inline',
   downloadCurrentTemplateUrl: () => '/api/ebay-templates/current/download?mode=download',
   previewCurrentTemplate: () => api.get<EbayTemplatePreviewResponse>('/ebay-templates/current/preview').then(r => r.data),
+  getCurrentIntegrity: () => api.get<EbayTemplateIntegrityResponse>('/ebay-templates/current/integrity').then(r => r.data),
+  getCurrentVerification: () => api.get<EbayTemplateVerificationResponse>('/ebay-templates/current/verify').then(r => r.data),
 }
 
 export default api

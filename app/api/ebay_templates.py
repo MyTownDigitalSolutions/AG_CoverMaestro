@@ -4,6 +4,8 @@ from sqlalchemy.orm import Session, selectinload
 from sqlalchemy import func
 from typing import Optional, List
 import os
+import hashlib
+from datetime import datetime
 from openpyxl import load_workbook
 
 from app.database import get_db
@@ -15,7 +17,9 @@ from app.schemas.templates import (
     EbayFieldResponse,
     EbayFieldUpdateRequest,
     EbayValidValueCreateRequest,
-    EbayTemplatePreviewResponse
+    EbayTemplatePreviewResponse,
+    EbayTemplateIntegrityResponse,
+    EbayTemplateVerificationResponse
 )
 from app.models.templates import EbayTemplate, EbayField, EbayFieldValue
 
@@ -462,3 +466,110 @@ def preview_current_ebay_template(
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to load template: {str(e)}")
+
+
+@router.get("/current/integrity", response_model=EbayTemplateIntegrityResponse)
+def get_current_ebay_template_integrity(db: Session = Depends(get_db)):
+    """
+    Get file integrity information for the current (latest) eBay template.
+    Returns SHA256 hash, file size, upload timestamp, and filename.
+    """
+    # Get current template (newest by uploaded_at, then id desc)
+    template = (
+        db.query(EbayTemplate)
+        .order_by(EbayTemplate.uploaded_at.desc(), EbayTemplate.id.desc())
+        .first()
+    )
+    
+    if not template:
+        raise HTTPException(status_code=404, detail="No eBay template uploaded")
+    
+    return EbayTemplateIntegrityResponse(
+        template_id=template.id,
+        original_filename=template.original_filename,
+        file_size=template.file_size,
+        sha256=template.sha256,
+        uploaded_at=template.uploaded_at.isoformat() if template.uploaded_at else None
+    )
+
+
+@router.get("/current/verify", response_model=EbayTemplateVerificationResponse)
+def verify_current_ebay_template(db: Session = Depends(get_db)):
+    """
+    Verify that the current eBay template file on disk matches stored integrity metadata.
+    This is a read-only diagnostic endpoint - it does NOT modify the database.
+    """
+    # Get current template
+    template = (
+        db.query(EbayTemplate)
+        .order_by(EbayTemplate.uploaded_at.desc(), EbayTemplate.id.desc())
+        .first()
+    )
+    
+    if not template:
+        raise HTTPException(status_code=404, detail="No eBay template uploaded")
+    
+    verified_at = datetime.utcnow().isoformat()
+    stored_sha256 = template.sha256
+    stored_file_size = template.file_size
+    
+    # Check if file exists
+    if not os.path.exists(template.file_path):
+        return EbayTemplateVerificationResponse(
+            template_id=template.id,
+            status="missing",
+            stored_sha256=stored_sha256,
+            stored_file_size=stored_file_size,
+            computed_sha256=None,
+            computed_file_size=None,
+            verified_at=verified_at
+        )
+    
+    # Check if we have a stored hash to compare against
+    if not stored_sha256:
+        return EbayTemplateVerificationResponse(
+            template_id=template.id,
+            status="unknown",
+            stored_sha256=None,
+            stored_file_size=stored_file_size,
+            computed_sha256=None,
+            computed_file_size=None,
+            verified_at=verified_at
+        )
+    
+    # Compute SHA256 and file size from disk
+    try:
+        sha256_hash = hashlib.sha256()
+        computed_file_size = 0
+        
+        # Stream file in chunks (don't load entire file into memory)
+        with open(template.file_path, 'rb') as f:
+            while True:
+                chunk = f.read(8192)  # 8KB chunks
+                if not chunk:
+                    break
+                sha256_hash.update(chunk)
+                computed_file_size += len(chunk)
+        
+        computed_sha256 = sha256_hash.hexdigest()
+        
+        # Compare values
+        sha256_match = (computed_sha256 == stored_sha256)
+        size_match = (computed_file_size == stored_file_size)
+        
+        if sha256_match and size_match:
+            status = "match"
+        else:
+            status = "mismatch"
+        
+        return EbayTemplateVerificationResponse(
+            template_id=template.id,
+            status=status,
+            stored_sha256=stored_sha256,
+            stored_file_size=stored_file_size,
+            computed_sha256=computed_sha256,
+            computed_file_size=computed_file_size,
+            verified_at=verified_at
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to verify file: {str(e)}")
