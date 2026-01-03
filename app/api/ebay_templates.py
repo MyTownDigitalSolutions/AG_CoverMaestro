@@ -1,7 +1,10 @@
 from fastapi import APIRouter, Depends, UploadFile, File, HTTPException
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session, selectinload
 from sqlalchemy import func
 from typing import Optional, List
+import os
+from openpyxl import load_workbook
 
 from app.database import get_db
 from app.services.ebay_template_service import EbayTemplateService
@@ -11,7 +14,8 @@ from app.schemas.templates import (
     EbayTemplateFieldsResponse,
     EbayFieldResponse,
     EbayFieldUpdateRequest,
-    EbayValidValueCreateRequest
+    EbayValidValueCreateRequest,
+    EbayTemplatePreviewResponse
 )
 from app.models.templates import EbayTemplate, EbayField, EbayFieldValue
 
@@ -349,3 +353,112 @@ def delete_valid_value_from_field(
         allowed_values=allowed_strs,
         allowed_values_detailed=allowed_detailed
     )
+
+
+@router.get("/current/download")
+def download_current_ebay_template(mode: str = "inline", db: Session = Depends(get_db)):
+    """
+    Download the current (latest) eBay template file as-is from disk.
+    Returns the bit-for-bit original uploaded file.
+    
+    Args:
+        mode: "inline" (try to display in browser) or "download" (force download)
+    """
+    # Get current template (newest by uploaded_at, then id desc)
+    template = (
+        db.query(EbayTemplate)
+        .order_by(EbayTemplate.uploaded_at.desc(), EbayTemplate.id.desc())
+        .first()
+    )
+    
+    if not template:
+        raise HTTPException(status_code=404, detail="No eBay template found")
+    
+    # Check file exists on disk
+    if not os.path.exists(template.file_path):
+        raise HTTPException(status_code=400, detail="Template file not found on disk")
+    
+    # Set Content-Disposition based on mode
+    disposition = "inline" if mode == "inline" else "attachment"
+    
+    # Return file
+    response = FileResponse(
+        path=template.file_path,
+        filename=template.original_filename,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+    response.headers["Content-Disposition"] = f'{disposition}; filename="{template.original_filename}"'
+    return response
+
+
+@router.get("/current/preview", response_model=EbayTemplatePreviewResponse)
+def preview_current_ebay_template(
+    preview_rows: int = 25,
+    preview_cols: int = 20,
+    db: Session = Depends(get_db)
+):
+    """
+    Preview the current (latest) eBay template as a grid.
+    Returns a JSON grid of cell values for the top-left window.
+    """
+    # Get current template
+    template = (
+        db.query(EbayTemplate)
+        .order_by(EbayTemplate.uploaded_at.desc(), EbayTemplate.id.desc())
+        .first()
+    )
+    
+    if not template:
+        raise HTTPException(status_code=404, detail="No eBay template found")
+    
+    # Check file exists on disk
+    if not os.path.exists(template.file_path):
+        raise HTTPException(status_code=400, detail="Template file not found on disk")
+    
+    # Load workbook
+    try:
+        wb = load_workbook(template.file_path, data_only=True)
+        
+        # Choose sheet: prefer "Template", else first sheet
+        if "Template" in wb.sheetnames:
+            sheet = wb["Template"]
+            sheet_name = "Template"
+        else:
+            sheet = wb.active
+            sheet_name = sheet.title if sheet else "Unknown"
+        
+        # Get dimensions
+        max_row = sheet.max_row or 0
+        max_column = sheet.max_column or 0
+        
+        # Build grid for preview window
+        grid = []
+        for row_idx in range(1, min(preview_rows + 1, max_row + 1)):
+            row_data = []
+            for col_idx in range(1, min(preview_cols + 1, max_column + 1)):
+                cell = sheet.cell(row=row_idx, column=col_idx)
+                value = cell.value
+                
+                # Convert to string safely
+                if value is None:
+                    row_data.append("")
+                elif isinstance(value, (int, float)):
+                    row_data.append(str(value))
+                else:
+                    row_data.append(str(value).strip())
+            grid.append(row_data)
+        
+        wb.close()
+        
+        return EbayTemplatePreviewResponse(
+            template_id=template.id,
+            original_filename=template.original_filename,
+            sheet_name=sheet_name,
+            max_row=max_row,
+            max_column=max_column,
+            preview_row_count=len(grid),
+            preview_column_count=len(grid[0]) if grid else 0,
+            grid=grid
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to load template: {str(e)}")

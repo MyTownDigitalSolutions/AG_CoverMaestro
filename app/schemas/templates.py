@@ -206,3 +206,16 @@ class EbayValidValueCreateRequest(BaseModel):
     Request schema for adding a valid value to an eBay field.
     """
     value: str
+
+class EbayTemplatePreviewResponse(BaseModel):
+    """
+    Response schema for eBay template preview grid.
+    """
+    template_id: int
+    original_filename: str
+    sheet_name: str
+    max_row: int
+    max_column: int
+    preview_row_count: int
+    preview_column_count: int
+    grid: List[List[str]]

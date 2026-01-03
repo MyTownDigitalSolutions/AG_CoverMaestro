@@ -4,7 +4,7 @@ import {
     Divider, IconButton, Table, TableBody, TableCell,
     TableContainer, TableHead, TableRow, Chip, Stack, TextField,
     InputAdornment, Dialog, DialogTitle, DialogContent,
-    DialogActions, Switch, FormControlLabel
+    DialogActions, Switch, FormControlLabel, Menu, MenuItem, Snackbar
 } from '@mui/material'
 import CloudUploadIcon from '@mui/icons-material/CloudUpload'
 import RefreshIcon from '@mui/icons-material/Refresh'
@@ -13,10 +13,14 @@ import CheckCircleIcon from '@mui/icons-material/CheckCircle'
 import SearchIcon from '@mui/icons-material/Search'
 import CloseIcon from '@mui/icons-material/Close'
 import AddIcon from '@mui/icons-material/Add'
+import VisibilityIcon from '@mui/icons-material/Visibility'
+import DownloadIcon from '@mui/icons-material/Download'
+import ArrowDropDownIcon from '@mui/icons-material/ArrowDropDown'
+import GridOnIcon from '@mui/icons-material/GridOn'
 
 import {
     ebayTemplatesApi, EbayTemplateResponse, EbayTemplateParseSummary,
-    EbayFieldResponse, EbayValidValueDetailed
+    EbayFieldResponse, EbayValidValueDetailed, EbayTemplatePreviewResponse
 } from '../services/api'
 
 // --- Component: Valid Values Section in Modal ---
@@ -332,6 +336,14 @@ export default function EbayTemplatesPage() {
     const [successMsg, setSuccessMsg] = useState<string | null>(null)
     const [savingRequiredById, setSavingRequiredById] = useState<Record<number, boolean>>({})
 
+    const [previewOpen, setPreviewOpen] = useState(false)
+    const [previewLoading, setPreviewLoading] = useState(false)
+    const [previewError, setPreviewError] = useState<string | null>(null)
+    const [previewData, setPreviewData] = useState<EbayTemplatePreviewResponse | null>(null)
+
+    const [menuAnchorEl, setMenuAnchorEl] = useState<null | HTMLElement>(null)
+    const [snackbarMessage, setSnackbarMessage] = useState<string | null>(null)
+
     const loadCurrentTemplate = async () => {
         setLoading(true)
         setError(null)
@@ -438,6 +450,42 @@ export default function EbayTemplatesPage() {
         setModalOpen(true)
     }
 
+    const handleOpenNativePreview = () => {
+        setMenuAnchorEl(null)
+        const url = ebayTemplatesApi.previewCurrentTemplateInlineUrl()
+        const newWindow = window.open(url, '_blank', 'noopener,noreferrer')
+
+        if (newWindow === null) {
+            // Popup blocked - fallback to grid preview
+            setSnackbarMessage('Popup blocked. Opening grid preview instead.')
+            handleOpenGridPreview()
+        } else {
+            setSnackbarMessage('Opened template in new tab. If it downloads instead, use Grid Preview.')
+        }
+    }
+
+    const handleOpenGridPreview = async () => {
+        setMenuAnchorEl(null)
+        setPreviewOpen(true)
+        setPreviewLoading(true)
+        setPreviewError(null)
+        setPreviewData(null)
+
+        try {
+            const data = await ebayTemplatesApi.previewCurrentTemplate()
+            setPreviewData(data)
+        } catch (err: any) {
+            setPreviewError(err.response?.data?.detail || 'Failed to load preview')
+        } finally {
+            setPreviewLoading(false)
+        }
+    }
+
+    const handleDownloadXLSX = () => {
+        setMenuAnchorEl(null)
+        window.open(ebayTemplatesApi.downloadCurrentTemplateUrl(), '_blank')
+    }
+
     return (
         <Box sx={{ p: 3, pt: 2, height: 'calc(100vh - 64px)', display: 'flex', flexDirection: 'column' }}>
             {/* Header / Top Bar */}
@@ -477,6 +525,33 @@ export default function EbayTemplatesPage() {
                         Upload
                         <input type="file" hidden accept=".xlsx" onChange={handleUpload} />
                     </Button>
+                    <Button
+                        variant="outlined"
+                        startIcon={<VisibilityIcon />}
+                        endIcon={<ArrowDropDownIcon />}
+                        onClick={(e) => setMenuAnchorEl(e.currentTarget)}
+                        disabled={!currentTemplate}
+                    >
+                        PREVIEW EXPORT
+                    </Button>
+                    <Menu
+                        anchorEl={menuAnchorEl}
+                        open={Boolean(menuAnchorEl)}
+                        onClose={() => setMenuAnchorEl(null)}
+                    >
+                        <MenuItem onClick={handleOpenNativePreview}>
+                            <VisibilityIcon sx={{ mr: 1 }} fontSize="small" />
+                            Open in new tab (XLSX)
+                        </MenuItem>
+                        <MenuItem onClick={handleOpenGridPreview}>
+                            <GridOnIcon sx={{ mr: 1 }} fontSize="small" />
+                            Grid preview
+                        </MenuItem>
+                        <MenuItem onClick={handleDownloadXLSX}>
+                            <DownloadIcon sx={{ mr: 1 }} fontSize="small" />
+                            Download XLSX
+                        </MenuItem>
+                    </Menu>
                     <Button
                         variant="contained"
                         color="primary"
@@ -598,6 +673,86 @@ export default function EbayTemplatesPage() {
                     // Also update selectedField so modal shows latest data
                     setSelectedField(updatedField)
                 }}
+            />
+
+            {/* Preview Export Modal */}
+            <Dialog open={previewOpen} onClose={() => setPreviewOpen(false)} maxWidth="lg" fullWidth>
+                <DialogTitle>
+                    <Box display="flex" justifyContent="space-between" alignItems="center">
+                        <Typography variant="h6">eBay Template Preview</Typography>
+                        <IconButton size="small" onClick={() => setPreviewOpen(false)}>
+                            <CloseIcon />
+                        </IconButton>
+                    </Box>
+                    {previewData && (
+                        <Box>
+                            <Typography variant="body2" color="text.secondary">
+                                {previewData.original_filename} - Sheet: {previewData.sheet_name}
+                            </Typography>
+                            <Typography variant="caption" color="text.secondary">
+                                Showing {previewData.preview_row_count} of {previewData.max_row} rows,
+                                {previewData.preview_column_count} of {previewData.max_column} columns
+                            </Typography>
+                        </Box>
+                    )}
+                </DialogTitle>
+                <DialogContent dividers>
+                    {previewLoading && (
+                        <Box sx={{ display: 'flex', justifyContent: 'center', p: 4 }}>
+                            <Typography>Loading preview...</Typography>
+                        </Box>
+                    )}
+                    {previewError && (
+                        <Alert severity="error" onClose={() => setPreviewError(null)}>
+                            {previewError}
+                        </Alert>
+                    )}
+                    {previewData && !previewLoading && (
+                        <Box sx={{ overflowX: 'auto' }}>
+                            <Table size="small" sx={{ minWidth: 650 }}>
+                                <TableHead>
+                                    <TableRow>
+                                        {previewData.grid[0]?.map((_, colIdx) => (
+                                            <TableCell key={colIdx} sx={{ fontWeight: 'bold', backgroundColor: 'action.hover' }}>
+                                                Col {colIdx + 1}
+                                            </TableCell>
+                                        ))}
+                                    </TableRow>
+                                </TableHead>
+                                <TableBody>
+                                    {previewData.grid.map((row, rowIdx) => (
+                                        <TableRow key={rowIdx} hover>
+                                            {row.map((cell, cellIdx) => (
+                                                <TableCell key={cellIdx} sx={{ whiteSpace: 'nowrap', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                                    {cell || <Typography variant="caption" color="text.disabled">(empty)</Typography>}
+                                                </TableCell>
+                                            ))}
+                                        </TableRow>
+                                    ))}
+                                </TableBody>
+                            </Table>
+                        </Box>
+                    )}
+                </DialogContent>
+                <DialogActions>
+                    <Button
+                        variant="contained"
+                        startIcon={<DownloadIcon />}
+                        onClick={() => window.open(ebayTemplatesApi.downloadCurrentTemplateUrl(), '_blank')}
+                        disabled={!previewData}
+                    >
+                        Download XLSX
+                    </Button>
+                    <Button onClick={() => setPreviewOpen(false)}>Close</Button>
+                </DialogActions>
+            </Dialog>
+
+            {/* Snackbar for notifications */}
+            <Snackbar
+                open={Boolean(snackbarMessage)}
+                autoHideDuration={6000}
+                onClose={() => setSnackbarMessage(null)}
+                message={snackbarMessage}
             />
         </Box>
     )

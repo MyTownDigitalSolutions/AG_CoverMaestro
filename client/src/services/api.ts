@@ -450,6 +450,17 @@ export interface EbayFieldResponse {
   allowed_values_detailed?: EbayValidValueDetailed[]
 }
 
+export interface EbayTemplatePreviewResponse {
+  template_id: number
+  original_filename: string
+  sheet_name: string
+  max_row: number
+  max_column: number
+  preview_row_count: number
+  preview_column_count: number
+  grid: string[][]
+}
+
 export interface EbayTemplateFieldsResponse {
   template_id: number
   fields: EbayFieldResponse[]
@@ -471,6 +482,9 @@ export const ebayTemplatesApi = {
     api.post<EbayFieldResponse>(`/ebay-templates/fields/${fieldId}/valid-values`, { value }).then(r => r.data),
   deleteValidValue: (fieldId: number, valueId: number) =>
     api.delete<EbayFieldResponse>(`/ebay-templates/fields/${fieldId}/valid-values/${valueId}`).then(r => r.data),
+  previewCurrentTemplateInlineUrl: () => '/api/ebay-templates/current/download?mode=inline',
+  downloadCurrentTemplateUrl: () => '/api/ebay-templates/current/download?mode=download',
+  previewCurrentTemplate: () => api.get<EbayTemplatePreviewResponse>('/ebay-templates/current/preview').then(r => r.data),
 }
 
 export default api
