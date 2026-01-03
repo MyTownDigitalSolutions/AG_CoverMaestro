@@ -335,7 +335,19 @@ def build_export_data(request: ExportPreviewRequest, db: Session):
     if not models:
         raise HTTPException(status_code=404, detail="No models found")
     
-    equipment_type_ids = set(m.equipment_type_id for m in models)
+    # Filter out models with missing or invalid dimensions
+    export_models = [
+        m for m in models 
+        if m.width and m.depth and m.height and m.width > 0 and m.depth > 0 and m.height > 0
+    ]
+    
+    if not export_models:
+        raise HTTPException(
+            status_code=400,
+            detail="No models exported: all selected models are missing physical dimensions (W/D/H must be > 0)."
+        )
+    
+    equipment_type_ids = set(m.equipment_type_id for m in export_models)
     if len(equipment_type_ids) > 1:
         raise HTTPException(
             status_code=400, 
@@ -435,7 +447,7 @@ def build_export_data(request: ExportPreviewRequest, db: Session):
     
     equipment_type = db.query(EquipmentType).filter(EquipmentType.id == equipment_type_id).first()
     
-    first_model = models[0]
+    first_model = export_models[0]
     first_series = db.query(Series).filter(Series.id == first_model.series_id).first()
     first_manufacturer = db.query(Manufacturer).filter(Manufacturer.id == first_series.manufacturer_id).first() if first_series else None
     
@@ -445,7 +457,7 @@ def build_export_data(request: ExportPreviewRequest, db: Session):
     filename_base = f"Amazon_{mfr_name}_{series_name}_{date_str}"
     
     data_rows = []
-    for model in models:
+    for model in export_models:
         series = db.query(Series).filter(Series.id == model.series_id).first()
         manufacturer = db.query(Manufacturer).filter(Manufacturer.id == series.manufacturer_id).first() if series else None
         
@@ -460,9 +472,14 @@ def build_export_data(request: ExportPreviewRequest, db: Session):
         
         data_rows.append(row_data)
     
+    # Log dimension filtering stats
+    skipped_count = len(models) - len(export_models)
+    if skipped_count > 0:
+        logger.info(f"[EXPORT] Skipped {skipped_count} model(s) due to missing dimensions (<=0).")
+    
     ordered_field_names = [f.field_name for f in fields]
     ordered_required_flags = [f.required for f in fields]
-    return header_rows, data_rows, filename_base, product_type.code, models, ordered_field_names, ordered_required_flags
+    return header_rows, data_rows, filename_base, product_type.code, export_models, ordered_field_names, ordered_required_flags
 
 
 def _generate_xlsx_artifact(request: ExportPreviewRequest, db: Session):

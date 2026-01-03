@@ -816,6 +816,11 @@ export default function ModelsPage() {
   const [bulkDrafts, setBulkDrafts] = useState<Record<number, any>>({})
   const [savingRowId, setSavingRowId] = useState<number | null>(null)
 
+  // Batch Save State
+  const [selectedBulkSaveIds, setSelectedBulkSaveIds] = useState<Set<number>>(new Set())
+  const [rowSaveStatusById, setRowSaveStatusById] = useState<Record<number, 'idle' | 'saving' | 'success' | 'error'>>({})
+  const [saveAllStatus, setSaveAllStatus] = useState<'idle' | 'saving' | 'success' | 'error'>('idle')
+
   const handleColumnToggle = (col: string) => {
     const newSet = new Set(selectedBulkColumns)
     if (newSet.has(col)) {
@@ -833,10 +838,82 @@ export default function ModelsPage() {
       ...prev,
       [id]: { ...prev[id], [field]: value }
     }))
+    // Clear save status when editing
+    setRowSaveStatusById(prev => ({ ...prev, [id]: 'idle' }))
+    setSaveAllStatus('idle')
+  }
+
+  // Helper to check if a row has unsaved changes
+  const isRowDirty = (modelId: number): boolean => {
+    return bulkDrafts[modelId] !== undefined && Object.keys(bulkDrafts[modelId]).length > 0
+  }
+
+  // Toggle row selection for batch save
+  const handleToggleBulkSaveSelection = (id: number) => {
+    setSelectedBulkSaveIds(prev => {
+      const newSet = new Set(prev)
+      if (newSet.has(id)) {
+        newSet.delete(id)
+      } else {
+        newSet.add(id)
+      }
+      return newSet
+    })
+  }
+
+  // Select all changed rows
+  const handleSelectChanged = () => {
+    const changedIds = filteredModels.filter(m => isRowDirty(m.id)).map(m => m.id)
+    setSelectedBulkSaveIds(new Set(changedIds))
+  }
+
+  // Toggle select all visible rows
+  const handleToggleSelectAllVisible = () => {
+    const visibleIds = filteredModels.map(m => m.id)
+    const allVisibleSelected = visibleIds.length > 0 && visibleIds.every(id => selectedBulkSaveIds.has(id))
+
+    if (allVisibleSelected) {
+      // Remove all visible from selection
+      setSelectedBulkSaveIds(prev => {
+        const newSet = new Set(prev)
+        visibleIds.forEach(id => newSet.delete(id))
+        return newSet
+      })
+    } else {
+      // Add all visible to selection
+      setSelectedBulkSaveIds(prev => {
+        const newSet = new Set(prev)
+        visibleIds.forEach(id => newSet.add(id))
+        return newSet
+      })
+    }
+  }
+
+  // Save all selected rows
+  const handleSaveAll = async () => {
+    const idsToSave = Array.from(selectedBulkSaveIds)
+    if (idsToSave.length === 0) return
+
+    setSaveAllStatus('saving')
+    let allSuccess = true
+
+    for (const id of idsToSave) {
+      setRowSaveStatusById(prev => ({ ...prev, [id]: 'saving' }))
+      try {
+        await handleRowBulkSave(id)
+        setRowSaveStatusById(prev => ({ ...prev, [id]: 'success' }))
+      } catch (error) {
+        setRowSaveStatusById(prev => ({ ...prev, [id]: 'error' }))
+        allSuccess = false
+      }
+    }
+
+    setSaveAllStatus(allSuccess ? 'success' : 'error')
   }
 
   const handleRowBulkSave = async (id: number) => {
     setSavingRowId(id)
+    setRowSaveStatusById(prev => ({ ...prev, [id]: 'saving' }))
     const draft = bulkDrafts[id] || {}
     const model = models.find(m => m.id === id)
     if (!model) {
@@ -950,9 +1027,12 @@ export default function ModelsPage() {
         delete next[id]
         return next
       })
+      // Set success status for individual save
+      setRowSaveStatusById(prev => ({ ...prev, [id]: 'success' }))
       loadData()
     } catch (e) {
       console.error(e)
+      setRowSaveStatusById(prev => ({ ...prev, [id]: 'error' }))
       alert("Save failed")
     } finally {
       setSavingRowId(null)
@@ -1574,6 +1654,12 @@ export default function ModelsPage() {
     return errors.length === 0
   }
 
+  // Helper variables for Select All checkbox
+  const visibleIds = filteredModels.map(m => m.id)
+  const visibleSelectedCount = visibleIds.filter(id => selectedBulkSaveIds.has(id)).length
+  const allVisibleSelected = visibleIds.length > 0 && visibleSelectedCount === visibleIds.length
+  const someVisibleSelected = visibleSelectedCount > 0 && visibleSelectedCount < visibleIds.length
+
   return (
     <Box>
       <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 3 }}>
@@ -1735,6 +1821,32 @@ export default function ModelsPage() {
                 Clear Selection
               </Button>
             )}
+            {isBulkEditMode && (
+              <>
+                <Button
+                  variant="outlined"
+                  size="small"
+                  onClick={handleSelectChanged}
+                >
+                  Select Changed
+                </Button>
+                <Button
+                  variant="contained"
+                  size="small"
+                  color="success"
+                  onClick={handleSaveAll}
+                  disabled={selectedBulkSaveIds.size === 0 || saveAllStatus === 'saving'}
+                  startIcon={saveAllStatus === 'saving' ? <SaveIcon /> : undefined}
+                >
+                  {saveAllStatus === 'saving' ? 'Saving...' : `Save All (${selectedBulkSaveIds.size})`}
+                </Button>
+                {saveAllStatus === 'success' && (
+                  <Typography variant="caption" color="success.main">
+                    Save successful.
+                  </Typography>
+                )}
+              </>
+            )}
           </Stack>
         </Box>
       </Paper>
@@ -1743,6 +1855,16 @@ export default function ModelsPage() {
         <Table>
           <TableHead>
             <TableRow>
+              {isBulkEditMode && (
+                <TableCell padding="checkbox">
+                  <Checkbox
+                    checked={allVisibleSelected}
+                    indeterminate={someVisibleSelected}
+                    disabled={visibleIds.length === 0}
+                    onChange={handleToggleSelectAllVisible}
+                  />
+                </TableCell>
+              )}
               <TableCell>Model Name</TableCell>
               {isBulkEditMode && <TableCell>Series</TableCell>}
 
@@ -1768,6 +1890,14 @@ export default function ModelsPage() {
           <TableBody>
             {filteredModels.map((model) => (
               <TableRow key={model.id} selected={selectedModelIds.has(model.id)}>
+                {isBulkEditMode && (
+                  <TableCell padding="checkbox">
+                    <Checkbox
+                      checked={selectedBulkSaveIds.has(model.id)}
+                      onChange={() => handleToggleBulkSaveSelection(model.id)}
+                    />
+                  </TableCell>
+                )}
                 <TableCell>{model.name}</TableCell>
                 {isBulkEditMode && <TableCell>{series.find(s => s.id === model.series_id)?.name || 'Unknown'}</TableCell>}
 
@@ -1797,16 +1927,25 @@ export default function ModelsPage() {
 
                 {isBulkEditMode && selectedBulkColumns.has('dimensions') && (
                   <TableCell>
-                    <Stack direction="row" spacing={1}>
-                      <TextField size="small" sx={{ width: 60 }} type="number" placeholder="W"
-                        value={bulkDrafts[model.id]?.width !== undefined ? bulkDrafts[model.id].width : model.width}
-                        onChange={(e) => handleBulkDraftChange(model.id, 'width', e.target.value)} />
-                      <TextField size="small" sx={{ width: 60 }} type="number" placeholder="D"
-                        value={bulkDrafts[model.id]?.depth !== undefined ? bulkDrafts[model.id].depth : model.depth}
-                        onChange={(e) => handleBulkDraftChange(model.id, 'depth', e.target.value)} />
-                      <TextField size="small" sx={{ width: 60 }} type="number" placeholder="H"
-                        value={bulkDrafts[model.id]?.height !== undefined ? bulkDrafts[model.id].height : model.height}
-                        onChange={(e) => handleBulkDraftChange(model.id, 'height', e.target.value)} />
+                    <Stack direction="row" spacing={0.5}>
+                      <Box>
+                        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', textAlign: 'center', mb: 0.5 }}>W</Typography>
+                        <TextField size="small" sx={{ width: 130 }} type="number" placeholder="Width"
+                          value={bulkDrafts[model.id]?.width !== undefined ? bulkDrafts[model.id].width : model.width}
+                          onChange={(e) => handleBulkDraftChange(model.id, 'width', e.target.value)} />
+                      </Box>
+                      <Box>
+                        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', textAlign: 'center', mb: 0.5 }}>D</Typography>
+                        <TextField size="small" sx={{ width: 130 }} type="number" placeholder="Depth"
+                          value={bulkDrafts[model.id]?.depth !== undefined ? bulkDrafts[model.id].depth : model.depth}
+                          onChange={(e) => handleBulkDraftChange(model.id, 'depth', e.target.value)} />
+                      </Box>
+                      <Box>
+                        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', textAlign: 'center', mb: 0.5 }}>H</Typography>
+                        <TextField size="small" sx={{ width: 130 }} type="number" placeholder="Height"
+                          value={bulkDrafts[model.id]?.height !== undefined ? bulkDrafts[model.id].height : model.height}
+                          onChange={(e) => handleBulkDraftChange(model.id, 'height', e.target.value)} />
+                      </Box>
                     </Stack>
                   </TableCell>
                 )}
@@ -1930,8 +2069,18 @@ export default function ModelsPage() {
 
                 <TableCell align="right">
                   {isBulkEditMode ? (
-                    savingRowId === model.id ? <CircularProgress size={24} /> :
-                      <IconButton onClick={() => handleRowBulkSave(model.id)} color="primary"><SaveIcon /></IconButton>
+                    <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 0.5 }}>
+                      {savingRowId === model.id ? (
+                        <CircularProgress size={24} />
+                      ) : (
+                        <IconButton onClick={() => handleRowBulkSave(model.id)} color="primary"><SaveIcon /></IconButton>
+                      )}
+                      {rowSaveStatusById[model.id] === 'success' && (
+                        <Typography variant="caption" color="success.main">
+                          Save successful.
+                        </Typography>
+                      )}
+                    </Box>
                   ) : (
                     <Box sx={{ display: 'flex' }}>
                       <Tooltip title="Pricing Analysis">
