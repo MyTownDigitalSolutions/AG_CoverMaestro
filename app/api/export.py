@@ -126,6 +126,22 @@ def validate_export(request: ExportPreviewRequest, db: Session = Depends(get_db)
         missing_ids = set(request.model_ids) - found_ids
         issues.append(ExportValidationIssue(severity="error", message=f"Some requested models exist. Missing IDs: {missing_ids}"))
 
+    # Filter out models with missing dimensions (they will be skipped during export)
+    valid_models = [m for m in models if _has_valid_dimensions(m)]
+    skipped_no_dims = [m for m in models if not _has_valid_dimensions(m)]
+    
+    # Add warnings for skipped models
+    if skipped_no_dims:
+        for m in skipped_no_dims:
+            issues.append(ExportValidationIssue(
+                severity="warning",
+                model_id=m.id,
+                model_name=m.name,
+                message="Missing physical dimensions (W/D/H must be > 0). Will be skipped during export."
+            ))
+    
+    # Use valid_models for all subsequent checks (only models that will actually be exported)
+    models = valid_models
     total_models = len(models)
     
     image_fields = []
@@ -133,8 +149,43 @@ def validate_export(request: ExportPreviewRequest, db: Session = Depends(get_db)
     # 2. Equipment Type Consistency & Template Loading
     if models:
         eq_ids = set(m.equipment_type_id for m in models)
+        
+        # Allow mixed equipment types if they map to same Product Type and Customization Template
         if len(eq_ids) > 1:
-             issues.append(ExportValidationIssue(severity="error", message="Selected models have mixed Equipment Types. Export requires a single Equipment Type."))
+            # Check template compatibility
+            links = db.query(EquipmentTypeProductType).filter(
+                EquipmentTypeProductType.equipment_type_id.in_(eq_ids)
+            ).all()
+            
+            if not links:
+                issues.append(ExportValidationIssue(severity="error", message="No Amazon templates linked to the selected equipment types."))
+            else:
+                # Check if all equipment types map to same templates
+                product_type_ids = set(link.product_type_id for link in links)
+                equipment_types = db.query(EquipmentType).filter(EquipmentType.id.in_(eq_ids)).all()
+                customization_template_ids = set(
+                    et.amazon_customization_template_id for et in equipment_types 
+                    if et.amazon_customization_template_id is not None
+                )
+                
+                if len(product_type_ids) > 1 or len(customization_template_ids) > 1:
+                    et_map = {et.id: et.name for et in equipment_types}
+                    et_details = ", ".join([f"{et.id} ({et_map.get(et.id, 'Unknown')})" for et in equipment_types])
+                    issues.append(ExportValidationIssue(
+                        severity="error", 
+                        message=f"Selected models span multiple equipment types with incompatible templates. Equipment types: {et_details}. Filter to equipment types that share the same templates."
+                    ))
+                else:
+                    # Compatible - use first link for further validation
+                    link = links[0]
+                    pt = db.query(AmazonProductType).filter(AmazonProductType.id == link.product_type_id).first()
+                    if not pt or not pt.code:
+                        issues.append(ExportValidationIssue(severity="error", message="Linked Amazon Template is invalid or missing Template Code."))
+                    else:
+                        # Load fields for placeholder verification
+                        all_fields = db.query(ProductTypeField).filter(ProductTypeField.product_type_id == pt.id).all()
+                        image_fields = [f for f in all_fields if is_image_url_field(f.field_name)]
+        
         elif len(eq_ids) == 1:
              eq_id = list(eq_ids)[0]
              link = db.query(EquipmentTypeProductType).filter(EquipmentTypeProductType.equipment_type_id == eq_id).first()
@@ -326,8 +377,16 @@ def validate_export(request: ExportPreviewRequest, db: Session = Depends(get_db)
 
 from datetime import datetime
 
+# Helper function to check if model has valid dimensions
+def _has_valid_dimensions(m: Model) -> bool:
+    """Check if model has valid physical dimensions (all > 0)."""
+    return m.width and m.depth and m.height and m.width > 0 and m.depth > 0 and m.height > 0
+
 def build_export_data(request: ExportPreviewRequest, db: Session):
-    """Build export data (headers and rows) for the given models."""
+    """
+	Build export data (headers and rows) for the given models.
+    Returns: (header_rows, data_rows, filename_base, template_code, export_models, ordered_field_names, ordered_required_flags, warnings)
+    """
     if not request.model_ids:
         raise HTTPException(status_code=400, detail="No models selected")
     
@@ -335,11 +394,22 @@ def build_export_data(request: ExportPreviewRequest, db: Session):
     if not models:
         raise HTTPException(status_code=404, detail="No models found")
     
-    # Filter out models with missing or invalid dimensions
-    export_models = [
-        m for m in models 
-        if m.width and m.depth and m.height and m.width > 0 and m.depth > 0 and m.height > 0
-    ]
+    # Separate models with valid vs missing dimensions
+    export_models = [m for m in models if _has_valid_dimensions(m)]
+    skipped_no_dims = [m for m in models if not _has_valid_dimensions(m)]
+    
+    # Build warning list for skipped models
+    warnings = []
+    if skipped_no_dims:
+        # Load series data for warning messages
+        series_ids = set(m.series_id for m in skipped_no_dims)
+        series_map = {s.id: s.name for s in db.query(Series).filter(Series.id.in_(series_ids)).all()}
+        
+        for m in skipped_no_dims:
+            series_name = series_map.get(m.series_id, f"Series {m.series_id}")
+            warnings.append(f"{series_name}: {m.name}")
+        
+        logger.warning(f"[EXPORT] Skipped {len(skipped_no_dims)} model(s) due to missing dimensions: {warnings}")
     
     if not export_models:
         raise HTTPException(
@@ -347,33 +417,75 @@ def build_export_data(request: ExportPreviewRequest, db: Session):
             detail="No models exported: all selected models are missing physical dimensions (W/D/H must be > 0)."
         )
     
+    # Template compatibility validation: allow mixed equipment types if they use same templates
     equipment_type_ids = set(m.equipment_type_id for m in export_models)
+    
     if len(equipment_type_ids) > 1:
-        raise HTTPException(
-            status_code=400, 
-            detail="All selected models must have the same equipment type for export"
-        )
-    
-    equipment_type_id = list(equipment_type_ids)[0]
-    
-    links = db.query(EquipmentTypeProductType).filter(
-        EquipmentTypeProductType.equipment_type_id == equipment_type_id
-    ).all()
-    
-    if len(links) == 0:
-        equipment_type = db.query(EquipmentType).filter(EquipmentType.id == equipment_type_id).first()
-        raise HTTPException(
-            status_code=404, 
-            detail=f"No Amazon template linked to equipment type: {equipment_type.name if equipment_type else 'Unknown'}"
+        # Check if all equipment types map to the same Product Type and Customization Template
+        links = db.query(EquipmentTypeProductType).filter(
+            EquipmentTypeProductType.equipment_type_id.in_(equipment_type_ids)
+        ).all()
+        
+        if not links:
+            raise HTTPException(
+                status_code=404,
+                detail="No Amazon templates linked to the selected equipment types."
+            )
+        
+        # Get unique product type IDs and customization template IDs
+        product_type_ids = set(link.product_type_id for link in links)
+        
+        # Also check customization templates via equipment types
+        equipment_types = db.query(EquipmentType).filter(EquipmentType.id.in_(equipment_type_ids)).all()
+        customization_template_ids = set(
+            et.amazon_customization_template_id for et in equipment_types 
+            if et.amazon_customization_template_id is not None
         )
         
-    if len(links) > 1:
-        raise HTTPException(
-            status_code=500,
-            detail="Configuration error: multiple templates assigned to equipment type. Please resolve uniqueness constraint."
-        )
+        # Allow if all map to same templates
+        if len(product_type_ids) > 1 or len(customization_template_ids) > 1:
+            # Fetch names for error message
+            et_map = {et.id: et.name for et in equipment_types}
+            sorted_ids = sorted(equipment_type_ids)
+            et_details = ", ".join([f"{et_id} ({et_map.get(et_id, 'Unknown')})" for et_id in sorted_ids])
+            
+            error_detail = (
+                f"Export failed: selected models span multiple equipment types with incompatible templates. "
+                f"Selected models: {len(export_models)}. "
+                f"Equipment types: {et_details}. "
+                f"Product type IDs: {sorted(product_type_ids)}. "
+                f"Customization template IDs: {sorted(customization_template_ids)}. "
+                f"Filter to equipment types that share the same templates."
+            )
+            
+            logger.warning("[EXPORT] Incompatible templates: product_types=%s, customization=%s", product_type_ids, customization_template_ids)
+            raise HTTPException(status_code=400, detail=error_detail)
         
-    link = links[0]
+        logger.info(f"[EXPORT] Mixed equipment types allowed: all map to same templates (product_type_ids={product_type_ids}, customization_ids={customization_template_ids})")
+        
+        # Use first equipment type's link for template resolution
+        link = links[0]
+    else:
+        equipment_type_id = list(equipment_type_ids)[0]
+        
+        links = db.query(EquipmentTypeProductType).filter(
+            EquipmentTypeProductType.equipment_type_id == equipment_type_id
+        ).all()
+        
+        if len(links) == 0:
+            equipment_type = db.query(EquipmentType).filter(EquipmentType.id == equipment_type_id).first()
+            raise HTTPException(
+                status_code=404, 
+                detail=f"No Amazon template linked to equipment type: {equipment_type.name if equipment_type else 'Unknown'}"
+            )
+            
+        if len(links) > 1:
+            raise HTTPException(
+                status_code=500,
+                detail="Configuration error: multiple templates assigned to equipment type. Please resolve uniqueness constraint."
+            )
+            
+        link = links[0]
     
     product_type = db.query(AmazonProductType).filter(
         AmazonProductType.id == link.product_type_id
@@ -445,6 +557,8 @@ def build_export_data(request: ExportPreviewRequest, db: Session):
     logger.info(f"[EXPORT][PREVIEW] header_source={header_source} file={product_type.file_path}")
     # ------------------------------------------
     
+    # Use first equipment type for field resolution (works for both single and mixed-compatible cases)
+    equipment_type_id = list(equipment_type_ids)[0]
     equipment_type = db.query(EquipmentType).filter(EquipmentType.id == equipment_type_id).first()
     
     first_model = export_models[0]
@@ -472,14 +586,9 @@ def build_export_data(request: ExportPreviewRequest, db: Session):
         
         data_rows.append(row_data)
     
-    # Log dimension filtering stats
-    skipped_count = len(models) - len(export_models)
-    if skipped_count > 0:
-        logger.info(f"[EXPORT] Skipped {skipped_count} model(s) due to missing dimensions (<=0).")
-    
     ordered_field_names = [f.field_name for f in fields]
     ordered_required_flags = [f.required for f in fields]
-    return header_rows, data_rows, filename_base, product_type.code, export_models, ordered_field_names, ordered_required_flags
+    return header_rows, data_rows, filename_base, product_type.code, export_models, ordered_field_names, ordered_required_flags, warnings
 
 
 def _generate_xlsx_artifact(request: ExportPreviewRequest, db: Session):
@@ -490,7 +599,7 @@ def _generate_xlsx_artifact(request: ExportPreviewRequest, db: Session):
     import os
     # 1. Resolve Data
     ensure_models_fresh_for_export(request, db)
-    header_rows, data_rows, filename_base, template_code, models, ordered_fields, ordered_flags = build_export_data(request, db)
+    header_rows, data_rows, filename_base, template_code, models, ordered_fields, ordered_flags, warnings = build_export_data(request, db)
     
     # 2. Resolve Template
     if not models:
@@ -610,7 +719,8 @@ def _generate_xlsx_artifact(request: ExportPreviewRequest, db: Session):
         "ordered_fields": ordered_fields,
         "ordered_flags": ordered_flags,
         "header_hash": header_hash,
-        "input_trace": input_trace
+        "input_trace": input_trace,
+        "warnings": warnings
     }
     
 @router.post("/download/xlsx")
@@ -632,6 +742,13 @@ def download_xlsx(request: ExportPreviewRequest, db: Session = Depends(get_db)):
     )
     response.headers["X-Export-Signature"] = artifact["signature"]
     response.headers["X-Export-Template-Code"] = artifact["template_code"]
+    
+    # Set warnings header if models were skipped
+    if artifact.get("warnings"):
+        warnings_json = json.dumps(artifact["warnings"])
+        response.headers["X-Export-Warnings"] = warnings_json
+        logger.info(f"[EXPORT] Skipped models (missing dimensions): {warnings_json}")
+    
     return response
 
 
@@ -991,7 +1108,7 @@ class DownloadZipRequest(BaseModel):
     customization_format: Optional[str] = "xlsx" # "xlsx" or "txt"
 
 @router.post("/download/zip")
-def download_zip(request: DownloadZipRequest = Body(...), db: Session = Depends(get_db)):
+def download_zip(response: Response, request: DownloadZipRequest = Body(...), db: Session = Depends(get_db)):
     """
     Download a ZIP package containing:
     1. XLSM (Macro-Enabled)
@@ -1006,7 +1123,7 @@ def download_zip(request: DownloadZipRequest = Body(...), db: Session = Depends(
     preview_req = ExportPreviewRequest(model_ids=request.model_ids, listing_type=request.listing_type)
     ensure_models_fresh_for_export(preview_req, db)
     
-    header_rows, data_rows, _, template_code, exported_models, ordered_field_names, _ = build_export_data(preview_req, db)
+    header_rows, data_rows, _, template_code, exported_models, ordered_field_names, _, warnings = build_export_data(preview_req, db)
     
     # 2. Compute Filename Base
     # Syntax: [Marketplace]-[Manufacturer]-[Series]-Product_Upload-[Date]
@@ -1183,57 +1300,95 @@ def download_zip(request: DownloadZipRequest = Body(...), db: Session = Depends(
                 skus = [] # Force skip
 
             if skus:
-                 # 2. Determine Template
-                 # Group models by equipment type to find template.
-                 # build_export_data enforces single equipment_type for the batch.
-                 # So we just check the first model.
-                 if exported_models:
+                 #  2. Determine Template - Allow mixed equipment types if they share same customization template
+                 # Validate customization template compatibility
+                 equipment_type_ids = set(m.equipment_type_id for m in exported_models)
+                 
+                 if len(equipment_type_ids) > 1:
+                     # Multiple equipment types - check if they all map to same customization template
+                     equipment_types = db.query(EquipmentType).filter(EquipmentType.id.in_(equipment_type_ids)).all()
+                     customization_template_ids = set(
+                         et.amazon_customization_template_id for et in equipment_types 
+                         if et.amazon_customization_template_id is not None
+                     )
+                     
+                     if len(customization_template_ids) == 0:
+                         raise HTTPException(
+                             status_code=404,
+                             detail="No customization templates assigned to the selected equipment types."
+                         )
+                     
+                     if len(customization_template_ids) > 1:
+                         et_map = {et.id: et.name for et in equipment_types}
+                         sorted_ids = sorted(equipment_type_ids)
+                         et_details = ", ".join([f"{et_id} ({et_map.get(et_id, 'Unknown')})" for et_id in sorted_ids])
+                         
+                         error_detail = (
+                             f"Customization export failed: selected models span multiple equipment types with different customization templates. "
+                             f"Equipment types: {et_details}. "
+                             f"Customization template IDs: {sorted(customization_template_ids)}. "
+                             f"Filter to equipment types that share the same customization template."
+                         )
+                         
+                         logger.warning("[EXPORT][CUSTOMIZATION] Incompatible customization templates: %s", customization_template_ids)
+                         raise HTTPException(status_code=400, detail=error_detail)
+                     
+                     logger.info(f"[EXPORT][CUSTOMIZATION] Mixed equipment types allowed: all map to same customization template (template_id={list(customization_template_ids)[0]})")
+                     
+                     # Use the shared template
+                     template_id = list(customization_template_ids)[0]
+                     equip_type = equipment_types[0]  # Use first for reference
+                 else:
+                     # Single equipment type - use its template
                      first_model = exported_models[0]
                      equip_type = db.query(EquipmentType).filter(EquipmentType.id == first_model.equipment_type_id).first()
+                     template_id = equip_type.amazon_customization_template_id if equip_type else None
+                 
+                 if template_id:
+                     # Import here to avoid circular imports at module load time
+                     from app.models.templates import AmazonCustomizationTemplate
                      
-                     if equip_type and equip_type.amazon_customization_template_id:
-                         template = equip_type.amazon_customization_template
-                         # We need the full path
-                         
-                         if os.path.exists(template.file_path):
-                             try:
-                                 # Format Logic:
-                                 fmt = (request.customization_format or "xlsx").lower()
+                     template = db.query(AmazonCustomizationTemplate).filter(AmazonCustomizationTemplate.id == template_id).first()
+                     
+                     if template and template.file_path and os.path.exists(template.file_path):
+                         try:
+                             # Format Logic:
+                             fmt = (request.customization_format or "xlsx").lower()
 
-                                 if fmt == 'xlsx':
-                                     # --- XLSX Mode ---
-                                     # Read raw template file and write to ZIP (byte-identical preservation)
-                                     print(f"[EXPORT] Customization XLSX: template_id={template.id} path={template.file_path}")
+                             if fmt == 'xlsx':
+                                 # --- XLSX Mode ---
+                                 # Read raw template file and write to ZIP (byte-identical preservation)
+                                 print(f"[EXPORT] Customization XLSX: template_id={template.id} path={template.file_path}")
 
-                                     if not template.file_path:
-                                         raise HTTPException(status_code=500, detail="Assigned customization template has no file_path")
+                                 if not template.file_path:
+                                     raise HTTPException(status_code=500, detail="Assigned customization template has no file_path")
 
-                                     if not os.path.exists(template.file_path):
-                                         raise HTTPException(status_code=500, detail=f"Assigned customization template file missing: {template.file_path}")
+                                 if not os.path.exists(template.file_path):
+                                     raise HTTPException(status_code=500, detail=f"Assigned customization template file missing: {template.file_path}")
 
-                                     with open(template.file_path, "rb") as f:
-                                         cust_bytes = f.read()
+                                 with open(template.file_path, "rb") as f:
+                                     cust_bytes = f.read()
 
-                                     if not cust_bytes:
-                                         raise HTTPException(status_code=500, detail=f"Assigned customization template is empty on disk: {template.file_path}")
-                                     
-                                     cust_filename = f"{request.marketplace_token}-{request.manufacturer_token}-{request.series_token}-Customization-{request.date_token}.xlsx"
-                                     zf.writestr(cust_filename, cust_bytes)
+                                 if not cust_bytes:
+                                     raise HTTPException(status_code=500, detail=f"Assigned customization template is empty on disk: {template.file_path}")
                                  
-                                 else:
-                                     # --- TXT Mode (Legacy) ---
-                                     cust_bytes = generate_customization_unicode_txt(template.file_path, skus)
-                                     cust_filename = f"{request.marketplace_token}-{request.manufacturer_token}-{request.series_token}-Customization-{request.date_token}.txt"
-                                     zf.writestr(cust_filename, cust_bytes)
-                                 
-                             except Exception as e:
-                                 # Log error but don't fail entire export? 
-                                 # User said "Hard error" if multiple templates. Here it's generation failure.
-                                 # Failing safe for now by raising to alert user.
-                                 raise HTTPException(status_code=500, detail=f"Failed to generate customization file: {str(e)}")
-                         else:
-                             # File missing on disk
-                             raise HTTPException(status_code=500, detail=f"Assigned customization template file missing: {template.file_path}")
+                                 cust_filename = f"{request.marketplace_token}-{request.manufacturer_token}-{request.series_token}-Customization-{request.date_token}.xlsx"
+                                 zf.writestr(cust_filename, cust_bytes)
+                             
+                             else:
+                                 # --- TXT Mode (Legacy) ---
+                                 cust_bytes = generate_customization_unicode_txt(template.file_path, skus)
+                                 cust_filename = f"{request.marketplace_token}-{request.manufacturer_token}-{request.series_token}-Customization-{request.date_token}.txt"
+                                 zf.writestr(cust_filename, cust_bytes)
+                             
+                         except Exception as e:
+                             # Log error but don't fail entire export? 
+                             # User said "Hard error" if multiple templates. Here it's generation failure.
+                             # Failing safe for now by raising to alert user.
+                             raise HTTPException(status_code=500, detail=f"Failed to generate customization file: {str(e)}")
+                     else:
+                         # File missing on disk
+                         raise HTTPException(status_code=500, detail=f"Assigned customization template file missing: {template.file_path}")
                      # Else: No assignment -> Skip (as per requirements)
             
     # Helper for customization generation
@@ -1250,11 +1405,18 @@ def download_zip(request: DownloadZipRequest = Body(...), db: Session = Depends(
     zip_buffer.seek(0)
     
     zip_filename = f"{filename_base}.zip"
+    zip_buffer.seek(0)
+    
+    # Set warnings header if models were skipped
+    if warnings:
+        warnings_json = json.dumps(warnings)
+        response.headers["X-Export-Warnings"] = warnings_json
+        logger.info(f"[EXPORT][ZIP] Skipped models (missing dimensions): {warnings_json}")
     
     return StreamingResponse(
         zip_buffer,
         media_type="application/zip",
-        headers={"Content-Disposition": f"attachment; filename={zip_filename}"}
+        headers={"Content-Disposition": f"attachment; filename={filename_base}.zip"}
     )
 
 IMAGE_FIELD_TO_NUMBER = {
@@ -1513,7 +1675,7 @@ def download_customization_xlsx(request: ExportPreviewRequest, db: Session = Dep
     """
     # 1. Reuse Build Export Data (to get data_rows and match ZIP behavior)
     ensure_models_fresh_for_export(request, db)
-    header_rows, data_rows, filename_base, _, models, _, _ = build_export_data(request, db)
+    header_rows, data_rows, filename_base, _, models, _, _, warnings = build_export_data(request, db)
     
     if not models:
         raise HTTPException(status_code=400, detail="No models found.")

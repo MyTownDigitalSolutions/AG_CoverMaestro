@@ -20,7 +20,10 @@ import AmazonTemplatesPage from './pages/AmazonTemplatesPage'
 import EbayTemplatesPage from './pages/EbayTemplatesPage'
 import ReverbTemplatesPage from './pages/ReverbTemplatesPage'
 import EtsyTemplatesPage from './pages/EtsyTemplatesPage'
-import ExportPage from './pages/ExportPage'
+import AmazonExportPage from './pages/ExportPage' // Amazon Export (keeping existing file)
+import EbayExportPage from './pages/EbayExportPage'
+import ReverbExportPage from './pages/ReverbExportPage'
+import EtsyExportPage from './pages/EtsyExportPage'
 import SettingsPage from './pages/SettingsPage'
 import ShippingRatesPage from './pages/ShippingRatesPage'
 import ShippingDefaultsPage from './pages/ShippingDefaultsPage'
@@ -48,7 +51,11 @@ function App() {
           <Route path="/templates/ebay" element={<EbayTemplatesPage />} />
           <Route path="/templates/reverb" element={<ReverbTemplatesPage />} />
           <Route path="/templates/etsy" element={<EtsyTemplatesPage />} />
-          <Route path="/export" element={<ExportPage />} />
+          <Route path="/export/amazon" element={<AmazonExportPage />} />
+          <Route path="/export/ebay" element={<EbayExportPage />} />
+          <Route path="/export/reverb" element={<ReverbExportPage />} />
+          <Route path="/export/etsy" element={<EtsyExportPage />} />
+          <Route path="/export" element={<AmazonExportPage />} /> {/* Legacy redirect to Amazon */}
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="/settings/shipping-rates" element={<ShippingRatesPage />} />
           <Route path="/settings/shipping-defaults" element={<ShippingDefaultsPage />} />
