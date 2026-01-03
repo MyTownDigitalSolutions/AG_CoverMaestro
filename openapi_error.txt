@@ -2,63 +2,76 @@
 FULL TRACEBACK:
 ================================================================================
 Traceback (most recent call last):
-  File "C:\Users\ksmar\Proton Drive\ksmartz7072\My files\Code Repositories\GGC\Antigravity\AG_CoverMaestro\debug_openapi.py", line 6, in <module>
-    app.openapi()
-    ~~~~~~~~~~~^^
-  File "C:\Users\ksmar\AppData\Roaming\Python\Python314\site-packages\fastapi\applications.py", line 1061, in openapi
-    self.openapi_schema = get_openapi(
-                          ~~~~~~~~~~~^
-        title=self.title,
-        ^^^^^^^^^^^^^^^^^
-    ...<12 lines>...
-        external_docs=self.openapi_external_docs,
-        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ksmar\AppData\Roaming\Python\Python314\site-packages\pydantic\_internal\_model_construction.py", line 623, in complete_model_class
+    cls.__pydantic_fields__ = rebuild_model_fields(
+                              ~~~~~~~~~~~~~~~~~~~~^
+        cls,
+        ^^^^
+    ...<2 lines>...
+        typevars_map=typevars_map,
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^
     )
     ^
-  File "C:\Users\ksmar\AppData\Roaming\Python\Python314\site-packages\fastapi\openapi\utils.py", line 515, in get_openapi
-    field_mapping, definitions = get_definitions(
-                                 ~~~~~~~~~~~~~~~^
-        fields=all_fields,
-        ^^^^^^^^^^^^^^^^^^
-        model_name_map=model_name_map,
-        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-        separate_input_output_schemas=separate_input_output_schemas,
-        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ksmar\AppData\Roaming\Python\Python314\site-packages\pydantic\_internal\_fields.py", line 442, in rebuild_model_fields
+    ann = _typing_extra.eval_type(
+        field_info._original_annotation,
+        *ns_resolver.types_namespace,
     )
-    ^
-  File "C:\Users\ksmar\AppData\Roaming\Python\Python314\site-packages\fastapi\_compat\main.py", line 217, in get_definitions
-    v2_field_maps, v2_definitions = v2.get_definitions(
-                                    ~~~~~~~~~~~~~~~~~~^
-        fields=v2_fields,
-        ^^^^^^^^^^^^^^^^^
-        model_name_map=model_name_map,
-        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-        separate_input_output_schemas=separate_input_output_schemas,
-        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ksmar\AppData\Roaming\Python\Python314\site-packages\pydantic\_internal\_typing_extra.py", line 423, in eval_type
+    return eval_type_backport(value, globalns, localns)
+  File "C:\Users\ksmar\AppData\Roaming\Python\Python314\site-packages\pydantic\_internal\_typing_extra.py", line 455, in eval_type_backport
+    return _eval_type_backport(value, globalns, localns, type_params)
+  File "C:\Users\ksmar\AppData\Roaming\Python\Python314\site-packages\pydantic\_internal\_typing_extra.py", line 492, in _eval_type_backport
+    return _eval_type(value, globalns, localns, type_params)
+  File "C:\Users\ksmar\AppData\Roaming\Python\Python314\site-packages\pydantic\_internal\_typing_extra.py", line 524, in _eval_type
+    evaluated = typing._eval_type(  # type: ignore
+        value,
+    ...<9 lines>...
+        prefer_fwd_module=True,
     )
-    ^
-  File "C:\Users\ksmar\AppData\Roaming\Python\Python314\site-packages\fastapi\_compat\v2.py", line 318, in get_definitions
-    field_mapping, definitions = schema_generator.generate_definitions(inputs=inputs)
-                                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^
-  File "C:\Users\ksmar\AppData\Roaming\Python\Python314\site-packages\pydantic\json_schema.py", line 379, in generate_definitions
-    self.generate_inner(schema)
-    ~~~~~~~~~~~~~~~~~~~^^^^^^^^
-  File "C:\Users\ksmar\AppData\Roaming\Python\Python314\site-packages\pydantic\json_schema.py", line 459, in generate_inner
-    if 'ref' in schema:
-       ^^^^^^^^^^^^^^^
-  File "<frozen _collections_abc>", line 801, in __contains__
-  File "C:\Users\ksmar\AppData\Roaming\Python\Python314\site-packages\pydantic\_internal\_mock_val_ser.py", line 41, in __getitem__
-    return self._get_built().__getitem__(key)
-           ~~~~~~~~~~~~~~~^^
-  File "C:\Users\ksmar\AppData\Roaming\Python\Python314\site-packages\pydantic\_internal\_mock_val_ser.py", line 58, in _get_built
-    raise PydanticUserError(self._error_message, code=self._code)
-pydantic.errors.PydanticUserError: `TypeAdapter[typing.Annotated[app.api.export.DownloadZipRequest, FieldInfo(annotation=NoneType, required=True, alias='request', alias_priority=2, json_schema_extra={})]]` is not fully defined; you should define `typing.Annotated[app.api.export.DownloadZipRequest, FieldInfo(annotation=NoneType, required=True, alias='request', alias_priority=2, json_schema_extra={})]` and all referenced types, then call `.rebuild()` on the instance.
+  File "C:\Python314\Lib\typing.py", line 461, in _eval_type
+    return evaluate_forward_ref(t, globals=globalns, locals=localns,
+                                type_params=type_params, owner=owner,
+                                _recursive_guard=recursive_guard, format=format)
+  File "C:\Python314\Lib\typing.py", line 1000, in evaluate_forward_ref
+    value = forward_ref.evaluate(globals=globals, locals=locals,
+                                 type_params=type_params, owner=owner, format=format)
+  File "C:\Python314\Lib\annotationlib.py", line 186, in evaluate
+    return eval(code, globals=globals, locals=locals)
+  File "<string>", line 1, in <module>
+NameError: name 'Optional' is not defined
 
-For further information visit https://errors.pydantic.dev/2.12/u/class-not-fully-defined
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\Users\ksmar\Proton Drive\ksmartz7072\My files\Code Repositories\GGC\Antigravity\AG_CoverMaestro\debug_openapi.py", line 5, in <module>
+    from app.main import app
+  File "C:\Users\ksmar\Proton Drive\ksmartz7072\My files\Code Repositories\GGC\Antigravity\AG_CoverMaestro\app\main.py", line 4, in <module>
+    from app.api import (
+    ...<3 lines>...
+    )
+  File "C:\Users\ksmar\Proton Drive\ksmartz7072\My files\Code Repositories\GGC\Antigravity\AG_CoverMaestro\app\api\export.py", line 1576, in <module>
+    DownloadZipRequest.model_rebuild()
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "C:\Users\ksmar\AppData\Roaming\Python\Python314\site-packages\pydantic\main.py", line 668, in model_rebuild
+    return _model_construction.complete_model_class(
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        cls,
+        ^^^^
+    ...<4 lines>...
+        call_on_complete_hook=not already_complete,
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\ksmar\AppData\Roaming\Python\Python314\site-packages\pydantic\_internal\_model_construction.py", line 633, in complete_model_class
+    raise exc from e
+pydantic.errors.PydanticUndefinedAnnotation: name 'Optional' is not defined
+
+For further information visit https://errors.pydantic.dev/2.12/u/undefined-annotation
 
 ================================================================================
-Error type: PydanticUserError
-Error message: `TypeAdapter[typing.Annotated[app.api.export.DownloadZipRequest, FieldInfo(annotation=NoneType, required=True, alias='request', alias_priority=2, json_schema_extra={})]]` is not fully defined; you should define `typing.Annotated[app.api.export.DownloadZipRequest, FieldInfo(annotation=NoneType, required=True, alias='request', alias_priority=2, json_schema_extra={})]` and all referenced types, then call `.rebuild()` on the instance.
+Error type: PydanticUndefinedAnnotation
+Error message: name 'Optional' is not defined
 
-For further information visit https://errors.pydantic.dev/2.12/u/class-not-fully-defined
+For further information visit https://errors.pydantic.dev/2.12/u/undefined-annotation
 ================================================================================

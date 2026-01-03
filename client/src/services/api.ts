@@ -414,4 +414,97 @@ export const exportApi = {
   },
 }
 
+export interface EbayTemplateResponse {
+  id: number
+  original_filename: string
+  file_size: number
+  sha256?: string
+  uploaded_at?: string
+}
+
+export interface EbayTemplateParseSummary {
+  template_id: number
+  fields_inserted: number
+  values_inserted: number
+  defaults_applied: number
+  values_ignored_not_in_template: number
+  defaults_ignored_not_in_template: number
+  sheet_names: string[]
+}
+
+export interface EbayValidValueDetailed {
+  id: number
+  value: string
+}
+
+export interface EbayFieldResponse {
+  id: number
+  ebay_template_id: number
+  field_name: string
+  display_name?: string
+  required: boolean
+  order_index?: number
+  selected_value?: string
+  custom_value?: string
+  allowed_values: string[]
+  allowed_values_detailed?: EbayValidValueDetailed[]
+}
+
+export interface EbayTemplatePreviewResponse {
+  template_id: number
+  original_filename: string
+  sheet_name: string
+  max_row: number
+  max_column: number
+  preview_row_count: number
+  preview_column_count: number
+  grid: string[][]
+}
+
+export interface EbayTemplateIntegrityResponse {
+  template_id: number
+  original_filename: string
+  file_size: number
+  sha256?: string
+  uploaded_at?: string
+}
+
+export interface EbayTemplateVerificationResponse {
+  template_id: number
+  status: string  // "match", "mismatch", "missing", "unknown"
+  stored_sha256?: string
+  stored_file_size?: number
+  computed_sha256?: string
+  computed_file_size?: number
+  verified_at: string
+}
+
+export interface EbayTemplateFieldsResponse {
+  template_id: number
+  fields: EbayFieldResponse[]
+}
+
+export const ebayTemplatesApi = {
+  upload: (file: File) => {
+    const formData = new FormData()
+    formData.append('file', file)
+    return api.post<EbayTemplateResponse>('/ebay-templates/upload', formData).then(r => r.data)
+  },
+  getCurrent: () => api.get<EbayTemplateResponse | null>('/ebay-templates/current').then(r => r.data),
+  parse: (id: number) => api.post<EbayTemplateParseSummary>(`/ebay-templates/${id}/parse`).then(r => r.data),
+  getFields: (id: number) => api.get<EbayTemplateFieldsResponse>(`/ebay-templates/${id}/fields`).then(r => r.data),
+  getCurrentFields: () => api.get<EbayTemplateFieldsResponse>('/ebay-templates/current/fields').then(r => r.data),
+  updateField: (fieldId: number, payload: { required?: boolean; selected_value?: string | null; custom_value?: string | null }) =>
+    api.patch<EbayFieldResponse>(`/ebay-templates/fields/${fieldId}`, payload).then(r => r.data),
+  addValidValue: (fieldId: number, value: string) =>
+    api.post<EbayFieldResponse>(`/ebay-templates/fields/${fieldId}/valid-values`, { value }).then(r => r.data),
+  deleteValidValue: (fieldId: number, valueId: number) =>
+    api.delete<EbayFieldResponse>(`/ebay-templates/fields/${fieldId}/valid-values/${valueId}`).then(r => r.data),
+  previewCurrentTemplateInlineUrl: () => '/api/ebay-templates/current/download?mode=inline',
+  downloadCurrentTemplateUrl: () => '/api/ebay-templates/current/download?mode=download',
+  previewCurrentTemplate: () => api.get<EbayTemplatePreviewResponse>('/ebay-templates/current/preview').then(r => r.data),
+  getCurrentIntegrity: () => api.get<EbayTemplateIntegrityResponse>('/ebay-templates/current/integrity').then(r => r.data),
+  getCurrentVerification: () => api.get<EbayTemplateVerificationResponse>('/ebay-templates/current/verify').then(r => r.data),
+}
+
 export default api

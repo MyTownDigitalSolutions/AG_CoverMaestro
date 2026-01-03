@@ -16,6 +16,7 @@ from datetime import datetime, timedelta
 ATTACHED_ASSETS_ROOT = "attached_assets"
 TEMPLATE_DIR = "attached_assets/product_type_templates"
 CUSTOMIZATION_DIR = "attached_assets/customization_templates"
+EBAY_TEMPLATE_DIR = "attached_assets/ebay_templates"
 EXPORT_DIR = "attached_assets/exports"
 DEV_DIR = "attached_assets/dev_artifacts"
 TMP_DIR = "attached_assets/tmp"
@@ -32,6 +33,7 @@ def ensure_storage_dirs_exist() -> None:
     directories = [
         TEMPLATE_DIR,
         CUSTOMIZATION_DIR,
+        EBAY_TEMPLATE_DIR,
         EXPORT_DIR,
         DEV_DIR,
         TMP_DIR,
@@ -64,6 +66,7 @@ def assert_allowed_write_path(path: str) -> None:
     allowed_prefixes = [
         TEMPLATE_DIR + "/",
         CUSTOMIZATION_DIR + "/",
+        EBAY_TEMPLATE_DIR + "/",
         EXPORT_DIR + "/",
         DEV_DIR + "/",
         TMP_DIR + "/",
@@ -76,7 +79,7 @@ def assert_allowed_write_path(path: str) -> None:
         raise ValueError(
             f"Storage Policy Violation: Cannot write to '{path}'. "
             f"Files must be written to one of the following directories: "
-            f"{TEMPLATE_DIR}/, {CUSTOMIZATION_DIR}/, {EXPORT_DIR}/, {DEV_DIR}/, {TMP_DIR}/"
+            f"{TEMPLATE_DIR}/, {CUSTOMIZATION_DIR}/, {EBAY_TEMPLATE_DIR}/, {EXPORT_DIR}/, {DEV_DIR}/, {TMP_DIR}/"
         )
 
 
@@ -160,3 +163,34 @@ def cleanup_tmp_dir(max_age_days: int = 7) -> int:
         print(f"[STORAGE_POLICY] Error during tmp cleanup: {e}")
     
     return deleted_count
+
+
+# ============================================================================
+# EBAY TEMPLATE PATH HELPERS
+# ============================================================================
+def get_ebay_template_paths() -> tuple[str, str]:
+    """
+    Return canonical and backup paths for the single eBay template.
+    
+    Returns:
+        (canonical_path, backup_path)
+    """
+    canonical_filename = "ebay_template.xlsx"
+    backup_filename = "ebay_template_BACKUP.xlsx"
+    canonical_path = os.path.join(EBAY_TEMPLATE_DIR, canonical_filename)
+    backup_path = os.path.join(EBAY_TEMPLATE_DIR, backup_filename)
+    return canonical_path, backup_path
+
+
+def rotate_ebay_template_backup(canonical_path: str, backup_path: str) -> None:
+    """
+    Rotate existing canonical eBay template into a single backup copy.
+    """
+    try:
+        if os.path.exists(canonical_path):
+            if os.path.exists(backup_path):
+                os.remove(backup_path)
+            os.replace(canonical_path, backup_path)
+            print(f"[EBAY_ROTATION] Moved {canonical_path} -> {backup_path}")
+    except Exception as e:
+        print(f"[EBAY_ROTATION] Error rotating backup: {e}")
