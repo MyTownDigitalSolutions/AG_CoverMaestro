@@ -330,6 +330,7 @@ export default function EbayTemplatesPage() {
     const [loading, setLoading] = useState(false)
     const [error, setError] = useState<string | null>(null)
     const [successMsg, setSuccessMsg] = useState<string | null>(null)
+    const [savingRequiredById, setSavingRequiredById] = useState<Record<number, boolean>>({})
 
     const loadCurrentTemplate = async () => {
         setLoading(true)
@@ -407,6 +408,28 @@ export default function EbayTemplatesPage() {
             setError(`Parse failed: ${err.message || String(err)}`)
         } finally {
             setLoading(false)
+        }
+    }
+
+    const handleInlineRequiredToggle = async (fieldId: number, checked: boolean) => {
+        // Set saving state for this field
+        setSavingRequiredById(prev => ({ ...prev, [fieldId]: true }))
+
+        try {
+            const updated = await ebayTemplatesApi.updateField(fieldId, { required: checked })
+
+            // Update parsedFields with the returned field
+            setParsedFields(prev => prev.map(f => f.id === fieldId ? updated : f))
+
+            // If the modal is open for this field, update selectedField too
+            if (selectedField?.id === fieldId) {
+                setSelectedField(updated)
+            }
+        } catch (err: any) {
+            setError(err.response?.data?.detail || 'Failed to update required status')
+            // No need to revert since we update on success only
+        } finally {
+            setSavingRequiredById(prev => ({ ...prev, [fieldId]: false }))
         }
     }
 
@@ -499,18 +522,50 @@ export default function EbayTemplatesPage() {
                                             {field.field_name}
                                         </TableCell>
                                         <TableCell align="center">
-                                            <Switch checked={field.required} disabled size="small" />
+                                            <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 0.5 }}>
+                                                <Switch
+                                                    checked={field.required}
+                                                    disabled={!!savingRequiredById[field.id]}
+                                                    size="small"
+                                                    color={field.required ? "primary" : "default"}
+                                                    onClick={(e) => e.stopPropagation()}
+                                                    onChange={(e) => handleInlineRequiredToggle(field.id, e.target.checked)}
+                                                />
+                                                {savingRequiredById[field.id] && (
+                                                    <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.65rem' }}>
+                                                        Saving...
+                                                    </Typography>
+                                                )}
+                                            </Box>
                                         </TableCell>
                                         <TableCell>
                                             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                                <Typography variant="body2">
-                                                    {field.selected_value || "Any"}
-                                                </Typography>
-                                                {field.allowed_values && field.allowed_values.length > 0 && (
-                                                    <Typography variant="caption" color="text.secondary">
-                                                        ({field.allowed_values.length})
-                                                    </Typography>
-                                                )}
+                                                {(() => {
+                                                    const valueCount = (field.allowed_values_detailed?.length ?? field.allowed_values?.length ?? 0)
+
+                                                    if (valueCount === 0) {
+                                                        return (
+                                                            <Typography variant="caption" color="text.secondary">
+                                                                (0)
+                                                            </Typography>
+                                                        )
+                                                    }
+
+                                                    return (
+                                                        <>
+                                                            <Typography
+                                                                variant="body2"
+                                                                color={field.selected_value ? "primary" : "text.primary"}
+                                                                fontWeight={field.selected_value ? "medium" : "normal"}
+                                                            >
+                                                                {field.selected_value || "Any"}
+                                                            </Typography>
+                                                            <Typography variant="caption" color="text.secondary">
+                                                                ({valueCount})
+                                                            </Typography>
+                                                        </>
+                                                    )
+                                                })()}
                                             </Box>
                                         </TableCell>
                                     </TableRow>
