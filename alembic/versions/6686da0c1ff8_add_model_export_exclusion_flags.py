@@ -26,13 +26,23 @@ def upgrade() -> None:
     # Add exclude_from_ebay_export column with server default
     op.add_column('models', sa.Column('exclude_from_ebay_export', sa.Boolean(), nullable=False, server_default=sa.text('false')))
     
+    # Add exclude_from_reverb_export column with server default
+    op.add_column('models', sa.Column('exclude_from_reverb_export', sa.Boolean(), nullable=False, server_default=sa.text('false')))
+    
+    # Add exclude_from_etsy_export column with server default
+    op.add_column('models', sa.Column('exclude_from_etsy_export', sa.Boolean(), nullable=False, server_default=sa.text('false')))
+    
     # Remove server defaults to match ORM (optional but recommended)
     op.alter_column('models', 'exclude_from_amazon_export', server_default=None)
     op.alter_column('models', 'exclude_from_ebay_export', server_default=None)
+    op.alter_column('models', 'exclude_from_reverb_export', server_default=None)
+    op.alter_column('models', 'exclude_from_etsy_export', server_default=None)
 
 
 def downgrade() -> None:
     """Downgrade schema."""
     # Drop columns in reverse order
+    op.drop_column('models', 'exclude_from_etsy_export')
+    op.drop_column('models', 'exclude_from_reverb_export')
     op.drop_column('models', 'exclude_from_ebay_export')
     op.drop_column('models', 'exclude_from_amazon_export')

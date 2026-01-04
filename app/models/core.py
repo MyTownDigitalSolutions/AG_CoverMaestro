@@ -64,6 +64,8 @@ class Model(Base):
     # Marketplace export exclusions
     exclude_from_amazon_export = Column(Boolean, nullable=False, default=False, server_default="false")
     exclude_from_ebay_export = Column(Boolean, nullable=False, default=False, server_default="false")
+    exclude_from_reverb_export = Column(Boolean, nullable=False, default=False, server_default="false")
+    exclude_from_etsy_export = Column(Boolean, nullable=False, default=False, server_default="false")
     
     surface_area_sq_in = Column(Float, nullable=True)
     top_depth_in = Column(Float, nullable=True)

@@ -131,6 +131,8 @@ class ModelBase(BaseModel):
     model_notes: Optional[str] = None
     exclude_from_amazon_export: bool = False
     exclude_from_ebay_export: bool = False
+    exclude_from_reverb_export: bool = False
+    exclude_from_etsy_export: bool = False
 
 class MarketplaceListingBase(BaseModel):
     marketplace: str
@@ -159,8 +161,6 @@ class ModelResponse(ModelBase):
     id: int
     parent_sku: Optional[str] = None
     surface_area_sq_in: Optional[float] = None
-    exclude_from_amazon_export: bool
-    exclude_from_ebay_export: bool
     marketplace_listings: List[MarketplaceListingResponse] = []
     amazon_a_plus_content: List[AmazonAPlusContentResponse] = []
     
@@ -617,3 +617,11 @@ class PricingRecalculateBulkResponse(BaseModel):
     results: Dict[str, Dict[str, List[Union[int, PricingRecalculateResult]]]] 
     # structure: { "amazon": { "succeeded": [1, 2], "failed": [{ "model_id": 3, "error": "msg" }] } }
 
+
+class ExportStatsResponse(BaseModel):
+    total_models: int
+    models_with_pricing: int
+    models_missing_pricing: int
+    models_with_images: int
+    models_missing_images: int
+    equipment_types: Dict[str, int]

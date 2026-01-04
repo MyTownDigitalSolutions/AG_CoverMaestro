@@ -788,7 +788,11 @@ export default function ModelsPage() {
     aplus_brand_story_uploaded: false,
     aplus_brand_story_notes: '',
     aplus_ebc_uploaded: false,
-    aplus_ebc_notes: ''
+    aplus_ebc_notes: '',
+    exclude_from_amazon_export: false,
+    exclude_from_ebay_export: false,
+    exclude_from_reverb_export: false,
+    exclude_from_etsy_export: false
   })
 
   const [textOptionValues, setTextOptionValues] = useState<Record<number, string>>({})
@@ -802,7 +806,14 @@ export default function ModelsPage() {
   const [bulkEditState, setBulkEditState] = useState({
     amazonAsin: { enabled: false, mode: 'set' as const, value: '' },
     measurements: { enabled: false, width: '' as number | '', depth: '' as number | '', height: '' as number | '' },
-    notes: { enabled: false, mode: 'replace' as const, value: '' }
+    notes: { enabled: false, mode: 'replace' as const, value: '' },
+    exportExclusion: {
+      enabled: false,
+      exclude_amazon: false,
+      exclude_ebay: false,
+      exclude_reverb: false,
+      exclude_etsy: false
+    }
   })
 
   // Row Edit State
@@ -1014,6 +1025,17 @@ export default function ModelsPage() {
         }
       }
 
+      // Export Exclusions
+      if (selectedBulkColumns.has('export_exclusions')) {
+        const getFlag = (key: string, modelKey: keyof Model) => {
+          return draft[key] !== undefined ? draft[key] : (model[modelKey] || false)
+        }
+        updateData.exclude_from_amazon_export = getFlag('exclude_amazon', 'exclude_from_amazon_export')
+        updateData.exclude_from_ebay_export = getFlag('exclude_ebay', 'exclude_from_ebay_export')
+        updateData.exclude_from_reverb_export = getFlag('exclude_reverb', 'exclude_from_reverb_export')
+        updateData.exclude_from_etsy_export = getFlag('exclude_etsy', 'exclude_from_etsy_export')
+      }
+
       const payload = {
         ...model,
         ...updateData,
@@ -1177,10 +1199,22 @@ export default function ModelsPage() {
           notesUpdate = { model_notes: newNotes || null }
         }
 
+        // Apply Export Exclusions
+        let exclusionUpdate = {}
+        if (bulkEditState.exportExclusion.enabled) {
+          exclusionUpdate = {
+            exclude_from_amazon_export: bulkEditState.exportExclusion.exclude_amazon,
+            exclude_from_ebay_export: bulkEditState.exportExclusion.exclude_ebay,
+            exclude_from_reverb_export: bulkEditState.exportExclusion.exclude_reverb,
+            exclude_from_etsy_export: bulkEditState.exportExclusion.exclude_etsy
+          }
+        }
+
         const payload = {
           ...model,
           ...dimUpdate,
           ...notesUpdate,
+          ...exclusionUpdate,
           marketplace_listings: listings
         }
 
@@ -1385,7 +1419,11 @@ export default function ModelsPage() {
           is_uploaded: formData.aplus_ebc_uploaded,
           notes: formData.aplus_ebc_notes || null
         }
-      ]
+      ],
+      exclude_from_amazon_export: formData.exclude_from_amazon_export,
+      exclude_from_ebay_export: formData.exclude_from_ebay_export,
+      exclude_from_reverb_export: formData.exclude_from_reverb_export,
+      exclude_from_etsy_export: formData.exclude_from_etsy_export
     } as any
 
     // Console logs for verification
@@ -1493,7 +1531,11 @@ export default function ModelsPage() {
       aplus_brand_story_uploaded: false,
       aplus_brand_story_notes: '',
       aplus_ebc_uploaded: false,
-      aplus_ebc_notes: ''
+      aplus_ebc_notes: '',
+      exclude_from_amazon_export: false,
+      exclude_from_ebay_export: false,
+      exclude_from_reverb_export: false,
+      exclude_from_etsy_export: false
     })
     setTextOptionValues({})
     setValidationErrors([])  // Clear validation errors
@@ -1531,7 +1573,11 @@ export default function ModelsPage() {
       aplus_brand_story_uploaded: model.amazon_a_plus_content?.find(c => c.content_type === 'BRAND_STORY')?.is_uploaded ?? false,
       aplus_brand_story_notes: model.amazon_a_plus_content?.find(c => c.content_type === 'BRAND_STORY')?.notes || '',
       aplus_ebc_uploaded: model.amazon_a_plus_content?.find(c => c.content_type === 'EBC')?.is_uploaded ?? false,
-      aplus_ebc_notes: model.amazon_a_plus_content?.find(c => c.content_type === 'EBC')?.notes || ''
+      aplus_ebc_notes: model.amazon_a_plus_content?.find(c => c.content_type === 'EBC')?.notes || '',
+      exclude_from_amazon_export: model.exclude_from_amazon_export || false,
+      exclude_from_ebay_export: model.exclude_from_ebay_export || false,
+      exclude_from_reverb_export: model.exclude_from_reverb_export || false,
+      exclude_from_etsy_export: model.exclude_from_etsy_export || false
     })
 
     // Console log for load
@@ -1794,6 +1840,10 @@ export default function ModelsPage() {
               control={<Checkbox checked={selectedBulkColumns.has('aplus_ebc')} onChange={() => handleColumnToggle('aplus_ebc')} disabled={isBulkEditMode || models.length === 0} />}
               label="A+ EBC"
             />
+            <FormControlLabel
+              control={<Checkbox checked={selectedBulkColumns.has('export_exclusions')} onChange={() => handleColumnToggle('export_exclusions')} disabled={isBulkEditMode} />}
+              label="Export Exclusions"
+            />
           </FormGroup>
           {selectedBulkColumns.size >= 2 && !isBulkEditMode && (
             <FormHelperText>Max 2 columns selected.</FormHelperText>
@@ -1876,6 +1926,7 @@ export default function ModelsPage() {
               {isBulkEditMode && selectedBulkColumns.has('reverb_id') && <TableCell>Reverb ID</TableCell>}
               {isBulkEditMode && selectedBulkColumns.has('aplus_brand_story') && <TableCell>Brand Story</TableCell>}
               {isBulkEditMode && selectedBulkColumns.has('aplus_ebc') && <TableCell>EBC</TableCell>}
+              {isBulkEditMode && selectedBulkColumns.has('export_exclusions') && <TableCell>Export Exclusions</TableCell>}
 
               {!isBulkEditMode && (
                 <>
@@ -2056,6 +2107,64 @@ export default function ModelsPage() {
                         )}
                       />
                     </Box>
+                  </TableCell>
+                )}
+                {isBulkEditMode && selectedBulkColumns.has('export_exclusions') && (
+                  <TableCell sx={{ minWidth: 160 }}>
+                    <FormGroup>
+                      <FormControlLabel
+                        control={
+                          <Checkbox
+                            checked={bulkDrafts[model.id]?.exclude_amazon !== undefined ? bulkDrafts[model.id].exclude_amazon : (model.exclude_from_amazon_export || false)}
+                            onChange={(e) => handleBulkDraftChange(model.id, 'exclude_amazon', e.target.checked)}
+                            size="small"
+                            sx={{ p: 0.5 }}
+                          />
+                        }
+                        label="No Amazon"
+                        componentsProps={{ typography: { variant: 'caption' } }}
+                        sx={{ ml: 0, mr: 0, my: -0.5 }}
+                      />
+                      <FormControlLabel
+                        control={
+                          <Checkbox
+                            checked={bulkDrafts[model.id]?.exclude_ebay !== undefined ? bulkDrafts[model.id].exclude_ebay : (model.exclude_from_ebay_export || false)}
+                            onChange={(e) => handleBulkDraftChange(model.id, 'exclude_ebay', e.target.checked)}
+                            size="small"
+                            sx={{ p: 0.5 }}
+                          />
+                        }
+                        label="No eBay"
+                        componentsProps={{ typography: { variant: 'caption' } }}
+                        sx={{ ml: 0, mr: 0, my: -0.5 }}
+                      />
+                      <FormControlLabel
+                        control={
+                          <Checkbox
+                            checked={bulkDrafts[model.id]?.exclude_reverb !== undefined ? bulkDrafts[model.id].exclude_reverb : (model.exclude_from_reverb_export || false)}
+                            onChange={(e) => handleBulkDraftChange(model.id, 'exclude_reverb', e.target.checked)}
+                            size="small"
+                            sx={{ p: 0.5 }}
+                          />
+                        }
+                        label="No Reverb"
+                        componentsProps={{ typography: { variant: 'caption' } }}
+                        sx={{ ml: 0, mr: 0, my: -0.5 }}
+                      />
+                      <FormControlLabel
+                        control={
+                          <Checkbox
+                            checked={bulkDrafts[model.id]?.exclude_etsy !== undefined ? bulkDrafts[model.id].exclude_etsy : (model.exclude_from_etsy_export || false)}
+                            onChange={(e) => handleBulkDraftChange(model.id, 'exclude_etsy', e.target.checked)}
+                            size="small"
+                            sx={{ p: 0.5 }}
+                          />
+                        }
+                        label="No Etsy"
+                        componentsProps={{ typography: { variant: 'caption' } }}
+                        sx={{ ml: 0, mr: 0, my: -0.5 }}
+                      />
+                    </FormGroup>
                   </TableCell>
                 )}
 
@@ -2615,6 +2724,32 @@ export default function ModelsPage() {
               />
             </Grid>
 
+            {/* Export Exclusions Section */}
+            <Grid item xs={12} sx={{ mt: 3, mb: 1 }}>
+              <Typography variant="h6" sx={{ fontSize: '1rem', fontWeight: 600 }}>Export Exclusions</Typography>
+              <Box sx={{ borderBottom: 1, borderColor: 'divider' }} />
+            </Grid>
+            <Grid item xs={12}>
+              <FormGroup row>
+                <FormControlLabel
+                  control={<Checkbox checked={formData.exclude_from_amazon_export} onChange={(e) => setFormData({ ...formData, exclude_from_amazon_export: e.target.checked })} />}
+                  label="Exclude Amazon"
+                />
+                <FormControlLabel
+                  control={<Checkbox checked={formData.exclude_from_ebay_export} onChange={(e) => setFormData({ ...formData, exclude_from_ebay_export: e.target.checked })} />}
+                  label="Exclude eBay"
+                />
+                <FormControlLabel
+                  control={<Checkbox checked={formData.exclude_from_reverb_export} onChange={(e) => setFormData({ ...formData, exclude_from_reverb_export: e.target.checked })} />}
+                  label="Exclude Reverb"
+                />
+                <FormControlLabel
+                  control={<Checkbox checked={formData.exclude_from_etsy_export} onChange={(e) => setFormData({ ...formData, exclude_from_etsy_export: e.target.checked })} />}
+                  label="Exclude Etsy"
+                />
+              </FormGroup>
+            </Grid>
+
             {/* Amazon A+ Content Section */}
             <Grid item xs={12} sx={{ mt: 3, mb: 1 }}>
               <Typography variant="h6" sx={{ fontSize: '1rem', fontWeight: 600 }}>Amazon A+ Content</Typography>
@@ -2815,6 +2950,42 @@ export default function ModelsPage() {
                       />
                     </Grid>
                   )}
+                </Grid>
+              )}
+            </Paper>
+
+            {/* Export Exclusions */}
+            <Paper variant="outlined" sx={{ p: 2 }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
+                <Checkbox
+                  checked={bulkEditState.exportExclusion.enabled}
+                  onChange={(e) => setBulkEditState(prev => ({ ...prev, exportExclusion: { ...prev.exportExclusion, enabled: e.target.checked } }))}
+                />
+                <Typography variant="subtitle1" fontWeight="bold">Export Exclusions (Set Status)</Typography>
+              </Box>
+              {bulkEditState.exportExclusion.enabled && (
+                <Grid container spacing={2} sx={{ pl: 5 }}>
+                  <Grid item xs={12}>
+                    <FormControlLabel
+                      control={<Checkbox checked={bulkEditState.exportExclusion.exclude_amazon} onChange={(e) => setBulkEditState(prev => ({ ...prev, exportExclusion: { ...prev.exportExclusion, exclude_amazon: e.target.checked } }))} />}
+                      label="Exclude Amazon"
+                    />
+                    <FormControlLabel
+                      control={<Checkbox checked={bulkEditState.exportExclusion.exclude_ebay} onChange={(e) => setBulkEditState(prev => ({ ...prev, exportExclusion: { ...prev.exportExclusion, exclude_ebay: e.target.checked } }))} />}
+                      label="Exclude eBay"
+                    />
+                    <FormControlLabel
+                      control={<Checkbox checked={bulkEditState.exportExclusion.exclude_reverb} onChange={(e) => setBulkEditState(prev => ({ ...prev, exportExclusion: { ...prev.exportExclusion, exclude_reverb: e.target.checked } }))} />}
+                      label="Exclude Reverb"
+                    />
+                    <FormControlLabel
+                      control={<Checkbox checked={bulkEditState.exportExclusion.exclude_etsy} onChange={(e) => setBulkEditState(prev => ({ ...prev, exportExclusion: { ...prev.exportExclusion, exclude_etsy: e.target.checked } }))} />}
+                      label="Exclude Etsy"
+                    />
+                    <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 1 }}>
+                      Note: Checked = Set to 'True' (Excluded). Unchecked = Set to 'False' (Included).
+                    </Typography>
+                  </Grid>
                 </Grid>
               )}
             </Paper>
