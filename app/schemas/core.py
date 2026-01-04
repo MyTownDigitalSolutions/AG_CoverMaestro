@@ -129,6 +129,8 @@ class ModelBase(BaseModel):
     top_handle_height_in: Optional[float] = None
     top_handle_rear_edge_to_center_in: Optional[float] = None
     model_notes: Optional[str] = None
+    exclude_from_amazon_export: bool = False
+    exclude_from_ebay_export: bool = False
 
 class MarketplaceListingBase(BaseModel):
     marketplace: str
@@ -157,6 +159,8 @@ class ModelResponse(ModelBase):
     id: int
     parent_sku: Optional[str] = None
     surface_area_sq_in: Optional[float] = None
+    exclude_from_amazon_export: bool
+    exclude_from_ebay_export: bool
     marketplace_listings: List[MarketplaceListingResponse] = []
     amazon_a_plus_content: List[AmazonAPlusContentResponse] = []
     
