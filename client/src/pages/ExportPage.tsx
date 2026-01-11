@@ -51,6 +51,9 @@ const triggerDownloadWithYield = async (fn: () => Promise<void> | void) => {
   await new Promise(resolve => setTimeout(resolve, 250))
 }
 
+// Sentinel value for "All Series" to avoid type mixing in Select
+const ALL_SERIES_VALUE = '__ALL_SERIES__'
+
 export default function ExportPage() {
   const [manufacturers, setManufacturers] = useState<Manufacturer[]>([])
   const [allSeries, setAllSeries] = useState<Series[]>([])
@@ -64,6 +67,7 @@ export default function ExportPage() {
 
   const [selectedManufacturer, setSelectedManufacturer] = useState<number | ''>('')
   const [selectedSeries, setSelectedSeries] = useState<number | ''>('')
+  const [selectedSeriesValue, setSelectedSeriesValue] = useState<string>(ALL_SERIES_VALUE) // Controlled Select value
   const [selectedModels, setSelectedModels] = useState<Set<number>>(new Set())
 
   const [loading, setLoading] = useState(true)
@@ -195,6 +199,19 @@ export default function ExportPage() {
       setLoading(false)
     }
   }
+
+  // Auto-select all manufacturer models when "All Series" is selected
+  useEffect(() => {
+    if (selectedSeriesValue === ALL_SERIES_VALUE && selectedManufacturer && allModels.length > 0) {
+      const manufacturerModels = allModels.filter(m => {
+        const series = allSeries.find(s => s.id === m.series_id)
+        return series?.manufacturer_id === selectedManufacturer
+      })
+      if (manufacturerModels.length > 0) {
+        setSelectedModels(new Set(manufacturerModels.map(m => m.id)))
+      }
+    }
+  }, [selectedSeriesValue, selectedManufacturer, allModels, allSeries])
 
   const handleSaveExportSettings = async () => {
     try {
@@ -1303,6 +1320,7 @@ export default function ExportPage() {
                 onChange={(e) => {
                   setSelectedManufacturer(e.target.value as number | '')
                   setSelectedSeries('')
+                  setSelectedSeriesValue(ALL_SERIES_VALUE)
                   setSelectedModels(new Set())
                   setMissingSnapshots(null)
                 }}
@@ -1318,27 +1336,36 @@ export default function ExportPage() {
             <FormControl fullWidth size="small">
               <InputLabel>Series</InputLabel>
               <Select
-                value={selectedSeries}
+                value={selectedSeriesValue}
                 label="Series"
                 onChange={(e) => {
-                  const newSeriesId = e.target.value as number | ''
-                  setSelectedSeries(newSeriesId)
-                  setMissingSnapshots(null)
+                  const newValue = e.target.value
+                  console.log('[EXPORT] Series changed:', newValue)
 
-                  // Auto-select ONLY when a specific series is chosen (Series-first workflow)
-                  if (newSeriesId) {
+                  // Always update the controlled Select value
+                  setSelectedSeriesValue(newValue)
+
+                  if (newValue === ALL_SERIES_VALUE) {
+                    // All Series selected: clear series filter
+                    setSelectedSeries('')
+                    setMissingSnapshots(null)
+                    // Auto-selection handled by useEffect
+                  } else {
+                    // Specific series selected
+                    const newSeriesId = Number(newValue)
+                    setSelectedSeries(newSeriesId)
+                    setMissingSnapshots(null)
+
+                    // Auto-select models in this series
                     const modelsInSeries = allModels.filter(m => m.series_id === newSeriesId)
                     setSelectedModels(new Set(modelsInSeries.map(m => m.id)))
-                  } else {
-                    // Reset selection when series is cleared (Manufacturer-wide view)
-                    setSelectedModels(new Set())
                   }
                 }}
                 disabled={!selectedManufacturer}
               >
-                <MenuItem value="">All Series</MenuItem>
+                <MenuItem value={ALL_SERIES_VALUE}>All Series</MenuItem>
                 {sortedSeries.map(s => (
-                  <MenuItem key={s.id} value={s.id}>{s.name}</MenuItem>
+                  <MenuItem key={s.id} value={String(s.id)}>{s.name}</MenuItem>
                 ))}
               </Select>
             </FormControl>

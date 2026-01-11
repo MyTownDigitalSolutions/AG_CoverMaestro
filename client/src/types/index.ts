@@ -92,6 +92,10 @@ export interface Model {
   top_handle_height_in?: number | null
   top_handle_rear_edge_to_center_in?: number | null
   model_notes?: string | null
+  exclude_from_amazon_export?: boolean
+  exclude_from_ebay_export?: boolean
+  exclude_from_reverb_export?: boolean
+  exclude_from_etsy_export?: boolean
   marketplace_listings?: MarketplaceListing[]
   amazon_a_plus_content?: AmazonAPlusContent[]
 }

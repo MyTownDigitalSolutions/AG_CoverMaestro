@@ -60,6 +60,13 @@ class Model(Base):
     image_url = Column(String, nullable=True)
     parent_sku = Column(String(40), nullable=True)
     sku_override = Column(String, nullable=True)
+    
+    # Marketplace export exclusions
+    exclude_from_amazon_export = Column(Boolean, nullable=False, default=False, server_default="false")
+    exclude_from_ebay_export = Column(Boolean, nullable=False, default=False, server_default="false")
+    exclude_from_reverb_export = Column(Boolean, nullable=False, default=False, server_default="false")
+    exclude_from_etsy_export = Column(Boolean, nullable=False, default=False, server_default="false")
+    
     surface_area_sq_in = Column(Float, nullable=True)
     top_depth_in = Column(Float, nullable=True)
     angle_drop_in = Column(Float, nullable=True)

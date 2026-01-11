@@ -92,7 +92,17 @@ const menuItems = [
       { text: 'Etsy', icon: <DescriptionIcon />, path: '/templates/etsy' },
     ]
   },
-  { text: 'Export', icon: <FileDownloadIcon />, path: '/export' },
+  {
+    text: 'Export',
+    icon: <FileDownloadIcon />,
+    path: '/export/amazon', // Default to Amazon
+    children: [
+      { text: 'Amazon', icon: <FileDownloadIcon />, path: '/export/amazon' },
+      { text: 'eBay', icon: <FileDownloadIcon />, path: '/export/ebay' },
+      { text: 'Reverb', icon: <FileDownloadIcon />, path: '/export/reverb' },
+      { text: 'Etsy', icon: <FileDownloadIcon />, path: '/export/etsy' },
+    ]
+  },
 ]
 
 interface LayoutProps {
@@ -127,6 +137,11 @@ export default function Layout({ children }: LayoutProps) {
     // Check Templates
     if (location.pathname.startsWith('/templates')) {
       newOpen['Templates'] = true
+    }
+
+    // Check Export
+    if (location.pathname.startsWith('/export')) {
+      newOpen['Export'] = true
     }
 
     if (Object.keys(newOpen).length > 0) {

@@ -392,6 +392,12 @@ def update_model(id: int, data: ModelCreate, db: Session = Depends(get_db)):
         if 'model_notes' in fields_set:
             model.model_notes = data.model_notes
         
+        # Update export exclusion flags
+        model.exclude_from_amazon_export = data.exclude_from_amazon_export
+        model.exclude_from_ebay_export = data.exclude_from_ebay_export
+        model.exclude_from_reverb_export = data.exclude_from_reverb_export
+        model.exclude_from_etsy_export = data.exclude_from_etsy_export
+        
         # Sync marketplace listings if provided
         if data.marketplace_listings is not None:
             sync_marketplace_listings(model.id, data.marketplace_listings, db)

@@ -788,7 +788,11 @@ export default function ModelsPage() {
     aplus_brand_story_uploaded: false,
     aplus_brand_story_notes: '',
     aplus_ebc_uploaded: false,
-    aplus_ebc_notes: ''
+    aplus_ebc_notes: '',
+    exclude_from_amazon_export: false,
+    exclude_from_ebay_export: false,
+    exclude_from_reverb_export: false,
+    exclude_from_etsy_export: false
   })
 
   const [textOptionValues, setTextOptionValues] = useState<Record<number, string>>({})
@@ -802,7 +806,14 @@ export default function ModelsPage() {
   const [bulkEditState, setBulkEditState] = useState({
     amazonAsin: { enabled: false, mode: 'set' as const, value: '' },
     measurements: { enabled: false, width: '' as number | '', depth: '' as number | '', height: '' as number | '' },
-    notes: { enabled: false, mode: 'replace' as const, value: '' }
+    notes: { enabled: false, mode: 'replace' as const, value: '' },
+    exportExclusion: {
+      enabled: false,
+      exclude_amazon: false,
+      exclude_ebay: false,
+      exclude_reverb: false,
+      exclude_etsy: false
+    }
   })
 
   // Row Edit State
@@ -815,6 +826,11 @@ export default function ModelsPage() {
   const [selectedBulkColumns, setSelectedBulkColumns] = useState<Set<string>>(new Set())
   const [bulkDrafts, setBulkDrafts] = useState<Record<number, any>>({})
   const [savingRowId, setSavingRowId] = useState<number | null>(null)
+
+  // Batch Save State
+  const [selectedBulkSaveIds, setSelectedBulkSaveIds] = useState<Set<number>>(new Set())
+  const [rowSaveStatusById, setRowSaveStatusById] = useState<Record<number, 'idle' | 'saving' | 'success' | 'error'>>({})
+  const [saveAllStatus, setSaveAllStatus] = useState<'idle' | 'saving' | 'success' | 'error'>('idle')
 
   const handleColumnToggle = (col: string) => {
     const newSet = new Set(selectedBulkColumns)
@@ -833,10 +849,82 @@ export default function ModelsPage() {
       ...prev,
       [id]: { ...prev[id], [field]: value }
     }))
+    // Clear save status when editing
+    setRowSaveStatusById(prev => ({ ...prev, [id]: 'idle' }))
+    setSaveAllStatus('idle')
+  }
+
+  // Helper to check if a row has unsaved changes
+  const isRowDirty = (modelId: number): boolean => {
+    return bulkDrafts[modelId] !== undefined && Object.keys(bulkDrafts[modelId]).length > 0
+  }
+
+  // Toggle row selection for batch save
+  const handleToggleBulkSaveSelection = (id: number) => {
+    setSelectedBulkSaveIds(prev => {
+      const newSet = new Set(prev)
+      if (newSet.has(id)) {
+        newSet.delete(id)
+      } else {
+        newSet.add(id)
+      }
+      return newSet
+    })
+  }
+
+  // Select all changed rows
+  const handleSelectChanged = () => {
+    const changedIds = filteredModels.filter(m => isRowDirty(m.id)).map(m => m.id)
+    setSelectedBulkSaveIds(new Set(changedIds))
+  }
+
+  // Toggle select all visible rows
+  const handleToggleSelectAllVisible = () => {
+    const visibleIds = filteredModels.map(m => m.id)
+    const allVisibleSelected = visibleIds.length > 0 && visibleIds.every(id => selectedBulkSaveIds.has(id))
+
+    if (allVisibleSelected) {
+      // Remove all visible from selection
+      setSelectedBulkSaveIds(prev => {
+        const newSet = new Set(prev)
+        visibleIds.forEach(id => newSet.delete(id))
+        return newSet
+      })
+    } else {
+      // Add all visible to selection
+      setSelectedBulkSaveIds(prev => {
+        const newSet = new Set(prev)
+        visibleIds.forEach(id => newSet.add(id))
+        return newSet
+      })
+    }
+  }
+
+  // Save all selected rows
+  const handleSaveAll = async () => {
+    const idsToSave = Array.from(selectedBulkSaveIds)
+    if (idsToSave.length === 0) return
+
+    setSaveAllStatus('saving')
+    let allSuccess = true
+
+    for (const id of idsToSave) {
+      setRowSaveStatusById(prev => ({ ...prev, [id]: 'saving' }))
+      try {
+        await handleRowBulkSave(id)
+        setRowSaveStatusById(prev => ({ ...prev, [id]: 'success' }))
+      } catch (error) {
+        setRowSaveStatusById(prev => ({ ...prev, [id]: 'error' }))
+        allSuccess = false
+      }
+    }
+
+    setSaveAllStatus(allSuccess ? 'success' : 'error')
   }
 
   const handleRowBulkSave = async (id: number) => {
     setSavingRowId(id)
+    setRowSaveStatusById(prev => ({ ...prev, [id]: 'saving' }))
     const draft = bulkDrafts[id] || {}
     const model = models.find(m => m.id === id)
     if (!model) {
@@ -937,6 +1025,17 @@ export default function ModelsPage() {
         }
       }
 
+      // Export Exclusions
+      if (selectedBulkColumns.has('export_exclusions')) {
+        const getFlag = (key: string, modelKey: keyof Model) => {
+          return draft[key] !== undefined ? draft[key] : (model[modelKey] || false)
+        }
+        updateData.exclude_from_amazon_export = getFlag('exclude_amazon', 'exclude_from_amazon_export')
+        updateData.exclude_from_ebay_export = getFlag('exclude_ebay', 'exclude_from_ebay_export')
+        updateData.exclude_from_reverb_export = getFlag('exclude_reverb', 'exclude_from_reverb_export')
+        updateData.exclude_from_etsy_export = getFlag('exclude_etsy', 'exclude_from_etsy_export')
+      }
+
       const payload = {
         ...model,
         ...updateData,
@@ -950,9 +1049,12 @@ export default function ModelsPage() {
         delete next[id]
         return next
       })
+      // Set success status for individual save
+      setRowSaveStatusById(prev => ({ ...prev, [id]: 'success' }))
       loadData()
     } catch (e) {
       console.error(e)
+      setRowSaveStatusById(prev => ({ ...prev, [id]: 'error' }))
       alert("Save failed")
     } finally {
       setSavingRowId(null)
@@ -1097,10 +1199,22 @@ export default function ModelsPage() {
           notesUpdate = { model_notes: newNotes || null }
         }
 
+        // Apply Export Exclusions
+        let exclusionUpdate = {}
+        if (bulkEditState.exportExclusion.enabled) {
+          exclusionUpdate = {
+            exclude_from_amazon_export: bulkEditState.exportExclusion.exclude_amazon,
+            exclude_from_ebay_export: bulkEditState.exportExclusion.exclude_ebay,
+            exclude_from_reverb_export: bulkEditState.exportExclusion.exclude_reverb,
+            exclude_from_etsy_export: bulkEditState.exportExclusion.exclude_etsy
+          }
+        }
+
         const payload = {
           ...model,
           ...dimUpdate,
           ...notesUpdate,
+          ...exclusionUpdate,
           marketplace_listings: listings
         }
 
@@ -1305,7 +1419,11 @@ export default function ModelsPage() {
           is_uploaded: formData.aplus_ebc_uploaded,
           notes: formData.aplus_ebc_notes || null
         }
-      ]
+      ],
+      exclude_from_amazon_export: formData.exclude_from_amazon_export,
+      exclude_from_ebay_export: formData.exclude_from_ebay_export,
+      exclude_from_reverb_export: formData.exclude_from_reverb_export,
+      exclude_from_etsy_export: formData.exclude_from_etsy_export
     } as any
 
     // Console logs for verification
@@ -1413,7 +1531,11 @@ export default function ModelsPage() {
       aplus_brand_story_uploaded: false,
       aplus_brand_story_notes: '',
       aplus_ebc_uploaded: false,
-      aplus_ebc_notes: ''
+      aplus_ebc_notes: '',
+      exclude_from_amazon_export: false,
+      exclude_from_ebay_export: false,
+      exclude_from_reverb_export: false,
+      exclude_from_etsy_export: false
     })
     setTextOptionValues({})
     setValidationErrors([])  // Clear validation errors
@@ -1451,7 +1573,11 @@ export default function ModelsPage() {
       aplus_brand_story_uploaded: model.amazon_a_plus_content?.find(c => c.content_type === 'BRAND_STORY')?.is_uploaded ?? false,
       aplus_brand_story_notes: model.amazon_a_plus_content?.find(c => c.content_type === 'BRAND_STORY')?.notes || '',
       aplus_ebc_uploaded: model.amazon_a_plus_content?.find(c => c.content_type === 'EBC')?.is_uploaded ?? false,
-      aplus_ebc_notes: model.amazon_a_plus_content?.find(c => c.content_type === 'EBC')?.notes || ''
+      aplus_ebc_notes: model.amazon_a_plus_content?.find(c => c.content_type === 'EBC')?.notes || '',
+      exclude_from_amazon_export: model.exclude_from_amazon_export || false,
+      exclude_from_ebay_export: model.exclude_from_ebay_export || false,
+      exclude_from_reverb_export: model.exclude_from_reverb_export || false,
+      exclude_from_etsy_export: model.exclude_from_etsy_export || false
     })
 
     // Console log for load
@@ -1573,6 +1699,12 @@ export default function ModelsPage() {
     setValidationErrors(errors)
     return errors.length === 0
   }
+
+  // Helper variables for Select All checkbox
+  const visibleIds = filteredModels.map(m => m.id)
+  const visibleSelectedCount = visibleIds.filter(id => selectedBulkSaveIds.has(id)).length
+  const allVisibleSelected = visibleIds.length > 0 && visibleSelectedCount === visibleIds.length
+  const someVisibleSelected = visibleSelectedCount > 0 && visibleSelectedCount < visibleIds.length
 
   return (
     <Box>
@@ -1708,6 +1840,10 @@ export default function ModelsPage() {
               control={<Checkbox checked={selectedBulkColumns.has('aplus_ebc')} onChange={() => handleColumnToggle('aplus_ebc')} disabled={isBulkEditMode || models.length === 0} />}
               label="A+ EBC"
             />
+            <FormControlLabel
+              control={<Checkbox checked={selectedBulkColumns.has('export_exclusions')} onChange={() => handleColumnToggle('export_exclusions')} disabled={isBulkEditMode} />}
+              label="Export Exclusions"
+            />
           </FormGroup>
           {selectedBulkColumns.size >= 2 && !isBulkEditMode && (
             <FormHelperText>Max 2 columns selected.</FormHelperText>
@@ -1735,6 +1871,32 @@ export default function ModelsPage() {
                 Clear Selection
               </Button>
             )}
+            {isBulkEditMode && (
+              <>
+                <Button
+                  variant="outlined"
+                  size="small"
+                  onClick={handleSelectChanged}
+                >
+                  Select Changed
+                </Button>
+                <Button
+                  variant="contained"
+                  size="small"
+                  color="success"
+                  onClick={handleSaveAll}
+                  disabled={selectedBulkSaveIds.size === 0 || saveAllStatus === 'saving'}
+                  startIcon={saveAllStatus === 'saving' ? <SaveIcon /> : undefined}
+                >
+                  {saveAllStatus === 'saving' ? 'Saving...' : `Save All (${selectedBulkSaveIds.size})`}
+                </Button>
+                {saveAllStatus === 'success' && (
+                  <Typography variant="caption" color="success.main">
+                    Save successful.
+                  </Typography>
+                )}
+              </>
+            )}
           </Stack>
         </Box>
       </Paper>
@@ -1743,6 +1905,16 @@ export default function ModelsPage() {
         <Table>
           <TableHead>
             <TableRow>
+              {isBulkEditMode && (
+                <TableCell padding="checkbox">
+                  <Checkbox
+                    checked={allVisibleSelected}
+                    indeterminate={someVisibleSelected}
+                    disabled={visibleIds.length === 0}
+                    onChange={handleToggleSelectAllVisible}
+                  />
+                </TableCell>
+              )}
               <TableCell>Model Name</TableCell>
               {isBulkEditMode && <TableCell>Series</TableCell>}
 
@@ -1754,6 +1926,7 @@ export default function ModelsPage() {
               {isBulkEditMode && selectedBulkColumns.has('reverb_id') && <TableCell>Reverb ID</TableCell>}
               {isBulkEditMode && selectedBulkColumns.has('aplus_brand_story') && <TableCell>Brand Story</TableCell>}
               {isBulkEditMode && selectedBulkColumns.has('aplus_ebc') && <TableCell>EBC</TableCell>}
+              {isBulkEditMode && selectedBulkColumns.has('export_exclusions') && <TableCell>Export Exclusions</TableCell>}
 
               {!isBulkEditMode && (
                 <>
@@ -1768,6 +1941,14 @@ export default function ModelsPage() {
           <TableBody>
             {filteredModels.map((model) => (
               <TableRow key={model.id} selected={selectedModelIds.has(model.id)}>
+                {isBulkEditMode && (
+                  <TableCell padding="checkbox">
+                    <Checkbox
+                      checked={selectedBulkSaveIds.has(model.id)}
+                      onChange={() => handleToggleBulkSaveSelection(model.id)}
+                    />
+                  </TableCell>
+                )}
                 <TableCell>{model.name}</TableCell>
                 {isBulkEditMode && <TableCell>{series.find(s => s.id === model.series_id)?.name || 'Unknown'}</TableCell>}
 
@@ -1797,16 +1978,25 @@ export default function ModelsPage() {
 
                 {isBulkEditMode && selectedBulkColumns.has('dimensions') && (
                   <TableCell>
-                    <Stack direction="row" spacing={1}>
-                      <TextField size="small" sx={{ width: 60 }} type="number" placeholder="W"
-                        value={bulkDrafts[model.id]?.width !== undefined ? bulkDrafts[model.id].width : model.width}
-                        onChange={(e) => handleBulkDraftChange(model.id, 'width', e.target.value)} />
-                      <TextField size="small" sx={{ width: 60 }} type="number" placeholder="D"
-                        value={bulkDrafts[model.id]?.depth !== undefined ? bulkDrafts[model.id].depth : model.depth}
-                        onChange={(e) => handleBulkDraftChange(model.id, 'depth', e.target.value)} />
-                      <TextField size="small" sx={{ width: 60 }} type="number" placeholder="H"
-                        value={bulkDrafts[model.id]?.height !== undefined ? bulkDrafts[model.id].height : model.height}
-                        onChange={(e) => handleBulkDraftChange(model.id, 'height', e.target.value)} />
+                    <Stack direction="row" spacing={0.5}>
+                      <Box>
+                        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', textAlign: 'center', mb: 0.5 }}>W</Typography>
+                        <TextField size="small" sx={{ width: 130 }} type="number" placeholder="Width"
+                          value={bulkDrafts[model.id]?.width !== undefined ? bulkDrafts[model.id].width : model.width}
+                          onChange={(e) => handleBulkDraftChange(model.id, 'width', e.target.value)} />
+                      </Box>
+                      <Box>
+                        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', textAlign: 'center', mb: 0.5 }}>D</Typography>
+                        <TextField size="small" sx={{ width: 130 }} type="number" placeholder="Depth"
+                          value={bulkDrafts[model.id]?.depth !== undefined ? bulkDrafts[model.id].depth : model.depth}
+                          onChange={(e) => handleBulkDraftChange(model.id, 'depth', e.target.value)} />
+                      </Box>
+                      <Box>
+                        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', textAlign: 'center', mb: 0.5 }}>H</Typography>
+                        <TextField size="small" sx={{ width: 130 }} type="number" placeholder="Height"
+                          value={bulkDrafts[model.id]?.height !== undefined ? bulkDrafts[model.id].height : model.height}
+                          onChange={(e) => handleBulkDraftChange(model.id, 'height', e.target.value)} />
+                      </Box>
                     </Stack>
                   </TableCell>
                 )}
@@ -1919,6 +2109,64 @@ export default function ModelsPage() {
                     </Box>
                   </TableCell>
                 )}
+                {isBulkEditMode && selectedBulkColumns.has('export_exclusions') && (
+                  <TableCell sx={{ minWidth: 160 }}>
+                    <FormGroup>
+                      <FormControlLabel
+                        control={
+                          <Checkbox
+                            checked={bulkDrafts[model.id]?.exclude_amazon !== undefined ? bulkDrafts[model.id].exclude_amazon : (model.exclude_from_amazon_export || false)}
+                            onChange={(e) => handleBulkDraftChange(model.id, 'exclude_amazon', e.target.checked)}
+                            size="small"
+                            sx={{ p: 0.5 }}
+                          />
+                        }
+                        label="No Amazon"
+                        componentsProps={{ typography: { variant: 'caption' } }}
+                        sx={{ ml: 0, mr: 0, my: -0.5 }}
+                      />
+                      <FormControlLabel
+                        control={
+                          <Checkbox
+                            checked={bulkDrafts[model.id]?.exclude_ebay !== undefined ? bulkDrafts[model.id].exclude_ebay : (model.exclude_from_ebay_export || false)}
+                            onChange={(e) => handleBulkDraftChange(model.id, 'exclude_ebay', e.target.checked)}
+                            size="small"
+                            sx={{ p: 0.5 }}
+                          />
+                        }
+                        label="No eBay"
+                        componentsProps={{ typography: { variant: 'caption' } }}
+                        sx={{ ml: 0, mr: 0, my: -0.5 }}
+                      />
+                      <FormControlLabel
+                        control={
+                          <Checkbox
+                            checked={bulkDrafts[model.id]?.exclude_reverb !== undefined ? bulkDrafts[model.id].exclude_reverb : (model.exclude_from_reverb_export || false)}
+                            onChange={(e) => handleBulkDraftChange(model.id, 'exclude_reverb', e.target.checked)}
+                            size="small"
+                            sx={{ p: 0.5 }}
+                          />
+                        }
+                        label="No Reverb"
+                        componentsProps={{ typography: { variant: 'caption' } }}
+                        sx={{ ml: 0, mr: 0, my: -0.5 }}
+                      />
+                      <FormControlLabel
+                        control={
+                          <Checkbox
+                            checked={bulkDrafts[model.id]?.exclude_etsy !== undefined ? bulkDrafts[model.id].exclude_etsy : (model.exclude_from_etsy_export || false)}
+                            onChange={(e) => handleBulkDraftChange(model.id, 'exclude_etsy', e.target.checked)}
+                            size="small"
+                            sx={{ p: 0.5 }}
+                          />
+                        }
+                        label="No Etsy"
+                        componentsProps={{ typography: { variant: 'caption' } }}
+                        sx={{ ml: 0, mr: 0, my: -0.5 }}
+                      />
+                    </FormGroup>
+                  </TableCell>
+                )}
 
                 {!isBulkEditMode && (
                   <>
@@ -1930,8 +2178,18 @@ export default function ModelsPage() {
 
                 <TableCell align="right">
                   {isBulkEditMode ? (
-                    savingRowId === model.id ? <CircularProgress size={24} /> :
-                      <IconButton onClick={() => handleRowBulkSave(model.id)} color="primary"><SaveIcon /></IconButton>
+                    <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 0.5 }}>
+                      {savingRowId === model.id ? (
+                        <CircularProgress size={24} />
+                      ) : (
+                        <IconButton onClick={() => handleRowBulkSave(model.id)} color="primary"><SaveIcon /></IconButton>
+                      )}
+                      {rowSaveStatusById[model.id] === 'success' && (
+                        <Typography variant="caption" color="success.main">
+                          Save successful.
+                        </Typography>
+                      )}
+                    </Box>
                   ) : (
                     <Box sx={{ display: 'flex' }}>
                       <Tooltip title="Pricing Analysis">
@@ -2466,6 +2724,32 @@ export default function ModelsPage() {
               />
             </Grid>
 
+            {/* Export Exclusions Section */}
+            <Grid item xs={12} sx={{ mt: 3, mb: 1 }}>
+              <Typography variant="h6" sx={{ fontSize: '1rem', fontWeight: 600 }}>Export Exclusions</Typography>
+              <Box sx={{ borderBottom: 1, borderColor: 'divider' }} />
+            </Grid>
+            <Grid item xs={12}>
+              <FormGroup row>
+                <FormControlLabel
+                  control={<Checkbox checked={formData.exclude_from_amazon_export} onChange={(e) => setFormData({ ...formData, exclude_from_amazon_export: e.target.checked })} />}
+                  label="Exclude Amazon"
+                />
+                <FormControlLabel
+                  control={<Checkbox checked={formData.exclude_from_ebay_export} onChange={(e) => setFormData({ ...formData, exclude_from_ebay_export: e.target.checked })} />}
+                  label="Exclude eBay"
+                />
+                <FormControlLabel
+                  control={<Checkbox checked={formData.exclude_from_reverb_export} onChange={(e) => setFormData({ ...formData, exclude_from_reverb_export: e.target.checked })} />}
+                  label="Exclude Reverb"
+                />
+                <FormControlLabel
+                  control={<Checkbox checked={formData.exclude_from_etsy_export} onChange={(e) => setFormData({ ...formData, exclude_from_etsy_export: e.target.checked })} />}
+                  label="Exclude Etsy"
+                />
+              </FormGroup>
+            </Grid>
+
             {/* Amazon A+ Content Section */}
             <Grid item xs={12} sx={{ mt: 3, mb: 1 }}>
               <Typography variant="h6" sx={{ fontSize: '1rem', fontWeight: 600 }}>Amazon A+ Content</Typography>
@@ -2666,6 +2950,42 @@ export default function ModelsPage() {
                       />
                     </Grid>
                   )}
+                </Grid>
+              )}
+            </Paper>
+
+            {/* Export Exclusions */}
+            <Paper variant="outlined" sx={{ p: 2 }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
+                <Checkbox
+                  checked={bulkEditState.exportExclusion.enabled}
+                  onChange={(e) => setBulkEditState(prev => ({ ...prev, exportExclusion: { ...prev.exportExclusion, enabled: e.target.checked } }))}
+                />
+                <Typography variant="subtitle1" fontWeight="bold">Export Exclusions (Set Status)</Typography>
+              </Box>
+              {bulkEditState.exportExclusion.enabled && (
+                <Grid container spacing={2} sx={{ pl: 5 }}>
+                  <Grid item xs={12}>
+                    <FormControlLabel
+                      control={<Checkbox checked={bulkEditState.exportExclusion.exclude_amazon} onChange={(e) => setBulkEditState(prev => ({ ...prev, exportExclusion: { ...prev.exportExclusion, exclude_amazon: e.target.checked } }))} />}
+                      label="Exclude Amazon"
+                    />
+                    <FormControlLabel
+                      control={<Checkbox checked={bulkEditState.exportExclusion.exclude_ebay} onChange={(e) => setBulkEditState(prev => ({ ...prev, exportExclusion: { ...prev.exportExclusion, exclude_ebay: e.target.checked } }))} />}
+                      label="Exclude eBay"
+                    />
+                    <FormControlLabel
+                      control={<Checkbox checked={bulkEditState.exportExclusion.exclude_reverb} onChange={(e) => setBulkEditState(prev => ({ ...prev, exportExclusion: { ...prev.exportExclusion, exclude_reverb: e.target.checked } }))} />}
+                      label="Exclude Reverb"
+                    />
+                    <FormControlLabel
+                      control={<Checkbox checked={bulkEditState.exportExclusion.exclude_etsy} onChange={(e) => setBulkEditState(prev => ({ ...prev, exportExclusion: { ...prev.exportExclusion, exclude_etsy: e.target.checked } }))} />}
+                      label="Exclude Etsy"
+                    />
+                    <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 1 }}>
+                      Note: Checked = Set to 'True' (Excluded). Unchecked = Set to 'False' (Included).
+                    </Typography>
+                  </Grid>
                 </Grid>
               )}
             </Paper>
