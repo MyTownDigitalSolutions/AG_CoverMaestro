@@ -49,27 +49,7 @@ app.add_middleware(
     expose_headers=["X-Export-Signature", "X-Export-Template-Code"]
 )
 
-# Register all routers at their original paths
-app.include_router(manufacturers.router)
-app.include_router(series.router)
-app.include_router(equipment_types.router)
-app.include_router(models.router)
-app.include_router(materials.router)
-app.include_router(suppliers.router)
-app.include_router(customers.router)
-app.include_router(orders.router)
-app.include_router(pricing.router)
-app.include_router(templates.router)
-app.include_router(enums.router)
-app.include_router(export.router)
-app.include_router(design_options.router)
-app.include_router(settings.router)
-app.include_router(ebay_templates.router)
-app.include_router(variation_skus.router)
-app.include_router(material_role_configs.router)
-app.include_router(material_role_assignments.router)
-
-# Register all routers again with /api prefix for frontend compatibility
+# Register all routers with /api prefix
 app.include_router(manufacturers.router, prefix="/api")
 app.include_router(series.router, prefix="/api")
 app.include_router(equipment_types.router, prefix="/api")
@@ -121,9 +101,24 @@ async def serve_spa(full_path: str):
     Catch-all route to serve React SPA for client-side routing.
     Returns index.html for any non-API route so React Router can handle routing.
     """
-    # Do not intercept API routes or FastAPI built-in documentation routes
-    excluded_prefixes = ["api/"]
-    excluded_exact = ["openapi.json", "docs", "redoc", "health"]
+    # Do not intercept API routes, FastAPI docs, or static assets
+    # Use exact matches to avoid matching "docsanything" when we only want "docs"
+    excluded_exact = [
+        "docs",          # Swagger UI root
+        "redoc",         # ReDoc root
+        "health",        # Health check endpoint
+        "openapi.json",  # OpenAPI schema
+    ]
+    
+    # Use prefix matches for subpaths and trailing slash variants
+    excluded_prefixes = [
+        "api/",          # All API endpoints
+        "assets/",       # Static assets
+        "docs/",         # Swagger UI subpaths (e.g., /docs/oauth2-redirect)
+        "redoc/",        # ReDoc subpaths
+        "health/",       # Health endpoint with trailing slash
+        "openapi.json/", # OpenAPI schema with trailing slash
+    ]
     
     # Check exact matches first
     if full_path in excluded_exact:
@@ -136,7 +131,7 @@ async def serve_spa(full_path: str):
             from fastapi import HTTPException
             raise HTTPException(status_code=404, detail="Not Found")
     
-    # Serve index.html for all other routes
+    # Serve index.html for all other routes (React Router paths)
     index_path = os.path.join(client_dist, "index.html")
     
     if os.path.exists(index_path):
