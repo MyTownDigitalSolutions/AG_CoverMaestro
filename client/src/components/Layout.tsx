@@ -68,6 +68,8 @@ const menuItems = [
       { text: 'Shipping Rates', icon: <AttachMoneyIcon />, path: '/settings/shipping-rates' },
       { text: 'Shipping Defaults', icon: <LocalShippingIcon />, path: '/settings/shipping-defaults' },
       { text: 'Labor / Fees / Profit', icon: <SettingsIcon />, path: '/settings?tab=general' },
+      { text: 'Material Role Configs', icon: <SettingsIcon />, path: '/settings/material-role-configs' },
+      { text: 'Material Role Assignments', icon: <SettingsIcon />, path: '/settings/material-role-assignments' },
     ]
   },
   {

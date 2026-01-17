@@ -4,7 +4,7 @@ from app.database import engine, Base
 from app.api import (
     manufacturers, series, equipment_types, models,
     materials, suppliers, customers, orders,
-    pricing, templates, enums, export, design_options, settings, ebay_templates
+    pricing, templates, enums, export, design_options, settings, ebay_templates, variation_skus, material_role_configs, material_role_assignments
 )
 from app.services.storage_policy import ensure_storage_dirs_exist, cleanup_tmp_dir
 
@@ -64,6 +64,11 @@ app.include_router(export.router)
 app.include_router(design_options.router)
 app.include_router(settings.router)
 app.include_router(ebay_templates.router)
+app.include_router(variation_skus.router)
+app.include_router(material_role_configs.router)
+print("✅ material_role_configs router registered")
+app.include_router(material_role_assignments.router)
+print("✅ material_role_assignments router registered")
 
 # Serve static assets (JS, CSS, images) from React build
 from fastapi.staticfiles import StaticFiles
