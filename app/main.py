@@ -49,12 +49,12 @@ app.add_middleware(
     expose_headers=["X-Export-Signature", "X-Export-Template-Code"]
 )
 
+# Register all routers at their original paths
 app.include_router(manufacturers.router)
 app.include_router(series.router)
 app.include_router(equipment_types.router)
 app.include_router(models.router)
 app.include_router(materials.router)
-app.include_router(materials.router, prefix="/api")
 app.include_router(suppliers.router)
 app.include_router(customers.router)
 app.include_router(orders.router)
@@ -67,14 +67,27 @@ app.include_router(settings.router)
 app.include_router(ebay_templates.router)
 app.include_router(variation_skus.router)
 app.include_router(material_role_configs.router)
-print("✅ material_role_configs router registered")
-app.include_router(material_role_configs.router, prefix="/api")
-print("✅ material_role_configs router registered at /api")
-
 app.include_router(material_role_assignments.router)
-print("✅ material_role_assignments router registered")
+
+# Register all routers again with /api prefix for frontend compatibility
+app.include_router(manufacturers.router, prefix="/api")
+app.include_router(series.router, prefix="/api")
+app.include_router(equipment_types.router, prefix="/api")
+app.include_router(models.router, prefix="/api")
+app.include_router(materials.router, prefix="/api")
+app.include_router(suppliers.router, prefix="/api")
+app.include_router(customers.router, prefix="/api")
+app.include_router(orders.router, prefix="/api")
+app.include_router(pricing.router, prefix="/api")
+app.include_router(templates.router, prefix="/api")
+app.include_router(enums.router, prefix="/api")
+app.include_router(export.router, prefix="/api")
+app.include_router(design_options.router, prefix="/api")
+app.include_router(settings.router, prefix="/api")
+app.include_router(ebay_templates.router, prefix="/api")
+app.include_router(variation_skus.router, prefix="/api")
+app.include_router(material_role_configs.router, prefix="/api")
 app.include_router(material_role_assignments.router, prefix="/api")
-print("✅ material_role_assignments router registered at /api")
 
 # Serve static assets (JS, CSS, images) from React build
 from fastapi.staticfiles import StaticFiles
