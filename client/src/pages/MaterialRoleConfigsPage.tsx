@@ -25,6 +25,9 @@ export default function MaterialRoleConfigsPage() {
     const [newRow, setNewRow] = useState<Partial<MaterialRoleConfig> | null>(null)
     const [error, setError] = useState<string | null>(null)
 
+    // Helper to safely convert values to string
+    const asString = (v: any) => (v ?? '').toString()
+
     const loadData = async () => {
         try {
             const response = await axios.get<MaterialRoleConfig[]>('/api/material-role-configs')
@@ -103,9 +106,9 @@ export default function MaterialRoleConfigsPage() {
         let normalizedValue: any
 
         if (field === 'display_name') {
-            normalizedValue = value.trim() || null
+            normalizedValue = asString(value).trim() || null
         } else if (field === 'sku_abbrev_no_padding' || field === 'sku_abbrev_with_padding') {
-            normalizedValue = value.trim().toUpperCase() || null
+            normalizedValue = asString(value).trim().toUpperCase() || null
         } else if (field === 'sort_order') {
             const parsed = parseInt(value)
             if (isNaN(parsed)) {

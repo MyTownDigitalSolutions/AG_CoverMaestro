@@ -54,6 +54,7 @@ app.include_router(series.router)
 app.include_router(equipment_types.router)
 app.include_router(models.router)
 app.include_router(materials.router)
+app.include_router(materials.router, prefix="/api")
 app.include_router(suppliers.router)
 app.include_router(customers.router)
 app.include_router(orders.router)
@@ -67,8 +68,13 @@ app.include_router(ebay_templates.router)
 app.include_router(variation_skus.router)
 app.include_router(material_role_configs.router)
 print("✅ material_role_configs router registered")
+app.include_router(material_role_configs.router, prefix="/api")
+print("✅ material_role_configs router registered at /api")
+
 app.include_router(material_role_assignments.router)
 print("✅ material_role_assignments router registered")
+app.include_router(material_role_assignments.router, prefix="/api")
+print("✅ material_role_assignments router registered at /api")
 
 # Serve static assets (JS, CSS, images) from React build
 from fastapi.staticfiles import StaticFiles
