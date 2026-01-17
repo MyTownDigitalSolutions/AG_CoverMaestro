@@ -95,11 +95,41 @@ export default function MaterialRoleConfigsPage() {
     }
 
     const handleUpdateField = async (id: number, field: keyof MaterialRoleConfig, value: any) => {
-        try {
-            // Convert empty string to null for nullable fields
-            const payload = {
-                [field]: value === '' ? null : value
+        // Find the current config
+        const config = configs.find(c => c.id === id)
+        if (!config) return
+
+        // Normalize the new value based on field type
+        let normalizedValue: any
+
+        if (field === 'display_name') {
+            normalizedValue = value.trim() || null
+        } else if (field === 'sku_abbrev_no_padding' || field === 'sku_abbrev_with_padding') {
+            normalizedValue = value.trim().toUpperCase() || null
+        } else if (field === 'sort_order') {
+            const parsed = parseInt(value)
+            if (isNaN(parsed)) {
+                normalizedValue = 0
+            } else if (parsed < 0) {
+                setError('Sort order cannot be negative')
+                loadData() // Reload to revert UI
+                return
+            } else {
+                normalizedValue = parsed
             }
+        } else if (field === 'ebay_variation_enabled') {
+            normalizedValue = value
+        } else {
+            normalizedValue = value
+        }
+
+        // Check if value actually changed
+        if (normalizedValue === config[field]) {
+            return // No change, skip API call
+        }
+
+        try {
+            const payload = { [field]: normalizedValue }
             await axios.put(`/api/material-role-configs/${id}`, payload)
             setError(null)
             loadData()
@@ -275,7 +305,7 @@ export default function MaterialRoleConfigsPage() {
                                         type="number"
                                         fullWidth
                                         defaultValue={config.sort_order}
-                                        onBlur={(e) => handleUpdateField(config.id, 'sort_order', parseInt(e.target.value) || 0)}
+                                        onBlur={(e) => handleUpdateField(config.id, 'sort_order', e.target.value)}
                                         inputProps={{ min: 0 }}
                                     />
                                 </TableCell>

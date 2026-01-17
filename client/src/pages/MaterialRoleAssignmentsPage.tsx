@@ -75,6 +75,18 @@ export default function MaterialRoleAssignmentsPage() {
         return role
     }
 
+    const formatDate = (dateStr: string | null) => {
+        if (!dateStr) return '-'
+
+        // If it matches YYYY-MM-DD format, return it directly
+        if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+            return dateStr
+        }
+
+        // Otherwise convert to localized date/time
+        return new Date(dateStr).toLocaleString()
+    }
+
     const handleCreateAssignment = async () => {
         if (!formData.role || !formData.material_id) {
             setError('Role and Material are required')
@@ -112,11 +124,6 @@ export default function MaterialRoleAssignmentsPage() {
         } catch (err: any) {
             setError(err.response?.data?.detail || 'Failed to end assignment')
         }
-    }
-
-    const formatDate = (dateStr: string | null) => {
-        if (!dateStr) return '-'
-        return new Date(dateStr).toLocaleString()
     }
 
     return (
