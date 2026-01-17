@@ -58,6 +58,15 @@ const formatMoney = (cents: number) => {
   return (cents / 100).toLocaleString('en-US', { style: 'currency', currency: 'USD' })
 }
 
+// Conversion helpers for dimensions
+const inchesToMm = (inches: number): number => {
+  return Math.round(inches * 25.4) // Round to whole number for display
+}
+
+const mmToInches = (mm: number): number => {
+  return Math.round((mm / 25.4) * 100) / 100 // Round to 2 decimal places
+}
+
 // Helper to fetch details for tooltip
 function ShippingTooltip({ children, snapshot }: { children: React.ReactElement, snapshot: ModelPricingSnapshot }) {
   if (!snapshot || snapshot.shipping_cost_cents == null) {
@@ -792,12 +801,14 @@ export default function ModelsPage() {
     exclude_from_amazon_export: false,
     exclude_from_ebay_export: false,
     exclude_from_reverb_export: false,
-    exclude_from_etsy_export: false
+    exclude_from_etsy_export: false,
+    dimensionUnit: 'inches' as 'inches' | 'mm'
   })
 
   const [textOptionValues, setTextOptionValues] = useState<Record<number, string>>({})
   const [validationErrors, setValidationErrors] = useState<string[]>([])
   const [isSaving, setIsSaving] = useState(false)
+  const [bulkDimensionUnit, setBulkDimensionUnit] = useState<'inches' | 'mm'>('inches')
 
   // Bulk Edit State
   const [selectedModelIds, setSelectedModelIds] = useState<Set<number>>(new Set())
@@ -978,10 +989,16 @@ export default function ModelsPage() {
 
       // Dimensions
       if (selectedBulkColumns.has('dimensions')) {
-        // Only update if draft has values, else keep model values (or update if explicit)
-        if (draft.width !== undefined) updateData.width = Number(draft.width)
-        if (draft.depth !== undefined) updateData.depth = Number(draft.depth)
-        if (draft.height !== undefined) updateData.height = Number(draft.height)
+        // Convert mm to inches if needed before saving
+        if (draft.width !== undefined) {
+          updateData.width = bulkDimensionUnit === 'mm' ? mmToInches(Number(draft.width)) : Number(draft.width);
+        }
+        if (draft.depth !== undefined) {
+          updateData.depth = bulkDimensionUnit === 'mm' ? mmToInches(Number(draft.depth)) : Number(draft.depth);
+        }
+        if (draft.height !== undefined) {
+          updateData.height = bulkDimensionUnit === 'mm' ? mmToInches(Number(draft.height)) : Number(draft.height);
+        }
       }
 
       // Equipment Type
@@ -1369,8 +1386,16 @@ export default function ModelsPage() {
       }
     })
 
+    // Convert dimensions to inches if currently in mm mode
+    const dimensionsInInches = {
+      width: formData.dimensionUnit === 'mm' ? mmToInches(formData.width) : formData.width,
+      depth: formData.dimensionUnit === 'mm' ? mmToInches(formData.depth) : formData.depth,
+      height: formData.dimensionUnit === 'mm' ? mmToInches(formData.height) : formData.height
+    }
+
     const data = {
       ...formData,
+      ...dimensionsInInches,  // Use converted dimensions
       handle_length: formData.handle_length || undefined,
       handle_width: formData.handle_width || undefined,
       image_url: formData.image_url || undefined,
@@ -1535,7 +1560,8 @@ export default function ModelsPage() {
       exclude_from_amazon_export: false,
       exclude_from_ebay_export: false,
       exclude_from_reverb_export: false,
-      exclude_from_etsy_export: false
+      exclude_from_etsy_export: false,
+      dimensionUnit: 'inches' as 'inches' | 'mm'
     })
     setTextOptionValues({})
     setValidationErrors([])  // Clear validation errors
@@ -1577,7 +1603,8 @@ export default function ModelsPage() {
       exclude_from_amazon_export: model.exclude_from_amazon_export || false,
       exclude_from_ebay_export: model.exclude_from_ebay_export || false,
       exclude_from_reverb_export: model.exclude_from_reverb_export || false,
-      exclude_from_etsy_export: model.exclude_from_etsy_export || false
+      exclude_from_etsy_export: model.exclude_from_etsy_export || false,
+      dimensionUnit: 'inches' as 'inches' | 'mm'  // Always load dimensions in inches from DB
     })
 
     // Console log for load
@@ -1920,7 +1947,52 @@ export default function ModelsPage() {
 
               {isBulkEditMode && selectedBulkColumns.has('amazon_asin') && <TableCell>Amazon ASIN</TableCell>}
               {isBulkEditMode && selectedBulkColumns.has('model_notes') && <TableCell>Model Notes</TableCell>}
-              {isBulkEditMode && selectedBulkColumns.has('dimensions') && <TableCell>Dimensions (W x D x H)</TableCell>}
+              {isBulkEditMode && selectedBulkColumns.has('dimensions') && (
+                <TableCell>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <Typography variant="body2">Dimensions (W x D x H)</Typography>
+                    <ToggleButtonGroup
+                      value={bulkDimensionUnit}
+                      exclusive
+                      onChange={(_, newUnit) => {
+                        if (!newUnit) return;
+
+                        // Convert all existing bulk draft dimensions when switching units
+                        const updatedDrafts: Record<number, any> = {};
+                        filteredModels.forEach(model => {
+                          const draft = bulkDrafts[model.id];
+                          if (draft && (draft.width !== undefined || draft.depth !== undefined || draft.height !== undefined)) {
+                            const currentWidth = draft.width !== undefined ? draft.width : model.width;
+                            const currentDepth = draft.depth !== undefined ? draft.depth : model.depth;
+                            const currentHeight = draft.height !== undefined ? draft.height : model.height;
+
+                            updatedDrafts[model.id] = {
+                              ...draft,
+                              width: newUnit === 'mm' ? inchesToMm(currentWidth) : mmToInches(currentWidth),
+                              depth: newUnit === 'mm' ? inchesToMm(currentDepth) : mmToInches(currentDepth),
+                              height: newUnit === 'mm' ? inchesToMm(currentHeight) : mmToInches(currentHeight)
+                            };
+                          }
+                        });
+
+                        if (Object.keys(updatedDrafts).length > 0) {
+                          setBulkDrafts(prev => ({ ...prev, ...updatedDrafts }));
+                        }
+                        setBulkDimensionUnit(newUnit);
+                      }}
+                      size="small"
+                      aria-label="bulk dimension unit"
+                    >
+                      <ToggleButton value="inches" aria-label="inches" sx={{ py: 0.25, px: 1, fontSize: '0.75rem' }}>
+                        in
+                      </ToggleButton>
+                      <ToggleButton value="mm" aria-label="millimeters" sx={{ py: 0.25, px: 1, fontSize: '0.75rem' }}>
+                        mm
+                      </ToggleButton>
+                    </ToggleButtonGroup>
+                  </Box>
+                </TableCell>
+              )}
               {isBulkEditMode && selectedBulkColumns.has('equipment_type') && <TableCell>Equipment Type</TableCell>}
               {isBulkEditMode && selectedBulkColumns.has('ebay_id') && <TableCell>eBay ID</TableCell>}
               {isBulkEditMode && selectedBulkColumns.has('reverb_id') && <TableCell>Reverb ID</TableCell>}
@@ -1982,20 +2054,50 @@ export default function ModelsPage() {
                       <Box>
                         <Typography variant="caption" color="text.secondary" sx={{ display: 'block', textAlign: 'center', mb: 0.5 }}>W</Typography>
                         <TextField size="small" sx={{ width: 130 }} type="number" placeholder="Width"
-                          value={bulkDrafts[model.id]?.width !== undefined ? bulkDrafts[model.id].width : model.width}
-                          onChange={(e) => handleBulkDraftChange(model.id, 'width', e.target.value)} />
+                          value={bulkDrafts[model.id]?.width !== undefined ? bulkDrafts[model.id].width : (bulkDimensionUnit === 'mm' ? inchesToMm(model.width) : model.width)}
+                          onChange={(e) => {
+                            const inputVal = parseFloat(e.target.value) || 0;
+                            handleBulkDraftChange(model.id, 'width', inputVal);
+                          }}
+                          onBlur={() => {
+                            if (bulkDimensionUnit === 'mm' && bulkDrafts[model.id]?.width) {
+                              // Round up mm to whole number on blur
+                              const roundedMm = Math.ceil(bulkDrafts[model.id].width);
+                              handleBulkDraftChange(model.id, 'width', roundedMm);
+                            }
+                          }} />
                       </Box>
                       <Box>
                         <Typography variant="caption" color="text.secondary" sx={{ display: 'block', textAlign: 'center', mb: 0.5 }}>D</Typography>
                         <TextField size="small" sx={{ width: 130 }} type="number" placeholder="Depth"
-                          value={bulkDrafts[model.id]?.depth !== undefined ? bulkDrafts[model.id].depth : model.depth}
-                          onChange={(e) => handleBulkDraftChange(model.id, 'depth', e.target.value)} />
+                          value={bulkDrafts[model.id]?.depth !== undefined ? bulkDrafts[model.id].depth : (bulkDimensionUnit === 'mm' ? inchesToMm(model.depth) : model.depth)}
+                          onChange={(e) => {
+                            const inputVal = parseFloat(e.target.value) || 0;
+                            handleBulkDraftChange(model.id, 'depth', inputVal);
+                          }}
+                          onBlur={() => {
+                            if (bulkDimensionUnit === 'mm' && bulkDrafts[model.id]?.depth) {
+                              // Round up mm to whole number on blur
+                              const roundedMm = Math.ceil(bulkDrafts[model.id].depth);
+                              handleBulkDraftChange(model.id, 'depth', roundedMm);
+                            }
+                          }} />
                       </Box>
                       <Box>
                         <Typography variant="caption" color="text.secondary" sx={{ display: 'block', textAlign: 'center', mb: 0.5 }}>H</Typography>
                         <TextField size="small" sx={{ width: 130 }} type="number" placeholder="Height"
-                          value={bulkDrafts[model.id]?.height !== undefined ? bulkDrafts[model.id].height : model.height}
-                          onChange={(e) => handleBulkDraftChange(model.id, 'height', e.target.value)} />
+                          value={bulkDrafts[model.id]?.height !== undefined ? bulkDrafts[model.id].height : (bulkDimensionUnit === 'mm' ? inchesToMm(model.height) : model.height)}
+                          onChange={(e) => {
+                            const inputVal = parseFloat(e.target.value) || 0;
+                            handleBulkDraftChange(model.id, 'height', inputVal);
+                          }}
+                          onBlur={() => {
+                            if (bulkDimensionUnit === 'mm' && bulkDrafts[model.id]?.height) {
+                              // Round up mm to whole number on blur
+                              const roundedMm = Math.ceil(bulkDrafts[model.id].height);
+                              handleBulkDraftChange(model.id, 'height', roundedMm);
+                            }
+                          }} />
                       </Box>
                     </Stack>
                   </TableCell>
@@ -2467,31 +2569,95 @@ export default function ModelsPage() {
               </FormControl>
             </Grid>
             <Grid item xs={6} />
+
+            {/* Dimension Unit Toggle */}
+            <Grid item xs={12} sx={{ mt: 1 }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                <Typography variant="subtitle2">Dimensions</Typography>
+                <ToggleButtonGroup
+                  value={formData.dimensionUnit}
+                  exclusive
+                  onChange={(_, newUnit) => {
+                    if (!newUnit) return;
+
+                    // Convert dimensions when switching units
+                    const convertedWidth = newUnit === 'mm'
+                      ? inchesToMm(formData.width)
+                      : mmToInches(formData.width);
+                    const convertedDepth = newUnit === 'mm'
+                      ? inchesToMm(formData.depth)
+                      : mmToInches(formData.depth);
+                    const convertedHeight = newUnit === 'mm'
+                      ? inchesToMm(formData.height)
+                      : mmToInches(formData.height);
+
+                    setFormData({
+                      ...formData,
+                      dimensionUnit: newUnit,
+                      width: convertedWidth,
+                      depth: convertedDepth,
+                      height: convertedHeight
+                    });
+                  }}
+                  size="small"
+                  aria-label="dimension unit"
+                >
+                  <ToggleButton value="inches" aria-label="inches">
+                    in
+                  </ToggleButton>
+                  <ToggleButton value="mm" aria-label="millimeters">
+                    mm
+                  </ToggleButton>
+                </ToggleButtonGroup>
+              </Box>
+            </Grid>
+
             <Grid item xs={4}>
               <TextField
                 fullWidth
                 type="number"
-                label="Width (inches)"
-                value={formData.width}
-                onChange={(e) => setFormData({ ...formData, width: parseFloat(e.target.value) })}
+                label={formData.dimensionUnit === 'inches' ? 'Width (inches)' : 'Width (mm)'}
+                value={formData.width || ''}
+                onChange={(e) => setFormData({ ...formData, width: parseFloat(e.target.value) || 0 })}
+                onBlur={() => {
+                  if (formData.dimensionUnit === 'mm' && formData.width) {
+                    // Round up mm to whole number on blur
+                    const roundedMm = Math.ceil(formData.width);
+                    setFormData({ ...formData, width: roundedMm });
+                  }
+                }}
               />
             </Grid>
             <Grid item xs={4}>
               <TextField
                 fullWidth
                 type="number"
-                label="Depth (inches)"
-                value={formData.depth}
-                onChange={(e) => setFormData({ ...formData, depth: parseFloat(e.target.value) })}
+                label={formData.dimensionUnit === 'inches' ? 'Depth (inches)' : 'Depth (mm)'}
+                value={formData.depth || ''}
+                onChange={(e) => setFormData({ ...formData, depth: parseFloat(e.target.value) || 0 })}
+                onBlur={() => {
+                  if (formData.dimensionUnit === 'mm' && formData.depth) {
+                    // Round up mm to whole number on blur
+                    const roundedMm = Math.ceil(formData.depth);
+                    setFormData({ ...formData, depth: roundedMm });
+                  }
+                }}
               />
             </Grid>
             <Grid item xs={4}>
               <TextField
                 fullWidth
                 type="number"
-                label="Height (inches)"
-                value={formData.height}
-                onChange={(e) => setFormData({ ...formData, height: parseFloat(e.target.value) })}
+                label={formData.dimensionUnit === 'inches' ? 'Height (inches)' : 'Height (mm)'}
+                value={formData.height || ''}
+                onChange={(e) => setFormData({ ...formData, height: parseFloat(e.target.value) || 0 })}
+                onBlur={() => {
+                  if (formData.dimensionUnit === 'mm' && formData.height) {
+                    // Round up mm to whole number on blur
+                    const roundedMm = Math.ceil(formData.height);
+                    setFormData({ ...formData, height: roundedMm });
+                  }
+                }}
               />
             </Grid>
             {showHandleFields && (
