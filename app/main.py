@@ -131,6 +131,21 @@ async def serve_spa(full_path: str):
             from fastapi import HTTPException
             raise HTTPException(status_code=404, detail="Not Found")
     
+    # Deny legacy API paths (non-/api routes that should return 404)
+    # These are old API endpoints that have been moved to /api/*
+    legacy_api_paths = [
+        "materials", "models", "manufacturers", "series", "equipment-types",
+        "suppliers", "customers", "orders", "pricing", "templates",
+        "enums", "export", "design-options", "settings", "ebay-templates",
+        "variation-skus", "material-role-configs", "material-role-assignments"
+    ]
+    
+    # Check if path exactly matches a legacy API path or starts with it + /
+    for legacy_path in legacy_api_paths:
+        if full_path == legacy_path or full_path.startswith(f"{legacy_path}/"):
+            from fastapi import HTTPException
+            raise HTTPException(status_code=404, detail="Not Found")
+    
     # Serve index.html for all other routes (React Router paths)
     index_path = os.path.join(client_dist, "index.html")
     
