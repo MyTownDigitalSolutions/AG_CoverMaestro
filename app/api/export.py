@@ -105,6 +105,73 @@ class ExportValidationResponse(BaseModel):
     summary_counts: Dict[str, int]
     items: List[ExportValidationIssue]
 
+def _evaluate_equipment_type_compatibility(equipment_type_ids: set, db: Session) -> dict:
+    """
+    Evaluate if a set of equipment type IDs are compatible for export.
+    
+    Returns dict with:
+        is_compatible: bool
+        reason: str (machine-friendly reason if incompatible)
+        product_type_ids: set[int]
+        customization_template_ids: set[int | None] (IMPORTANT: includes None)
+        missing_equipment_type_ids: set[int] (equipment types lacking EquipmentTypeProductType links)
+    """
+    result = {
+        "is_compatible": False,
+        "reason": "",
+        "product_type_ids": set(),
+        "customization_template_ids": set(),
+        "missing_equipment_type_ids": set()
+    }
+    
+    # Check for None in input
+    if None in equipment_type_ids:
+        result["reason"] = "null_equipment_type_id"
+        return result
+    
+    # Query all EquipmentTypeProductType links
+    links = db.query(EquipmentTypeProductType).filter(
+        EquipmentTypeProductType.equipment_type_id.in_(equipment_type_ids)
+    ).all()
+    
+    # Compute which equipment types have links
+    linked_eq_ids = set(link.equipment_type_id for link in links)
+    missing_eq_ids = equipment_type_ids - linked_eq_ids
+    
+    if missing_eq_ids:
+        result["reason"] = "missing_equipment_type_product_type_links"
+        result["missing_equipment_type_ids"] = missing_eq_ids
+        return result
+    
+    # Compute product type IDs
+    product_type_ids = set(link.product_type_id for link in links)
+    result["product_type_ids"] = product_type_ids
+    
+    if len(product_type_ids) != 1:
+        result["reason"] = "multiple_product_types"
+        return result
+    
+    # Query equipment types and compute customization template IDs
+    # IMPORTANT: Do NOT filter out None - it's a valid value that must be included
+    equipment_types = db.query(EquipmentType).filter(
+        EquipmentType.id.in_(equipment_type_ids)
+    ).all()
+    
+    customization_template_ids = set(
+        et.amazon_customization_template_id for et in equipment_types
+    )
+    result["customization_template_ids"] = customization_template_ids
+    
+    if len(customization_template_ids) != 1:
+        result["reason"] = "multiple_customization_templates"
+        return result
+    
+    # All checks passed
+    result["is_compatible"] = True
+    result["reason"] = "compatible"
+    return result
+
+
 @router.post("/validate", response_model=ExportValidationResponse)
 def validate_export(request: ExportPreviewRequest, db: Session = Depends(get_db)):
     """
@@ -150,57 +217,60 @@ def validate_export(request: ExportPreviewRequest, db: Session = Depends(get_db)
     if models:
         eq_ids = set(m.equipment_type_id for m in models)
         
-        # Allow mixed equipment types if they map to same Product Type and Customization Template
-        if len(eq_ids) > 1:
-            # Check template compatibility
-            links = db.query(EquipmentTypeProductType).filter(
-                EquipmentTypeProductType.equipment_type_id.in_(eq_ids)
-            ).all()
-            
-            if not links:
-                issues.append(ExportValidationIssue(severity="error", message="No Amazon templates linked to the selected equipment types."))
-            else:
-                # Check if all equipment types map to same templates
-                product_type_ids = set(link.product_type_id for link in links)
-                equipment_types = db.query(EquipmentType).filter(EquipmentType.id.in_(eq_ids)).all()
-                customization_template_ids = set(
-                    et.amazon_customization_template_id for et in equipment_types 
-                    if et.amazon_customization_template_id is not None
-                )
-                
-                if len(product_type_ids) > 1 or len(customization_template_ids) > 1:
-                    et_map = {et.id: et.name for et in equipment_types}
-                    et_details = ", ".join([f"{et.id} ({et_map.get(et.id, 'Unknown')})" for et in equipment_types])
-                    issues.append(ExportValidationIssue(
-                        severity="error", 
-                        message=f"Selected models span multiple equipment types with incompatible templates. Equipment types: {et_details}. Filter to equipment types that share the same templates."
-                    ))
-                else:
-                    # Compatible - use first link for further validation
-                    link = links[0]
-                    pt = db.query(AmazonProductType).filter(AmazonProductType.id == link.product_type_id).first()
-                    if not pt or not pt.code:
-                        issues.append(ExportValidationIssue(severity="error", message="Linked Amazon Template is invalid or missing Template Code."))
-                    else:
-                        # Load fields for placeholder verification
-                        all_fields = db.query(ProductTypeField).filter(ProductTypeField.product_type_id == pt.id).all()
-                        image_fields = [f for f in all_fields if is_image_url_field(f.field_name)]
+        # Evaluate equipment type compatibility
+        compat = _evaluate_equipment_type_compatibility(eq_ids, db)
         
-        elif len(eq_ids) == 1:
-             eq_id = list(eq_ids)[0]
-             link = db.query(EquipmentTypeProductType).filter(EquipmentTypeProductType.equipment_type_id == eq_id).first()
-             if not link:
-                 equip = db.query(EquipmentType).filter(EquipmentType.id == eq_id).first()
-                 name = equip.name if equip else f"ID {eq_id}"
-                 issues.append(ExportValidationIssue(severity="error", message=f"No Amazon Template linked to Equipment Type: {name}"))
-             else:
-                 pt = db.query(AmazonProductType).filter(AmazonProductType.id == link.product_type_id).first()
-                 if not pt or not pt.code:
-                     issues.append(ExportValidationIssue(severity="error", message="Linked Amazon Template is invalid or missing Template Code."))
-                 else:
-                     # Load fields for placeholder verification
-                     all_fields = db.query(ProductTypeField).filter(ProductTypeField.product_type_id == pt.id).all()
-                     image_fields = [f for f in all_fields if is_image_url_field(f.field_name)]
+        # Log compatibility decision (instrumentation)
+        logger.info(
+            f"[EXPORT][VALIDATE] selected_models={len(models)} equipment_type_ids={sorted(eq_ids)} "
+            f"product_type_ids={sorted(compat['product_type_ids'])} "
+            f"customization_template_ids={sorted(compat['customization_template_ids'], key=lambda x: (x is None, x))} "
+            f"missing_equipment_type_ids={sorted(compat['missing_equipment_type_ids'])} "
+            f"compatible={compat['is_compatible']} reason={compat['reason']}"
+        )
+        
+        if not compat["is_compatible"]:
+            # Build detailed error message
+            equipment_types = db.query(EquipmentType).filter(EquipmentType.id.in_(eq_ids)).all()
+            et_map = {et.id: et.name for et in equipment_types}
+            et_details = ", ".join([f"{et_id} ({et_map.get(et_id, 'Unknown')})" for et_id in sorted(eq_ids)])
+            
+            error_parts = [
+                f"Mixed equipment types are incompatible for export.",
+                f"Equipment Types: {et_details}",
+                f"Product Type IDs: {sorted(compat['product_type_ids']) if compat['product_type_ids'] else 'N/A'}",
+                f"Customization Template IDs: {sorted(compat['customization_template_ids'], key=lambda x: (x is None, x)) if compat['customization_template_ids'] else 'N/A'}"
+            ]
+            
+            if compat["missing_equipment_type_ids"]:
+                missing_names = ", ".join([
+                    f"{et_id} ({et_map.get(et_id, 'Unknown')})" 
+                    for et_id in sorted(compat["missing_equipment_type_ids"])
+                ])
+                error_parts.append(f"Missing EquipmentTypeProductType links for: {missing_names}")
+            
+            error_parts.append("Reason: " + compat["reason"])
+            
+            issues.append(ExportValidationIssue(
+                severity="error",
+                message=" | ".join(error_parts)
+            ))
+        else:
+            # Compatible - load product type and fields for further validation
+            product_type_id = list(compat["product_type_ids"])[0]
+            pt = db.query(AmazonProductType).filter(AmazonProductType.id == product_type_id).first()
+            
+            if not pt or not pt.code:
+                issues.append(ExportValidationIssue(
+                    severity="error", 
+                    message="Linked Amazon Template is invalid or missing Template Code."
+                ))
+            else:
+                # Load fields for placeholder verification
+                all_fields = db.query(ProductTypeField).filter(
+                    ProductTypeField.product_type_id == pt.id
+                ).all()
+                image_fields = [f for f in all_fields if is_image_url_field(f.field_name)]
 
     # 3. Model-Specific Checks
     MAX_HTTP_MODELS = 25
@@ -431,51 +501,54 @@ def build_export_data(request: ExportPreviewRequest, db: Session):
     # Template compatibility validation: allow mixed equipment types if they use same templates
     equipment_type_ids = set(m.equipment_type_id for m in export_models)
     
-    if len(equipment_type_ids) > 1:
-        # Check if all equipment types map to the same Product Type and Customization Template
-        links = db.query(EquipmentTypeProductType).filter(
-            EquipmentTypeProductType.equipment_type_id.in_(equipment_type_ids)
-        ).all()
-        
-        if not links:
-            raise HTTPException(
-                status_code=404,
-                detail="No Amazon templates linked to the selected equipment types."
-            )
-        
-        # Get unique product type IDs and customization template IDs
-        product_type_ids = set(link.product_type_id for link in links)
-        
-        # Also check customization templates via equipment types
+    # Use the same compatibility evaluator as validate_export
+    compat = _evaluate_equipment_type_compatibility(equipment_type_ids, db)
+    
+    # Log compatibility decision (instrumentation)
+    logger.info(
+        f"[EXPORT][BUILD_DATA] selected_models={len(export_models)} equipment_type_ids={sorted(equipment_type_ids)} "
+        f"product_type_ids={sorted(compat['product_type_ids'])} "
+        f"customization_template_ids={sorted(compat['customization_template_ids'], key=lambda x: (x is None, x))} "
+        f"missing_equipment_type_ids={sorted(compat['missing_equipment_type_ids'])} "
+        f"compatible={compat['is_compatible']} reason={compat['reason']}"
+    )
+    
+    if not compat["is_compatible"]:
+        # Build detailed error message
         equipment_types = db.query(EquipmentType).filter(EquipmentType.id.in_(equipment_type_ids)).all()
-        customization_template_ids = set(
-            et.amazon_customization_template_id for et in equipment_types 
-            if et.amazon_customization_template_id is not None
-        )
+        et_map = {et.id: et.name for et in equipment_types}
+        sorted_ids = sorted(equipment_type_ids)
+        et_details = ", ".join([f"{et_id} ({et_map.get(et_id, 'Unknown')})" for et_id in sorted_ids])
         
-        # Allow if all map to same templates
-        if len(product_type_ids) > 1 or len(customization_template_ids) > 1:
-            # Fetch names for error message
-            et_map = {et.id: et.name for et in equipment_types}
-            sorted_ids = sorted(equipment_type_ids)
-            et_details = ", ".join([f"{et_id} ({et_map.get(et_id, 'Unknown')})" for et_id in sorted_ids])
-            
-            error_detail = (
-                f"Export failed: selected models span multiple equipment types with incompatible templates. "
-                f"Selected models: {len(export_models)}. "
-                f"Equipment types: {et_details}. "
-                f"Product type IDs: {sorted(product_type_ids)}. "
-                f"Customization template IDs: {sorted(customization_template_ids)}. "
-                f"Filter to equipment types that share the same templates."
-            )
-            
-            logger.warning("[EXPORT] Incompatible templates: product_types=%s, customization=%s", product_type_ids, customization_template_ids)
-            raise HTTPException(status_code=400, detail=error_detail)
+        error_parts = [
+            f"Export failed: mixed equipment types are incompatible.",
+            f"Selected models: {len(export_models)}.",
+            f"Equipment types: {et_details}.",
+            f"Product type IDs: {sorted(compat['product_type_ids']) if compat['product_type_ids'] else 'N/A'}.",
+            f"Customization template IDs: {sorted(compat['customization_template_ids'], key=lambda x: (x is None, x)) if compat['customization_template_ids'] else 'N/A'}."
+        ]
         
-        logger.info(f"[EXPORT] Mixed equipment types allowed: all map to same templates (product_type_ids={product_type_ids}, customization_ids={customization_template_ids})")
+        if compat["missing_equipment_type_ids"]:
+            missing_names = ", ".join([
+                f"{et_id} ({et_map.get(et_id, 'Unknown')})" 
+                for et_id in sorted(compat["missing_equipment_type_ids"])
+            ])
+            error_parts.append(f"Missing EquipmentTypeProductType links for: {missing_names}.")
         
-        # Use first equipment type's link for template resolution
-        link = links[0]
+        error_parts.append(f"Reason: {compat['reason']}.")
+        error_parts.append("Filter to equipment types that share the same templates.")
+        
+        error_detail = " ".join(error_parts)
+        logger.warning("[EXPORT] Incompatible templates: %s", compat['reason'])
+        raise HTTPException(status_code=400, detail=error_detail)
+    
+    # Compatible - retrieve link for template resolution
+    if len(equipment_type_ids) > 1:
+        # Mixed but compatible - use any equipment type's link
+        equipment_type_id = list(equipment_type_ids)[0]
+        link = db.query(EquipmentTypeProductType).filter(
+            EquipmentTypeProductType.equipment_type_id == equipment_type_id
+        ).first()
     else:
         equipment_type_id = list(equipment_type_ids)[0]
         
