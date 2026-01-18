@@ -327,12 +327,26 @@ class OrderResponse(OrderBase):
 class PricingOptionBase(BaseModel):
     name: str
     price: float
+    sku_abbreviation: Optional[str] = None
+    ebay_variation_enabled: bool = False
+    linked_design_option_id: Optional[int] = None
 
 class PricingOptionCreate(PricingOptionBase):
     pass
 
+class LinkedDesignOptionDetails(BaseModel):
+    """Nested details for linked design option (for validation display)"""
+    id: int
+    name: str
+    sku_abbreviation: Optional[str] = None
+    ebay_variation_enabled: bool = False
+    
+    class Config:
+        from_attributes = True
+
 class PricingOptionResponse(PricingOptionBase):
     id: int
+    linked_design_option: Optional[LinkedDesignOptionDetails] = None
     
     class Config:
         from_attributes = True

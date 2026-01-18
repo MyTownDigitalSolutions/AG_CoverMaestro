@@ -1,7 +1,7 @@
 
 from sqlalchemy import (
     Boolean, Column, ForeignKey, Integer, String, Float, DateTime, Enum,
-    Table, UniqueConstraint, event, Index
+    Table, UniqueConstraint, event, Index, JSON
 )
 from sqlalchemy.orm import relationship
 from datetime import datetime
@@ -214,7 +214,16 @@ class PricingOption(Base):
     name = Column(String, unique=True, nullable=False)
     price = Column(Float, nullable=False)
     
+    # eBay variation SKU fields
+    sku_abbreviation = Column(String(3), nullable=True)
+    ebay_variation_enabled = Column(Boolean, default=False, nullable=False)
+    
+    # Optional mapping to design option (for features representing same real-world option)
+    linked_design_option_id = Column(Integer, ForeignKey("design_options.id"), nullable=True)
+    
+    # Relationships
     equipment_types = relationship("EquipmentTypePricingOption", back_populates="pricing_option")
+    linked_design_option = relationship("DesignOption", foreign_keys=[linked_design_option_id])
 
 class EquipmentTypePricingOption(Base):
     __tablename__ = "equipment_type_pricing_options"
@@ -545,24 +554,30 @@ class ModelVariationSKU(Base):
     __tablename__ = "model_variation_skus"
     
     id = Column(Integer, primary_key=True, index=True)
-    model_id = Column(Integer, ForeignKey("models.id", ondelete="CASCADE"), nullable=False)
-    variation_sku = Column(String(50), nullable=False)
-    material_id = Column(Integer, ForeignKey("materials.id"), nullable=True)
-    color_id = Column(Integer, ForeignKey("material_colour_surcharges.id"), nullable=True)
-    design_option_ids = Column(String, nullable=True)  # JSON array as string
+    model_id = Column(Integer, ForeignKey("models.id", ondelete="CASCADE"), nullable=False, index=True)
+    sku = Column(String, nullable=False, unique=True, index=True)
+    
+    # Variation components
+    material_id = Column(Integer, ForeignKey("materials.id"), nullable=False)
+    material_colour_surcharge_id = Column(Integer, ForeignKey("material_colour_surcharges.id"), nullable=True)
+    
+    # Stored as JSON arrays
+    design_option_ids = Column(JSON, nullable=False, default=list)
+    pricing_option_ids = Column(JSON, nullable=False, default=list)
+    
+    # Legacy/additional fields
     is_parent = Column(Boolean, default=False, nullable=False)
     retail_price_cents = Column(Integer, nullable=True)
+    
+    # Timestamps
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
     
+    # Relationships
     model = relationship("Model", back_populates="variation_skus")
     material = relationship("Material")
-    color = relationship("MaterialColourSurcharge")
-    
-    __table_args__ = (
-        UniqueConstraint('model_id', 'variation_sku', name='uq_model_variation_sku'),
-        Index('ix_model_variation_skus_model_id', 'model_id'),
-    )
+    material_colour_surcharge = relationship("MaterialColourSurcharge")
+
 
 # Post-class relationship definitions to handle forward references
 EquipmentType.pricing_options = relationship("EquipmentTypePricingOption", back_populates="equipment_type", cascade="all, delete-orphan")

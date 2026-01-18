@@ -1,6 +1,6 @@
 import axios from 'axios'
 import type {
-  Manufacturer, Series, EquipmentType, Model, Material,
+  Manufacturer, Series, EquipmentType, Model, Material, MaterialColourSurcharge,
   Customer, Order, PricingOption, PricingResult, AmazonProductType,
   EnumValue, ProductTypeField, ProductTypeFieldValue, DesignOption,
   Supplier, SupplierMaterial, SupplierMaterialWithSupplier, SupplierMaterialWithMaterial,
@@ -128,6 +128,9 @@ export const materialsApi = {
     api.patch(`/materials/${materialId}/set-preferred-supplier`, { supplier_id: supplierId }).then(r => r.data),
   getPreferredSupplier: (id: number) =>
     api.get<{ preferred_supplier: string | null; supplier_id?: number; unit_cost: number | null }>(`/materials/${id}/preferred-supplier`).then(r => r.data),
+  listSurcharges: (id: number) => api.get<MaterialColourSurcharge[]>(`/materials/${id}/surcharges`).then(r => r.data),
+  createSurcharge: (data: Partial<MaterialColourSurcharge>) => api.post<MaterialColourSurcharge>('/materials/surcharges', data).then(r => r.data),
+  deleteSurcharge: (id: number) => api.delete(`/materials/surcharges/${id}`),
 }
 
 export const suppliersApi = {
@@ -505,6 +508,36 @@ export const ebayTemplatesApi = {
   previewCurrentTemplate: () => api.get<EbayTemplatePreviewResponse>('/ebay-templates/current/preview').then(r => r.data),
   getCurrentIntegrity: () => api.get<EbayTemplateIntegrityResponse>('/ebay-templates/current/integrity').then(r => r.data),
   getCurrentVerification: () => api.get<EbayTemplateVerificationResponse>('/ebay-templates/current/verify').then(r => r.data),
+}
+
+// eBay Variations API
+export interface GenerateVariationsRequest {
+  model_ids: number[]
+  material_id: number
+  material_colour_surcharge_id?: number | null
+  design_option_ids: number[]
+  pricing_option_ids: number[]
+}
+
+export interface VariationRow {
+  model_id: number
+  sku: string
+  material_id: number
+  material_colour_surcharge_id: number | null
+  design_option_ids: number[]
+  pricing_option_ids: number[]
+}
+
+export interface GenerateVariationsResponse {
+  created: number
+  updated: number
+  errors: string[]
+  rows: VariationRow[]
+}
+
+export const ebayVariationsApi = {
+  generate: (data: GenerateVariationsRequest) =>
+    api.post<GenerateVariationsResponse>('/ebay-variations/generate', data).then(r => r.data)
 }
 
 export default api

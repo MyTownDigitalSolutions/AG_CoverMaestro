@@ -4,15 +4,16 @@ import {
   Box, Typography, Paper, Button, TextField, Dialog, DialogTitle,
   DialogContent, DialogActions, Grid, IconButton, Table, TableBody,
   TableCell, TableContainer, TableHead, TableRow, Chip, Alert,
-  FormControl, InputLabel, Select, MenuItem, Radio
+  FormControl, InputLabel, Select, MenuItem, Radio, Checkbox
 } from '@mui/material'
 import DeleteIcon from '@mui/icons-material/Delete'
 import EditIcon from '@mui/icons-material/Edit'
 import AddIcon from '@mui/icons-material/Add'
 import LocalShippingIcon from '@mui/icons-material/LocalShipping'
 import StarIcon from '@mui/icons-material/Star'
-import { materialsApi, suppliersApi } from '../services/api'
-import type { Material, Supplier, SupplierMaterialWithSupplier, MaterialType, UnitOfMeasure } from '../types'
+import PaletteIcon from '@mui/icons-material/Palette'
+import { materialsApi, suppliersApi, settingsApi } from '../services/api'
+import type { Material, Supplier, SupplierMaterialWithSupplier, MaterialType, UnitOfMeasure, MaterialColourSurcharge, MaterialRoleAssignment } from '../types'
 import { MaterialRoleSettings } from '../components/settings/MaterialRoleSettings'
 import { Divider } from '@mui/material'
 
@@ -60,6 +61,21 @@ export default function MaterialsPage() {
   const [addSupplierDialogOpen, setAddSupplierDialogOpen] = useState(false)
   const [newSupplierLink, setNewSupplierLink] = useState({ supplier_id: 0, unit_cost: 0, shipping_cost: 0, quantity_purchased: 1 })
 
+  // Color surcharge state
+  const [surchargeDialogOpen, setSurchargeDialogOpen] = useState(false)
+  const [surcharges, setSurcharges] = useState<MaterialColourSurcharge[]>([])
+  const [selectedMaterialForSurcharge, setSelectedMaterialForSurcharge] = useState<Material | null>(null)
+  const [surchargeFormData, setSurchargeFormData] = useState({
+    colour: '',
+    surcharge: 0,
+    color_friendly_name: '',
+    sku_abbreviation: '',
+    ebay_variation_enabled: false
+  })
+
+  // Material role assignments state
+  const [materialRoles, setMaterialRoles] = useState<MaterialRoleAssignment[]>([])
+
   // Delete confirmation state
   const [deleteConfirmationOpen, setDeleteConfirmationOpen] = useState(false)
   const [materialToDelete, setMaterialToDelete] = useState<number | null>(null)
@@ -71,14 +87,23 @@ export default function MaterialsPage() {
     linear_yard_width: 54 as number | undefined,
     weight_per_linear_yard: 0 as number | undefined,
     unit_of_measure: 'yard' as UnitOfMeasure | undefined,
-    package_quantity: undefined as number | undefined
+    package_quantity: undefined as number | undefined,
+    sku_abbreviation: '' as string | undefined,
+    ebay_variation_enabled: false
   })
 
   const loadMaterials = async () => {
-    const data = await materialsApi.list()
-    setMaterials(data)
+    try {
+      const [data, roles] = await Promise.all([
+        materialsApi.list(),
+        settingsApi.listMaterialRoles(false) // Get active roles only
+      ])
+      setMaterials(data)
+      setMaterialRoles(roles)
+    } catch (err: any) {
+      setError(err.message || 'Failed to load materials')
+    }
   }
-
   const loadSuppliers = async () => {
     const data = await suppliersApi.list()
     setSuppliers(data)
@@ -131,7 +156,9 @@ export default function MaterialsPage() {
       linear_yard_width: 54,
       weight_per_linear_yard: 0,
       unit_of_measure: 'yard' as UnitOfMeasure,
-      package_quantity: undefined
+      package_quantity: undefined,
+      sku_abbreviation: '',
+      ebay_variation_enabled: false
     })
     setEditingMaterial(null)
   }
@@ -145,7 +172,9 @@ export default function MaterialsPage() {
       linear_yard_width: material.linear_yard_width,
       weight_per_linear_yard: material.weight_per_linear_yard,
       unit_of_measure: material.unit_of_measure,
-      package_quantity: material.package_quantity
+      package_quantity: material.package_quantity,
+      sku_abbreviation: material.sku_abbreviation || '',
+      ebay_variation_enabled: material.ebay_variation_enabled || false
     })
     setDialogOpen(true)
   }
@@ -209,6 +238,51 @@ export default function MaterialsPage() {
     s => !materialSuppliers.some(ms => ms.supplier_id === s.id)
   )
 
+  const openSurchargeDialog = async (material: Material) => {
+    setSelectedMaterialForSurcharge(material)
+    try {
+      const data = await materialsApi.listSurcharges(material.id)
+      setSurcharges(data)
+      setSurchargeDialogOpen(true)
+    } catch (err) {
+      setError('Failed to load surcharges for this material')
+    }
+  }
+
+  const handleAddSurcharge = async () => {
+    if (!selectedMaterialForSurcharge) return
+    try {
+      await materialsApi.createSurcharge({
+        material_id: selectedMaterialForSurcharge.id,
+        ...surchargeFormData
+      })
+      const data = await materialsApi.listSurcharges(selectedMaterialForSurcharge.id)
+      setSurcharges(data)
+      setSurchargeFormData({
+        colour: '',
+        surcharge: 0,
+        color_friendly_name: '',
+        sku_abbreviation: '',
+        ebay_variation_enabled: false
+      })
+    } catch (err: any) {
+      setError(err.response?.data?.detail || 'Failed to add color surcharge')
+    }
+  }
+
+  const handleDeleteSurcharge = async (surchargeId: number) => {
+    if (!window.confirm('Delete this color surcharge?')) return
+    try {
+      await materialsApi.deleteSurcharge(surchargeId)
+      if (selectedMaterialForSurcharge) {
+        const data = await materialsApi.listSurcharges(selectedMaterialForSurcharge.id)
+        setSurcharges(data)
+      }
+    } catch (err: any) {
+      setError(err.response?.data?.detail || 'Failed to delete surcharge')
+    }
+  }
+
   return (
     <Box>
       <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 3 }}>
@@ -269,6 +343,13 @@ export default function MaterialsPage() {
                   <TableCell>{isFabric ? weightPerSqIn.toFixed(4) : '-'}</TableCell>
                   <TableCell>{!isFabric && material.package_quantity ? material.package_quantity : '-'}</TableCell>
                   <TableCell>
+                    <IconButton
+                      onClick={() => openSurchargeDialog(material)}
+                      title="Manage Color Surcharges"
+                      color="secondary"
+                    >
+                      <PaletteIcon />
+                    </IconButton>
                     <IconButton
                       onClick={() => openSupplierDialog(material)}
                       title="Manage Suppliers"
@@ -385,6 +466,59 @@ export default function MaterialsPage() {
                   />
                 </Grid>
               </>
+            )}
+            <Grid item xs={6}>
+              <TextField
+                fullWidth
+                label="SKU Abbreviation"
+                value={formData.sku_abbreviation || ''}
+                onChange={(e) => setFormData({ ...formData, sku_abbreviation: e.target.value })}
+                inputProps={{ maxLength: 3 }}
+                helperText="Max 3 characters for eBay variation SKUs"
+              />
+            </Grid>
+            <Grid item xs={6}>
+              <FormControl fullWidth sx={{ mt: 1 }}>
+                <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                  <Checkbox
+                    checked={formData.ebay_variation_enabled}
+                    onChange={(e) => setFormData({ ...formData, ebay_variation_enabled: e.target.checked })}
+                  />
+                  <Typography>eBay Variation Enabled</Typography>
+                </Box>
+              </FormControl>
+            </Grid>
+
+            {/* Active Role Assignments (Read-Only) */}
+            {editingMaterial && (
+              <Grid item xs={12}>
+                <Divider sx={{ my: 2 }} />
+                <Typography variant="subtitle2" gutterBottom>
+                  Active Role Assignments
+                </Typography>
+                {materialRoles.filter(r => r.material_id === editingMaterial.id && (!r.end_date || new Date(r.end_date) > new Date())).length > 0 ? (
+                  <Box sx={{ pl: 2 }}>
+                    {materialRoles
+                      .filter(r => r.material_id === editingMaterial.id && (!r.end_date || new Date(r.end_date) > new Date()))
+                      .map(role => (
+                        <Typography key={role.id} variant="body2" color="text.secondary">
+                          • {role.role} (effective {new Date(role.effective_date).toLocaleDateString()})
+                        </Typography>
+                      ))}
+                  </Box>
+                ) : (
+                  <Typography variant="body2" color="text.secondary" sx={{ pl: 2 }}>
+                    No active role assignments
+                  </Typography>
+                )}
+                <Button
+                  size="small"
+                  sx={{ mt: 1 }}
+                  onClick={() => window.location.href = '/settings#material-roles'}
+                >
+                  Manage Role Assignments
+                </Button>
+              </Grid>
             )}
           </Grid>
         </DialogContent>
@@ -582,6 +716,131 @@ export default function MaterialsPage() {
           <Button onClick={handleConfirmDelete} color="error" variant="contained" autoFocus>
             Delete
           </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Color Surcharge Management Dialog */}
+      <Dialog
+        open={surchargeDialogOpen}
+        onClose={() => setSurchargeDialogOpen(false)}
+        maxWidth="md"
+        fullWidth
+      >
+        <DialogTitle>
+          Color Surcharges for {selectedMaterialForSurcharge?.name}
+        </DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+            Define color variations and pricing surcharges for this material.
+          </Typography>
+
+          <TableContainer component={Paper} variant="outlined" sx={{ mb: 2 }}>
+            <Table size="small">
+              <TableHead>
+                <TableRow>
+                  <TableCell>Color</TableCell>
+                  <TableCell>Friendly Name</TableCell>
+                  <TableCell>Surcharge</TableCell>
+                  <TableCell>SKU Abbrev</TableCell>
+                  <TableCell>eBay Var</TableCell>
+                  <TableCell width={80}>Actions</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {surcharges.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={6} align="center">
+                      <Typography color="text.secondary">No color surcharges defined</Typography>
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  surcharges.map(sc => (
+                    <TableRow key={sc.id}>
+                      <TableCell>{sc.colour}</TableCell>
+                      <TableCell>{sc.color_friendly_name || '-'}</TableCell>
+                      <TableCell>${sc.surcharge.toFixed(2)}</TableCell>
+                      <TableCell>{sc.sku_abbreviation || '-'}</TableCell>
+                      <TableCell>{sc.ebay_variation_enabled ? '✓' : '-'}</TableCell>
+                      <TableCell>
+                        <IconButton
+                          size="small"
+                          color="error"
+                          onClick={() => handleDeleteSurcharge(sc.id)}
+                        >
+                          <DeleteIcon fontSize="small" />
+                        </IconButton>
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          </TableContainer>
+
+          <Typography variant="h6" gutterBottom sx={{ mt: 2 }}>Add Color Surcharge</Typography>
+          <Grid container spacing={2}>
+            <Grid item xs={6}>
+              <TextField
+                fullWidth
+                label="Color Name (Internal)"
+                value={surchargeFormData.colour}
+                onChange={(e) => setSurchargeFormData({ ...surchargeFormData, colour: e.target.value })}
+                helperText="Internal color identifier"
+              />
+            </Grid>
+            <Grid item xs={6}>
+              <TextField
+                fullWidth
+                label="Friendly Display Name"
+                value={surchargeFormData.color_friendly_name}
+                onChange={(e) => setSurchargeFormData({ ...surchargeFormData, color_friendly_name: e.target.value })}
+                helperText="Customer-facing name"
+              />
+            </Grid>
+            <Grid item xs={4}>
+              <TextField
+                fullWidth
+                type="number"
+                label="Surcharge ($)"
+                value={surchargeFormData.surcharge}
+                onChange={(e) => setSurchargeFormData({ ...surchargeFormData, surcharge: parseFloat(e.target.value) || 0 })}
+              />
+            </Grid>
+            <Grid item xs={4}>
+              <TextField
+                fullWidth
+                label="SKU Abbreviation"
+                value={surchargeFormData.sku_abbreviation}
+                onChange={(e) => setSurchargeFormData({ ...surchargeFormData, sku_abbreviation: e.target.value })}
+                inputProps={{ maxLength: 3 }}
+                helperText="Max 3 chars for eBay SKUs"
+              />
+            </Grid>
+            <Grid item xs={4}>
+              <FormControl fullWidth sx={{ mt: 1 }}>
+                <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                  <Checkbox
+                    checked={surchargeFormData.ebay_variation_enabled}
+                    onChange={(e) => setSurchargeFormData({ ...surchargeFormData, ebay_variation_enabled: e.target.checked })}
+                  />
+                  <Typography>eBay Variation</Typography>
+                </Box>
+              </FormControl>
+            </Grid>
+            <Grid item xs={12}>
+              <Button
+                variant="contained"
+                startIcon={<AddIcon />}
+                onClick={handleAddSurcharge}
+                disabled={!surchargeFormData.colour.trim()}
+              >
+                Add Surcharge
+              </Button>
+            </Grid>
+          </Grid>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setSurchargeDialogOpen(false)}>Close</Button>
         </DialogActions>
       </Dialog>
     </Box>

@@ -21,6 +21,8 @@ export default function DesignOptionsPage() {
   const [customOptionType, setCustomOptionType] = useState('')
   const [isPricingRelevant, setIsPricingRelevant] = useState(false)
   const [equipmentTypeIds, setEquipmentTypeIds] = useState<number[]>([])
+  const [skuAbbreviation, setSkuAbbreviation] = useState('')
+  const [ebayVariationEnabled, setEbayVariationEnabled] = useState(false)
 
   const loadData = async () => {
     const [doData, etData] = await Promise.all([
@@ -52,6 +54,8 @@ export default function DesignOptionsPage() {
 
       setEquipmentTypeIds(option.equipment_type_ids || [])
       setIsPricingRelevant(option.is_pricing_relevant || false)
+      setSkuAbbreviation(option.sku_abbreviation || '')
+      setEbayVariationEnabled(option.ebay_variation_enabled || false)
     } else {
       setEditing(null)
       setName('')
@@ -60,6 +64,8 @@ export default function DesignOptionsPage() {
       setCustomOptionType('')
       setEquipmentTypeIds([])
       setIsPricingRelevant(false)
+      setSkuAbbreviation('')
+      setEbayVariationEnabled(false)
     }
     setDialogOpen(true)
   }
@@ -83,7 +89,9 @@ export default function DesignOptionsPage() {
       description: description || undefined,
       option_type: finalOptionType,
       is_pricing_relevant: isPricingRelevant,
-      equipment_type_ids: equipmentTypeIds
+      equipment_type_ids: equipmentTypeIds,
+      sku_abbreviation: skuAbbreviation || undefined,
+      ebay_variation_enabled: ebayVariationEnabled
     }
     if (editing) {
       await designOptionsApi.update(editing.id, data)
@@ -237,6 +245,21 @@ export default function DesignOptionsPage() {
             rows={2}
             value={description}
             onChange={(e) => setDescription(e.target.value)}
+          />
+
+          <TextField
+            margin="dense"
+            label="SKU Abbreviation"
+            fullWidth
+            value={skuAbbreviation}
+            onChange={(e) => setSkuAbbreviation(e.target.value)}
+            inputProps={{ maxLength: 3 }}
+            helperText="Max 3 characters for eBay variation SKUs"
+          />
+
+          <FormControlLabel
+            control={<Switch checked={ebayVariationEnabled} onChange={(e) => setEbayVariationEnabled(e.target.checked)} />}
+            label="eBay Variation Enabled"
           />
         </DialogContent>
         <DialogActions>

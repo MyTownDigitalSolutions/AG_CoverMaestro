@@ -44,6 +44,8 @@ export interface DesignOption {
   option_type: string
   is_pricing_relevant: boolean
   equipment_type_ids?: number[]
+  sku_abbreviation?: string
+  ebay_variation_enabled?: boolean
 }
 
 export interface MarketplaceListing {
@@ -113,6 +115,8 @@ export interface Material {
   unit_of_measure?: UnitOfMeasure
   package_quantity?: number
   cost_per_linear_yard?: number
+  sku_abbreviation?: string
+  ebay_variation_enabled?: boolean
 }
 
 export interface MaterialColourSurcharge {
@@ -120,6 +124,9 @@ export interface MaterialColourSurcharge {
   material_id: number
   colour: string
   surcharge: number
+  color_friendly_name?: string
+  sku_abbreviation?: string
+  ebay_variation_enabled?: boolean
 }
 
 export interface Supplier {
@@ -190,6 +197,15 @@ export interface PricingOption {
   id: number
   name: string
   price: number
+  sku_abbreviation?: string
+  ebay_variation_enabled?: boolean
+  linked_design_option_id?: number | null
+  linked_design_option?: {
+    id: number
+    name: string
+    sku_abbreviation?: string
+    ebay_variation_enabled?: boolean
+  } | null
 }
 
 export interface PricingResult {
