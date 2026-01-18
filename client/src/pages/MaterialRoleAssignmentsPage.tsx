@@ -19,11 +19,14 @@ interface MaterialRoleConfig {
     id: number
     role: string
     display_name: string | null
+    sku_abbrev_no_padding?: string
+    sku_abbrev_with_padding?: string
 }
 
 interface Material {
     id: number
     name: string
+    sku_abbreviation?: string
 }
 
 export default function MaterialRoleAssignmentsPage() {
@@ -65,6 +68,41 @@ export default function MaterialRoleAssignmentsPage() {
     const getMaterialName = (materialId: number) => {
         const material = materials.find(m => m.id === materialId)
         return material?.name || `Material #${materialId}`
+    }
+
+    // Helper to format role SKU pair (noPad, withPad)
+    const formatRoleSkuPair = (noPad?: string, withPad?: string): string => {
+        const validateAbbrev = (abbrev?: string): string | null => {
+            const trimmed = abbrev?.trim()
+            if (!trimmed) return null
+            if (trimmed.length > 3) return `${trimmed} (>3)`
+            return trimmed
+        }
+
+        const validNoPad = validateAbbrev(noPad)
+        const validWithPad = validateAbbrev(withPad)
+
+        if (validNoPad && validWithPad && validNoPad !== validWithPad) {
+            return `${validNoPad}, ${validWithPad}`
+        }
+        if (validNoPad) return validNoPad
+        if (validWithPad) return validWithPad
+        return '-'
+    }
+
+    const getMaterialSku = (materialId: number, role: string) => {
+        // Try to use role config abbreviations first
+        const roleConfig = roleConfigs.find(rc => rc.role === role)
+        if (roleConfig) {
+            return formatRoleSkuPair(roleConfig.sku_abbrev_no_padding, roleConfig.sku_abbrev_with_padding)
+        }
+
+        // Fallback to material's own abbreviation
+        const material = materials.find(m => m.id === materialId)
+        const abbrev = material?.sku_abbreviation?.trim()
+        if (!abbrev) return '-'
+        if (abbrev.length > 3) return `${abbrev} (>3)`
+        return abbrev
     }
 
     const getRoleDisplay = (role: string) => {
@@ -215,6 +253,7 @@ export default function MaterialRoleAssignmentsPage() {
                         <TableRow>
                             <TableCell>Role</TableCell>
                             <TableCell>Material</TableCell>
+                            <TableCell>Material SKU</TableCell>
                             <TableCell>Effective Date</TableCell>
                             <TableCell>Created</TableCell>
                             <TableCell align="right">Actions</TableCell>
@@ -227,6 +266,7 @@ export default function MaterialRoleAssignmentsPage() {
                                     <Typography variant="body2">{getRoleDisplay(assignment.role)}</Typography>
                                 </TableCell>
                                 <TableCell>{getMaterialName(assignment.material_id)}</TableCell>
+                                <TableCell>{getMaterialSku(assignment.material_id, assignment.role)}</TableCell>
                                 <TableCell>{formatDate(assignment.effective_date)}</TableCell>
                                 <TableCell>{formatDate(assignment.created_at)}</TableCell>
                                 <TableCell align="right">
@@ -244,7 +284,7 @@ export default function MaterialRoleAssignmentsPage() {
 
                         {activeAssignments.length === 0 && (
                             <TableRow>
-                                <TableCell colSpan={5} align="center">
+                                <TableCell colSpan={6} align="center">
                                     No active assignments.
                                 </TableCell>
                             </TableRow>
@@ -261,6 +301,7 @@ export default function MaterialRoleAssignmentsPage() {
                         <TableRow>
                             <TableCell>Role</TableCell>
                             <TableCell>Material</TableCell>
+                            <TableCell>Material SKU</TableCell>
                             <TableCell>Effective Date</TableCell>
                             <TableCell>End Date</TableCell>
                             <TableCell>Created</TableCell>
@@ -276,6 +317,7 @@ export default function MaterialRoleAssignmentsPage() {
                                     <Typography variant="body2">{getRoleDisplay(assignment.role)}</Typography>
                                 </TableCell>
                                 <TableCell>{getMaterialName(assignment.material_id)}</TableCell>
+                                <TableCell>{getMaterialSku(assignment.material_id, assignment.role)}</TableCell>
                                 <TableCell>{formatDate(assignment.effective_date)}</TableCell>
                                 <TableCell>
                                     {assignment.end_date ? (
@@ -290,7 +332,7 @@ export default function MaterialRoleAssignmentsPage() {
 
                         {allAssignments.length === 0 && (
                             <TableRow>
-                                <TableCell colSpan={5} align="center">
+                                <TableCell colSpan={6} align="center">
                                     No assignment history.
                                 </TableCell>
                             </TableRow>

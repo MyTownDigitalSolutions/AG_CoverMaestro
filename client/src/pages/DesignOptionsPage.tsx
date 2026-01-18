@@ -23,6 +23,7 @@ export default function DesignOptionsPage() {
   const [equipmentTypeIds, setEquipmentTypeIds] = useState<number[]>([])
   const [skuAbbreviation, setSkuAbbreviation] = useState('')
   const [ebayVariationEnabled, setEbayVariationEnabled] = useState(false)
+  const [price, setPrice] = useState<string>('0')
 
   const loadData = async () => {
     const [doData, etData] = await Promise.all([
@@ -56,6 +57,7 @@ export default function DesignOptionsPage() {
       setIsPricingRelevant(option.is_pricing_relevant || false)
       setSkuAbbreviation(option.sku_abbreviation || '')
       setEbayVariationEnabled(option.ebay_variation_enabled || false)
+      setPrice(((option.price_cents || 0) / 100).toFixed(2))
     } else {
       setEditing(null)
       setName('')
@@ -66,6 +68,7 @@ export default function DesignOptionsPage() {
       setIsPricingRelevant(false)
       setSkuAbbreviation('')
       setEbayVariationEnabled(false)
+      setPrice('0')
     }
     setDialogOpen(true)
   }
@@ -84,6 +87,12 @@ export default function DesignOptionsPage() {
       }
     }
 
+    const priceCents = Math.round(parseFloat(price) * 100)
+    if (isNaN(priceCents) || priceCents < 0) {
+      alert('Price must be a valid non-negative number')
+      return
+    }
+
     const data = {
       name,
       description: description || undefined,
@@ -91,8 +100,10 @@ export default function DesignOptionsPage() {
       is_pricing_relevant: isPricingRelevant,
       equipment_type_ids: equipmentTypeIds,
       sku_abbreviation: skuAbbreviation || undefined,
-      ebay_variation_enabled: ebayVariationEnabled
+      ebay_variation_enabled: ebayVariationEnabled,
+      price_cents: priceCents
     }
+
     if (editing) {
       await designOptionsApi.update(editing.id, data)
     } else {
@@ -135,6 +146,7 @@ export default function DesignOptionsPage() {
             <TableRow>
               <TableCell>Name</TableCell>
               <TableCell>Type</TableCell>
+              <TableCell align="right">Price</TableCell>
               <TableCell>Description</TableCell>
               <TableCell align="right">Actions</TableCell>
             </TableRow>
@@ -144,6 +156,7 @@ export default function DesignOptionsPage() {
               <TableRow key={option.id}>
                 <TableCell>{option.name}</TableCell>
                 <TableCell><Chip label={option.option_type} size="small" /></TableCell>
+                <TableCell align="right">${(option.price_cents / 100).toFixed(2)}</TableCell>
                 <TableCell>{option.description || '-'}</TableCell>
                 <TableCell align="right">
                   <IconButton onClick={() => handleOpenDialog(option)} size="small">
@@ -236,6 +249,19 @@ export default function DesignOptionsPage() {
           <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: -1, ml: 4, mb: 1 }}>
             If enabled, this option may later affect cost calculations.
           </Typography>
+
+          <TextField
+            margin="dense"
+            label="Price (Add-on)"
+            fullWidth
+            type="number"
+            inputProps={{ step: "0.01", min: "0" }}
+            value={price}
+            onChange={(e) => setPrice(e.target.value)}
+            InputProps={{
+              startAdornment: <Typography sx={{ mr: 1 }}>$</Typography>
+            }}
+          />
 
           <TextField
             margin="dense"

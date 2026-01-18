@@ -270,6 +270,15 @@ export interface MaterialRoleAssignment {
   created_at: string
 }
 
+export interface MaterialRoleConfig {
+  id: number
+  role: string
+  display_name: string | null
+  sku_abbrev_no_padding: string | null
+  sku_abbrev_with_padding: string | null
+  ebay_variation_enabled: boolean
+}
+
 export interface ShippingZone {
   id: number
   code: string

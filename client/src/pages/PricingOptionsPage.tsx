@@ -89,17 +89,19 @@ export default function PricingOptionsPage() {
     const warnings: string[] = []
     const linkedDO = option.linked_design_option
 
-    // Check if pricing option enabled but abbrev missing/invalid
+    // Check if pricing option enabled but abbrev missing/invalid (1-3 chars)
     if (option.ebay_variation_enabled) {
-      if (!option.sku_abbreviation || option.sku_abbreviation.length !== 3) {
-        warnings.push('PO missing abbrev')
+      const abbrev = option.sku_abbreviation?.trim()
+      if (!abbrev || abbrev.length < 1 || abbrev.length > 3) {
+        warnings.push('PO abbrev invalid')
       }
     }
 
-    // Check if linked design option enabled but abbrev missing/invalid
+    // Check if linked design option enabled but abbrev missing/invalid (1-3 chars)
     if (linkedDO.ebay_variation_enabled) {
-      if (!linkedDO.sku_abbreviation || linkedDO.sku_abbreviation.length !== 3) {
-        warnings.push('DO missing abbrev')
+      const abbrev = linkedDO.sku_abbreviation?.trim()
+      if (!abbrev || abbrev.length < 1 || abbrev.length > 3) {
+        warnings.push('DO abbrev invalid')
       }
     }
 
@@ -200,19 +202,22 @@ export default function PricingOptionsPage() {
             type="number"
             fullWidth
             value={price}
+            disabled={!!linkedDesignOptionId}
             onChange={(e) => setPrice(e.target.value)}
             InputProps={{
               startAdornment: <InputAdornment position="start">$</InputAdornment>
             }}
+            helperText={linkedDesignOptionId ? "Price is managed on the linked Product Design Option" : undefined}
           />
           <TextField
             margin="dense"
             label="SKU Abbreviation"
             fullWidth
             value={skuAbbreviation}
-            onChange={(e) => setSkuAbbreviation(e.target.value)}
+            onChange={(e) => setSkuAbbreviation(e.target.value.toUpperCase())}
             inputProps={{ maxLength: 3 }}
-            helperText="Max 3 characters for eBay variation SKUs"
+            placeholder="ABC"
+            helperText="For eBay variations: 1-3 uppercase characters max"
           />
           <FormControlLabel
             control={

@@ -265,6 +265,7 @@ class DesignOption(Base):
     description = Column(String, nullable=True)
     option_type = Column(String, nullable=False, index=True)
     is_pricing_relevant = Column(Boolean, nullable=False, default=False, server_default="false")
+    price_cents = Column(Integer, nullable=False, default=0, server_default="0")
     
     # eBay variation SKU fields
     sku_abbreviation = Column(String(3), nullable=True)

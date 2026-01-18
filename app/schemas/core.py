@@ -398,12 +398,14 @@ class DesignOptionBase(BaseModel):
     equipment_type_ids: List[int] = []
     sku_abbreviation: Optional[str] = None
     ebay_variation_enabled: bool = False
+    price_cents: int = 0
 
 class DesignOptionCreate(DesignOptionBase):
     pass
 
 class DesignOptionResponse(DesignOptionBase):
     id: int
+    price_cents: int
     
     class Config:
         from_attributes = True

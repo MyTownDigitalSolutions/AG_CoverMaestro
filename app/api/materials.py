@@ -102,6 +102,35 @@ def create_surcharge(data: MaterialColourSurchargeCreate, db: Session = Depends(
     db.refresh(surcharge)
     return surcharge
 
+@router.put("/surcharges/{id}", response_model=MaterialColourSurchargeResponse)
+def update_surcharge(id: int, data: MaterialColourSurchargeCreate, db: Session = Depends(get_db)):
+    surcharge = db.query(MaterialColourSurcharge).filter(MaterialColourSurcharge.id == id).first()
+    if not surcharge:
+        raise HTTPException(status_code=404, detail="Surcharge not found")
+    
+    # Check for duplicate colour name within the same material, excluding current record
+    existing = db.query(MaterialColourSurcharge).filter(
+        MaterialColourSurcharge.material_id == surcharge.material_id,
+        MaterialColourSurcharge.colour == data.colour,
+        MaterialColourSurcharge.id != id
+    ).first()
+    
+    if existing:
+        raise HTTPException(
+            status_code=400, 
+            detail=f"Color '{data.colour}' already exists for this material"
+        )
+
+    surcharge.colour = data.colour
+    surcharge.surcharge = data.surcharge
+    surcharge.color_friendly_name = data.color_friendly_name
+    surcharge.sku_abbreviation = data.sku_abbreviation
+    surcharge.ebay_variation_enabled = data.ebay_variation_enabled
+    
+    db.commit()
+    db.refresh(surcharge)
+    return surcharge
+
 @router.get("/{id}/suppliers", response_model=List[SupplierMaterialWithSupplierResponse])
 def list_material_suppliers(id: int, db: Session = Depends(get_db)):
     """Get all suppliers who provide this material with their pricing."""
