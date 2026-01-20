@@ -1,7 +1,7 @@
 from pydantic import BaseModel
-from typing import Optional, List, Dict, Union
+from typing import Optional, List, Dict, Union, Any
 from datetime import datetime
-from app.models.enums import HandleLocation, AngleType, Carrier, Marketplace, MaterialType, UnitOfMeasure
+from app.models.enums import HandleLocation, AngleType, Carrier, Marketplace, MaterialType, UnitOfMeasure, OrderSource, NormalizedOrderStatus
 
 class ManufacturerBase(BaseModel):
     name: str
@@ -726,3 +726,182 @@ class MaterialRoleAssignmentResponse(MaterialRoleAssignmentBase):
         from_attributes = True
 
 
+# ============================================================
+# Marketplace Order Import Schemas (Canonical Import Tables)
+# ============================================================
+
+# --- MarketplaceImportRun ---
+
+class MarketplaceImportRunBase(BaseModel):
+    marketplace: Marketplace
+    external_store_id: Optional[str] = None
+    started_at: datetime
+    finished_at: Optional[datetime] = None
+    status: str  # success | partial | failed
+    orders_fetched: int = 0
+    orders_upserted: int = 0
+    errors_count: int = 0
+    error_summary: Optional[Dict[str, Any]] = None
+
+class MarketplaceImportRunCreate(MarketplaceImportRunBase):
+    pass
+
+class MarketplaceImportRunResponse(MarketplaceImportRunBase):
+    id: int
+
+    class Config:
+        from_attributes = True
+
+
+# --- MarketplaceOrderAddress ---
+
+class MarketplaceOrderAddressBase(BaseModel):
+    address_type: str  # shipping | billing
+    name: Optional[str] = None
+    phone: Optional[str] = None
+    company: Optional[str] = None
+    line1: Optional[str] = None
+    line2: Optional[str] = None
+    city: Optional[str] = None
+    state_or_region: Optional[str] = None
+    postal_code: Optional[str] = None
+    country_code: Optional[str] = None
+    raw_payload: Optional[Dict[str, Any]] = None
+
+class MarketplaceOrderAddressCreate(MarketplaceOrderAddressBase):
+    pass
+
+class MarketplaceOrderAddressResponse(MarketplaceOrderAddressBase):
+    id: int
+    order_id: int
+
+    class Config:
+        from_attributes = True
+
+
+# --- MarketplaceOrderLine ---
+
+class MarketplaceOrderLineBase(BaseModel):
+    external_line_item_id: Optional[str] = None
+    marketplace_item_id: Optional[str] = None
+    sku: Optional[str] = None
+    asin: Optional[str] = None
+    listing_id: Optional[str] = None
+    product_id: Optional[str] = None
+    title: Optional[str] = None
+    variant: Optional[str] = None
+    quantity: int
+    currency_code: Optional[str] = None
+    unit_price_cents: Optional[int] = None
+    line_subtotal_cents: Optional[int] = None
+    tax_cents: Optional[int] = None
+    discount_cents: Optional[int] = None
+    line_total_cents: Optional[int] = None
+    fulfillment_status_raw: Optional[str] = None
+    fulfillment_status_normalized: Optional[str] = None
+    model_id: Optional[int] = None
+    customization_data: Optional[Dict[str, Any]] = None
+    raw_marketplace_data: Optional[Dict[str, Any]] = None
+
+class MarketplaceOrderLineCreate(MarketplaceOrderLineBase):
+    pass
+
+class MarketplaceOrderLineUpdate(BaseModel):
+    model_id: Optional[int] = None
+    fulfillment_status_normalized: Optional[str] = None
+
+class MarketplaceOrderLineResponse(MarketplaceOrderLineBase):
+    id: int
+    order_id: int
+
+    class Config:
+        from_attributes = True
+
+
+# --- MarketplaceOrderShipment ---
+
+class MarketplaceOrderShipmentBase(BaseModel):
+    external_shipment_id: Optional[str] = None
+    carrier: Optional[str] = None
+    service: Optional[str] = None
+    tracking_number: Optional[str] = None
+    shipped_at: Optional[datetime] = None
+    delivered_at: Optional[datetime] = None
+    raw_marketplace_data: Optional[Dict[str, Any]] = None
+
+class MarketplaceOrderShipmentCreate(MarketplaceOrderShipmentBase):
+    pass
+
+class MarketplaceOrderShipmentResponse(MarketplaceOrderShipmentBase):
+    id: int
+    order_id: int
+
+    class Config:
+        from_attributes = True
+
+
+# --- MarketplaceOrder ---
+
+class MarketplaceOrderBase(BaseModel):
+    source: OrderSource
+    marketplace: Optional[Marketplace] = None  # NULL for manual orders
+    external_order_id: Optional[str] = None
+    external_order_number: Optional[str] = None
+    external_store_id: Optional[str] = None
+    order_date: datetime
+    created_at_external: Optional[datetime] = None
+    updated_at_external: Optional[datetime] = None
+    imported_at: Optional[datetime] = None
+    last_synced_at: Optional[datetime] = None
+    status_raw: Optional[str] = None
+    status_normalized: NormalizedOrderStatus = NormalizedOrderStatus.UNKNOWN
+    buyer_name: Optional[str] = None
+    buyer_email: Optional[str] = None
+    buyer_phone: Optional[str] = None
+    currency_code: str = "USD"
+    items_subtotal_cents: Optional[int] = None
+    shipping_cents: Optional[int] = None
+    tax_cents: Optional[int] = None
+    discount_cents: Optional[int] = None
+    fees_cents: Optional[int] = None
+    refunded_cents: Optional[int] = None
+    order_total_cents: Optional[int] = None
+    fulfillment_channel: Optional[str] = None
+    shipping_service_level: Optional[str] = None
+    ship_by_date: Optional[datetime] = None
+    deliver_by_date: Optional[datetime] = None
+    notes: Optional[str] = None
+    import_error: Optional[str] = None
+    raw_marketplace_data: Optional[Dict[str, Any]] = None
+
+class MarketplaceOrderCreate(MarketplaceOrderBase):
+    import_run_id: Optional[int] = None
+    addresses: List[MarketplaceOrderAddressCreate] = []
+    lines: List[MarketplaceOrderLineCreate] = []
+    shipments: List[MarketplaceOrderShipmentCreate] = []
+
+class MarketplaceOrderUpdate(BaseModel):
+    status_raw: Optional[str] = None
+    status_normalized: Optional[NormalizedOrderStatus] = None
+    last_synced_at: Optional[datetime] = None
+    notes: Optional[str] = None
+    import_error: Optional[str] = None
+    raw_marketplace_data: Optional[Dict[str, Any]] = None
+
+class MarketplaceOrderResponse(MarketplaceOrderBase):
+    id: int
+    import_run_id: Optional[int] = None
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+class MarketplaceOrderDetailResponse(MarketplaceOrderResponse):
+    """Extended response with nested addresses, lines, and shipments."""
+    addresses: List[MarketplaceOrderAddressResponse] = []
+    lines: List[MarketplaceOrderLineResponse] = []
+    shipments: List[MarketplaceOrderShipmentResponse] = []
+
+    class Config:
+        from_attributes = True

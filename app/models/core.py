@@ -1,13 +1,13 @@
 
 from sqlalchemy import (
     Boolean, Column, ForeignKey, Integer, String, Float, DateTime, Enum,
-    Table, UniqueConstraint, event, Index, JSON
+    Table, UniqueConstraint, event, Index, JSON, Text
 )
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from typing import List
 from app.database import Base
-from app.models.enums import HandleLocation, AngleType, Carrier, Marketplace, MaterialType, UnitOfMeasure
+from app.models.enums import HandleLocation, AngleType, Carrier, Marketplace, MaterialType, UnitOfMeasure, OrderSource, NormalizedOrderStatus
 
 class Manufacturer(Base):
     __tablename__ = "manufacturers"
@@ -578,6 +578,185 @@ class ModelVariationSKU(Base):
     model = relationship("Model", back_populates="variation_skus")
     material = relationship("Material")
     material_colour_surcharge = relationship("MaterialColourSurcharge")
+
+
+# =============================================================================
+# MARKETPLACE ORDER IMPORT MODELS (Canonical Import Tables)
+# =============================================================================
+
+class MarketplaceImportRun(Base):
+    """Audit log for each marketplace order import execution."""
+    __tablename__ = "marketplace_import_runs"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    marketplace = Column(Enum(Marketplace), nullable=False)
+    external_store_id = Column(String(128), nullable=True)
+    started_at = Column(DateTime, nullable=False)
+    finished_at = Column(DateTime, nullable=True)
+    status = Column(String(20), nullable=False)  # success | partial | failed
+    orders_fetched = Column(Integer, nullable=False, default=0)
+    orders_upserted = Column(Integer, nullable=False, default=0)
+    errors_count = Column(Integer, nullable=False, default=0)
+    error_summary = Column(JSON, nullable=True)
+    
+    # Relationships
+    orders = relationship("MarketplaceOrder", back_populates="import_run")
+
+
+class MarketplaceOrder(Base):
+    """Canonical order header for marketplace imports and manual orders."""
+    __tablename__ = "marketplace_orders"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    import_run_id = Column(Integer, ForeignKey("marketplace_import_runs.id", ondelete="SET NULL"), nullable=True)
+    source = Column(Enum(OrderSource), nullable=False)
+    marketplace = Column(Enum(Marketplace), nullable=True)  # NULL for manual orders
+    external_order_id = Column(String(128), nullable=True)
+    external_order_number = Column(String(128), nullable=True)
+    external_store_id = Column(String(128), nullable=True)
+    
+    # Dates
+    order_date = Column(DateTime, nullable=False)
+    created_at_external = Column(DateTime, nullable=True)
+    updated_at_external = Column(DateTime, nullable=True)
+    imported_at = Column(DateTime, nullable=False)
+    last_synced_at = Column(DateTime, nullable=True)
+    
+    # Status
+    status_raw = Column(String(64), nullable=True)
+    status_normalized = Column(Enum(NormalizedOrderStatus), nullable=False, default=NormalizedOrderStatus.UNKNOWN)
+    
+    # Buyer
+    buyer_name = Column(String(255), nullable=True)
+    buyer_email = Column(String(255), nullable=True)
+    buyer_phone = Column(String(50), nullable=True)
+    
+    # Money (cents)
+    currency_code = Column(String(3), nullable=False, default='USD')
+    items_subtotal_cents = Column(Integer, nullable=True)
+    shipping_cents = Column(Integer, nullable=True)
+    tax_cents = Column(Integer, nullable=True)
+    discount_cents = Column(Integer, nullable=True)
+    fees_cents = Column(Integer, nullable=True)
+    refunded_cents = Column(Integer, nullable=True)
+    order_total_cents = Column(Integer, nullable=True)
+    
+    # Fulfillment
+    fulfillment_channel = Column(String(64), nullable=True)
+    shipping_service_level = Column(String(64), nullable=True)
+    ship_by_date = Column(DateTime, nullable=True)
+    deliver_by_date = Column(DateTime, nullable=True)
+    
+    # Ops
+    notes = Column(Text, nullable=True)
+    import_error = Column(Text, nullable=True)
+    raw_marketplace_data = Column(JSON, nullable=True)
+    
+    # Timestamps
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    
+    # Relationships
+    import_run = relationship("MarketplaceImportRun", back_populates="orders")
+    addresses = relationship("MarketplaceOrderAddress", back_populates="order", cascade="all, delete-orphan")
+    lines = relationship("MarketplaceOrderLine", back_populates="order", cascade="all, delete-orphan")
+    shipments = relationship("MarketplaceOrderShipment", back_populates="order", cascade="all, delete-orphan")
+    
+    __table_args__ = (
+        UniqueConstraint('marketplace', 'external_order_id', name='uq_marketplace_external_order_id'),
+    )
+
+
+class MarketplaceOrderAddress(Base):
+    """Shipping and billing addresses for marketplace orders."""
+    __tablename__ = "marketplace_order_addresses"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    order_id = Column(Integer, ForeignKey("marketplace_orders.id", ondelete="CASCADE"), nullable=False)
+    address_type = Column(String(20), nullable=False)  # shipping | billing
+    name = Column(String(255), nullable=True)
+    phone = Column(String(50), nullable=True)
+    company = Column(String(255), nullable=True)
+    line1 = Column(String(255), nullable=True)
+    line2 = Column(String(255), nullable=True)
+    city = Column(String(100), nullable=True)
+    state_or_region = Column(String(100), nullable=True)
+    postal_code = Column(String(20), nullable=True)
+    country_code = Column(String(10), nullable=True)
+    raw_payload = Column(JSON, nullable=True)
+    
+    # Relationships
+    order = relationship("MarketplaceOrder", back_populates="addresses")
+    
+    __table_args__ = (
+        UniqueConstraint('order_id', 'address_type', name='uq_order_address_type'),
+    )
+
+
+class MarketplaceOrderLine(Base):
+    """Line items for marketplace orders with optional model linking."""
+    __tablename__ = "marketplace_order_lines"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    order_id = Column(Integer, ForeignKey("marketplace_orders.id", ondelete="CASCADE"), nullable=False)
+    external_line_item_id = Column(String(128), nullable=True)
+    
+    # Item references
+    marketplace_item_id = Column(String(128), nullable=True)
+    sku = Column(String(64), nullable=True)
+    asin = Column(String(20), nullable=True)
+    listing_id = Column(String(64), nullable=True)
+    product_id = Column(String(64), nullable=True)
+    title = Column(String(500), nullable=True)
+    variant = Column(String(255), nullable=True)
+    
+    # Qty & pricing
+    quantity = Column(Integer, nullable=False)
+    currency_code = Column(String(3), nullable=True)
+    unit_price_cents = Column(Integer, nullable=True)
+    line_subtotal_cents = Column(Integer, nullable=True)
+    tax_cents = Column(Integer, nullable=True)
+    discount_cents = Column(Integer, nullable=True)
+    line_total_cents = Column(Integer, nullable=True)
+    
+    # Fulfillment
+    fulfillment_status_raw = Column(String(64), nullable=True)
+    fulfillment_status_normalized = Column(String(20), nullable=True)
+    
+    # Internal link
+    model_id = Column(Integer, ForeignKey("models.id", ondelete="SET NULL"), nullable=True)
+    
+    # Customization
+    customization_data = Column(JSON, nullable=True)
+    
+    # Raw
+    raw_marketplace_data = Column(JSON, nullable=True)
+    
+    # Relationships
+    order = relationship("MarketplaceOrder", back_populates="lines")
+    model = relationship("Model")
+    
+    __table_args__ = (
+        UniqueConstraint('order_id', 'external_line_item_id', name='uq_order_line_item_id'),
+    )
+
+
+class MarketplaceOrderShipment(Base):
+    """Tracking and fulfillment shipments for marketplace orders."""
+    __tablename__ = "marketplace_order_shipments"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    order_id = Column(Integer, ForeignKey("marketplace_orders.id", ondelete="CASCADE"), nullable=False)
+    external_shipment_id = Column(String(128), nullable=True)
+    carrier = Column(String(64), nullable=True)
+    service = Column(String(64), nullable=True)
+    tracking_number = Column(String(128), nullable=True)
+    shipped_at = Column(DateTime, nullable=True)
+    delivered_at = Column(DateTime, nullable=True)
+    raw_marketplace_data = Column(JSON, nullable=True)
+    
+    # Relationships
+    order = relationship("MarketplaceOrder", back_populates="shipments")
 
 
 # Post-class relationship definitions to handle forward references
