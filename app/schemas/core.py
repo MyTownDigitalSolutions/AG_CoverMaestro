@@ -175,6 +175,8 @@ class MaterialBase(BaseModel):
     weight_per_linear_yard: Optional[float] = None
     unit_of_measure: Optional[UnitOfMeasure] = UnitOfMeasure.YARD
     package_quantity: Optional[float] = None
+    sku_abbreviation: Optional[str] = None
+    ebay_variation_enabled: bool = False
 
 class MaterialCreate(MaterialBase):
     pass
@@ -189,6 +191,9 @@ class MaterialColourSurchargeBase(BaseModel):
     material_id: int
     colour: str
     surcharge: float
+    color_friendly_name: Optional[str] = None
+    sku_abbreviation: Optional[str] = None
+    ebay_variation_enabled: bool = False
 
 class MaterialColourSurchargeCreate(MaterialColourSurchargeBase):
     pass
@@ -322,12 +327,26 @@ class OrderResponse(OrderBase):
 class PricingOptionBase(BaseModel):
     name: str
     price: float
+    sku_abbreviation: Optional[str] = None
+    ebay_variation_enabled: bool = False
+    linked_design_option_id: Optional[int] = None
 
 class PricingOptionCreate(PricingOptionBase):
     pass
 
+class LinkedDesignOptionDetails(BaseModel):
+    """Nested details for linked design option (for validation display)"""
+    id: int
+    name: str
+    sku_abbreviation: Optional[str] = None
+    ebay_variation_enabled: bool = False
+    
+    class Config:
+        from_attributes = True
+
 class PricingOptionResponse(PricingOptionBase):
     id: int
+    linked_design_option: Optional[LinkedDesignOptionDetails] = None
     
     class Config:
         from_attributes = True
@@ -377,12 +396,16 @@ class DesignOptionBase(BaseModel):
     option_type: str
     is_pricing_relevant: bool = False
     equipment_type_ids: List[int] = []
+    sku_abbreviation: Optional[str] = None
+    ebay_variation_enabled: bool = False
+    price_cents: int = 0
 
 class DesignOptionCreate(DesignOptionBase):
     pass
 
 class DesignOptionResponse(DesignOptionBase):
     id: int
+    price_cents: int
     
     class Config:
         from_attributes = True
@@ -625,3 +648,81 @@ class ExportStatsResponse(BaseModel):
     models_with_images: int
     models_missing_images: int
     equipment_types: Dict[str, int]
+
+# eBay Variation SKU Schemas
+class ModelVariationSKUBase(BaseModel):
+    model_id: int
+    variation_sku: str
+    material_id: Optional[int] = None
+    color_id: Optional[int] = None
+    design_option_ids: Optional[List[int]] = None
+    is_parent: bool = False
+    retail_price_cents: Optional[int] = None
+
+class ModelVariationSKUCreate(ModelVariationSKUBase):
+    pass
+
+class ModelVariationSKUResponse(ModelVariationSKUBase):
+    id: int
+    created_at: datetime
+    updated_at: datetime
+    
+    class Config:
+        from_attributes = True
+
+# ============================================================
+# Material Role Config Schemas
+# ============================================================
+
+class MaterialRoleConfigBase(BaseModel):
+    role: str
+    display_name: Optional[str] = None
+    sku_abbrev_no_padding: Optional[str] = None
+    sku_abbrev_with_padding: Optional[str] = None
+    ebay_variation_enabled: bool = False
+    sort_order: int = 0
+
+
+class MaterialRoleConfigCreate(MaterialRoleConfigBase):
+    pass
+
+
+class MaterialRoleConfigUpdate(BaseModel):
+    display_name: Optional[str] = None
+    sku_abbrev_no_padding: Optional[str] = None
+    sku_abbrev_with_padding: Optional[str] = None
+    ebay_variation_enabled: Optional[bool] = None
+    sort_order: Optional[int] = None
+
+
+class MaterialRoleConfigResponse(MaterialRoleConfigBase):
+    id: int
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+# ============================================================
+# Material Role Assignment Schemas
+# ============================================================
+
+class MaterialRoleAssignmentBase(BaseModel):
+    role: str
+    material_id: int
+    effective_date: Optional[datetime] = None
+
+
+class MaterialRoleAssignmentCreate(MaterialRoleAssignmentBase):
+    auto_end_previous: bool = True  # Auto-end previous active assignment for same role
+
+
+class MaterialRoleAssignmentResponse(MaterialRoleAssignmentBase):
+    id: int
+    end_date: Optional[datetime] = None
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+

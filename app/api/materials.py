@@ -33,7 +33,9 @@ def create_material(data: MaterialCreate, db: Session = Depends(get_db)):
             linear_yard_width=data.linear_yard_width,
             weight_per_linear_yard=data.weight_per_linear_yard,
             unit_of_measure=data.unit_of_measure,
-            package_quantity=data.package_quantity
+            package_quantity=data.package_quantity,
+            sku_abbreviation=data.sku_abbreviation,
+            ebay_variation_enabled=data.ebay_variation_enabled
         )
         db.add(material)
         db.commit()
@@ -56,6 +58,8 @@ def update_material(id: int, data: MaterialCreate, db: Session = Depends(get_db)
         material.weight_per_linear_yard = data.weight_per_linear_yard
         material.unit_of_measure = data.unit_of_measure
         material.package_quantity = data.package_quantity
+        material.sku_abbreviation = data.sku_abbreviation
+        material.ebay_variation_enabled = data.ebay_variation_enabled
         db.commit()
         db.refresh(material)
         return material
@@ -88,9 +92,41 @@ def create_surcharge(data: MaterialColourSurchargeCreate, db: Session = Depends(
     surcharge = MaterialColourSurcharge(
         material_id=data.material_id,
         colour=data.colour,
-        surcharge=data.surcharge
+        surcharge=data.surcharge,
+        color_friendly_name=data.color_friendly_name,
+        sku_abbreviation=data.sku_abbreviation,
+        ebay_variation_enabled=data.ebay_variation_enabled
     )
     db.add(surcharge)
+    db.commit()
+    db.refresh(surcharge)
+    return surcharge
+
+@router.put("/surcharges/{id}", response_model=MaterialColourSurchargeResponse)
+def update_surcharge(id: int, data: MaterialColourSurchargeCreate, db: Session = Depends(get_db)):
+    surcharge = db.query(MaterialColourSurcharge).filter(MaterialColourSurcharge.id == id).first()
+    if not surcharge:
+        raise HTTPException(status_code=404, detail="Surcharge not found")
+    
+    # Check for duplicate colour name within the same material, excluding current record
+    existing = db.query(MaterialColourSurcharge).filter(
+        MaterialColourSurcharge.material_id == surcharge.material_id,
+        MaterialColourSurcharge.colour == data.colour,
+        MaterialColourSurcharge.id != id
+    ).first()
+    
+    if existing:
+        raise HTTPException(
+            status_code=400, 
+            detail=f"Color '{data.colour}' already exists for this material"
+        )
+
+    surcharge.colour = data.colour
+    surcharge.surcharge = data.surcharge
+    surcharge.color_friendly_name = data.color_friendly_name
+    surcharge.sku_abbreviation = data.sku_abbreviation
+    surcharge.ebay_variation_enabled = data.ebay_variation_enabled
+    
     db.commit()
     db.refresh(surcharge)
     return surcharge

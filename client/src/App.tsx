@@ -27,6 +27,8 @@ import EtsyExportPage from './pages/EtsyExportPage'
 import SettingsPage from './pages/SettingsPage'
 import ShippingRatesPage from './pages/ShippingRatesPage'
 import ShippingDefaultsPage from './pages/ShippingDefaultsPage'
+import MaterialRoleConfigsPage from './pages/MaterialRoleConfigsPage'
+import MaterialRoleAssignmentsPage from './pages/MaterialRoleAssignmentsPage'
 
 function App() {
   return (
@@ -59,6 +61,8 @@ function App() {
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="/settings/shipping-rates" element={<ShippingRatesPage />} />
           <Route path="/settings/shipping-defaults" element={<ShippingDefaultsPage />} />
+          <Route path="/settings/material-role-configs" element={<MaterialRoleConfigsPage />} />
+          <Route path="/settings/material-role-assignments" element={<MaterialRoleAssignmentsPage />} />
         </Routes>
       </Layout>
     </Box>

@@ -10,8 +10,9 @@ export default defineConfig({
     proxy: {
       '/api': {
         target: 'http://localhost:8000',
-        changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/api/, '')
+        changeOrigin: true
+        // IMPORTANT: Do NOT rewrite /api away.
+        // Backend routes are mounted under the /api prefix (FastAPI include_router(..., prefix="/api")).
       }
     }
   }

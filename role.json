@@ -1,0 +1,8 @@
+﻿{
+  "role": "CHOICE_WATERPROOF_FABRIC",
+  "display_name": "Choice Waterproof Fabric",
+  "sku_abbrev_no_padding": "C",
+  "sku_abbrev_with_padding": "CG",
+  "ebay_variation_enabled": true,
+  "sort_order": 1
+}

@@ -21,6 +21,9 @@ export default function DesignOptionsPage() {
   const [customOptionType, setCustomOptionType] = useState('')
   const [isPricingRelevant, setIsPricingRelevant] = useState(false)
   const [equipmentTypeIds, setEquipmentTypeIds] = useState<number[]>([])
+  const [skuAbbreviation, setSkuAbbreviation] = useState('')
+  const [ebayVariationEnabled, setEbayVariationEnabled] = useState(false)
+  const [price, setPrice] = useState<string>('0')
 
   const loadData = async () => {
     const [doData, etData] = await Promise.all([
@@ -52,6 +55,9 @@ export default function DesignOptionsPage() {
 
       setEquipmentTypeIds(option.equipment_type_ids || [])
       setIsPricingRelevant(option.is_pricing_relevant || false)
+      setSkuAbbreviation(option.sku_abbreviation || '')
+      setEbayVariationEnabled(option.ebay_variation_enabled || false)
+      setPrice(((option.price_cents || 0) / 100).toFixed(2))
     } else {
       setEditing(null)
       setName('')
@@ -60,6 +66,9 @@ export default function DesignOptionsPage() {
       setCustomOptionType('')
       setEquipmentTypeIds([])
       setIsPricingRelevant(false)
+      setSkuAbbreviation('')
+      setEbayVariationEnabled(false)
+      setPrice('0')
     }
     setDialogOpen(true)
   }
@@ -78,13 +87,23 @@ export default function DesignOptionsPage() {
       }
     }
 
+    const priceCents = Math.round(parseFloat(price) * 100)
+    if (isNaN(priceCents) || priceCents < 0) {
+      alert('Price must be a valid non-negative number')
+      return
+    }
+
     const data = {
       name,
       description: description || undefined,
       option_type: finalOptionType,
       is_pricing_relevant: isPricingRelevant,
-      equipment_type_ids: equipmentTypeIds
+      equipment_type_ids: equipmentTypeIds,
+      sku_abbreviation: skuAbbreviation || undefined,
+      ebay_variation_enabled: ebayVariationEnabled,
+      price_cents: priceCents
     }
+
     if (editing) {
       await designOptionsApi.update(editing.id, data)
     } else {
@@ -127,6 +146,7 @@ export default function DesignOptionsPage() {
             <TableRow>
               <TableCell>Name</TableCell>
               <TableCell>Type</TableCell>
+              <TableCell align="right">Price</TableCell>
               <TableCell>Description</TableCell>
               <TableCell align="right">Actions</TableCell>
             </TableRow>
@@ -136,6 +156,7 @@ export default function DesignOptionsPage() {
               <TableRow key={option.id}>
                 <TableCell>{option.name}</TableCell>
                 <TableCell><Chip label={option.option_type} size="small" /></TableCell>
+                <TableCell align="right">${(option.price_cents / 100).toFixed(2)}</TableCell>
                 <TableCell>{option.description || '-'}</TableCell>
                 <TableCell align="right">
                   <IconButton onClick={() => handleOpenDialog(option)} size="small">
@@ -231,12 +252,40 @@ export default function DesignOptionsPage() {
 
           <TextField
             margin="dense"
+            label="Price (Add-on)"
+            fullWidth
+            type="number"
+            inputProps={{ step: "0.01", min: "0" }}
+            value={price}
+            onChange={(e) => setPrice(e.target.value)}
+            InputProps={{
+              startAdornment: <Typography sx={{ mr: 1 }}>$</Typography>
+            }}
+          />
+
+          <TextField
+            margin="dense"
             label="Description"
             fullWidth
             multiline
             rows={2}
             value={description}
             onChange={(e) => setDescription(e.target.value)}
+          />
+
+          <TextField
+            margin="dense"
+            label="SKU Abbreviation"
+            fullWidth
+            value={skuAbbreviation}
+            onChange={(e) => setSkuAbbreviation(e.target.value)}
+            inputProps={{ maxLength: 3 }}
+            helperText="Max 3 characters for eBay variation SKUs"
+          />
+
+          <FormControlLabel
+            control={<Switch checked={ebayVariationEnabled} onChange={(e) => setEbayVariationEnabled(e.target.checked)} />}
+            label="eBay Variation Enabled"
           />
         </DialogContent>
         <DialogActions>

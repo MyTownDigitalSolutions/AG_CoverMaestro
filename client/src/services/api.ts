@@ -1,10 +1,10 @@
 import axios from 'axios'
 import type {
-  Manufacturer, Series, EquipmentType, Model, Material,
+  Manufacturer, Series, EquipmentType, Model, Material, MaterialColourSurcharge,
   Customer, Order, PricingOption, PricingResult, AmazonProductType,
   EnumValue, ProductTypeField, ProductTypeFieldValue, DesignOption,
   Supplier, SupplierMaterial, SupplierMaterialWithSupplier, SupplierMaterialWithMaterial,
-  MaterialRoleAssignment, ShippingRateCard, ShippingRateTier, ShippingZoneRate,
+  MaterialRoleAssignment, MaterialRoleConfig, ShippingRateCard, ShippingRateTier, ShippingZoneRate,
   MarketplaceShippingProfile, LaborSetting, MarketplaceFeeRate, VariantProfitSetting, ModelPricingSnapshot,
   ModelPricingHistory, PricingDiffResponse, ShippingZone, ShippingZoneRateNormalized,
   ShippingDefaultSettingResponse, AmazonCustomizationTemplate, EquipmentTypeCustomizationTemplatesResponse
@@ -128,6 +128,10 @@ export const materialsApi = {
     api.patch(`/materials/${materialId}/set-preferred-supplier`, { supplier_id: supplierId }).then(r => r.data),
   getPreferredSupplier: (id: number) =>
     api.get<{ preferred_supplier: string | null; supplier_id?: number; unit_cost: number | null }>(`/materials/${id}/preferred-supplier`).then(r => r.data),
+  listSurcharges: (id: number) => api.get<MaterialColourSurcharge[]>(`/materials/${id}/surcharges`).then(r => r.data),
+  createSurcharge: (data: Omit<MaterialColourSurcharge, 'id'>) => api.post<MaterialColourSurcharge>('/materials/surcharges', data).then(r => r.data),
+  updateSurcharge: (id: number, data: Omit<MaterialColourSurcharge, 'id' | 'material_id'>) => api.put<MaterialColourSurcharge>(`/materials/surcharges/${id}`, { material_id: 0, ...data }).then(r => r.data), // material_id ignored by backend but required by schema
+  deleteSurcharge: (id: number) => api.delete(`/materials/surcharges/${id}`),
 }
 
 export const suppliersApi = {
@@ -268,6 +272,8 @@ export const settingsApi = {
     api.get<MaterialRoleAssignment[]>('/settings/material-roles', { params: { include_history: includeHistory } }).then(r => r.data),
   assignMaterialRole: (data: { role: string; material_id: number; effective_date?: string }) =>
     api.post<MaterialRoleAssignment>('/settings/material-roles/assign', data).then(r => r.data),
+  listMaterialRoleConfigs: () =>
+    api.get<MaterialRoleConfig[]>('/material-role-configs').then(r => r.data),
 
   // Shipping
   listZones: () => api.get<ShippingZone[]>('/settings/shipping/zones').then(r => r.data),
@@ -505,6 +511,38 @@ export const ebayTemplatesApi = {
   previewCurrentTemplate: () => api.get<EbayTemplatePreviewResponse>('/ebay-templates/current/preview').then(r => r.data),
   getCurrentIntegrity: () => api.get<EbayTemplateIntegrityResponse>('/ebay-templates/current/integrity').then(r => r.data),
   getCurrentVerification: () => api.get<EbayTemplateVerificationResponse>('/ebay-templates/current/verify').then(r => r.data),
+}
+
+// eBay Variations API
+export interface GenerateVariationsRequest {
+  model_ids: number[]
+  material_id: number
+  material_colour_surcharge_id?: number | null
+  design_option_ids: number[]
+  pricing_option_ids: number[]
+}
+
+export interface VariationRow {
+  model_id: number
+  sku: string
+  material_id: number
+  material_colour_surcharge_id: number | null
+  design_option_ids: number[]
+  pricing_option_ids: number[]
+}
+
+export interface GenerateVariationsResponse {
+  created: number
+  updated: number
+  errors: string[]
+  rows: VariationRow[]
+}
+
+export const ebayVariationsApi = {
+  generate: (data: GenerateVariationsRequest) =>
+    api.post<GenerateVariationsResponse>('/ebay-variations/generate', data).then(r => r.data),
+  getExisting: (modelIds: number[]) =>
+    api.get<VariationRow[]>(`/ebay-variations/by-models?model_ids=${modelIds.join(',')}`).then(r => r.data)
 }
 
 export default api

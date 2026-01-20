@@ -76,6 +76,8 @@ const menuItems = [
     path: '/suppliers-materials',
     children: [
       { text: 'Materials', icon: <TextureIcon />, path: '/materials' },
+      { text: 'Material Role Configs', icon: <SettingsIcon />, path: '/settings/material-role-configs' },
+      { text: 'Material Role Assignments', icon: <SettingsIcon />, path: '/settings/material-role-assignments' },
       { text: 'Suppliers', icon: <LocalShippingIcon />, path: '/suppliers' },
     ]
   },

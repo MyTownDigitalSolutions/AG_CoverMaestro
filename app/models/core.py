@@ -1,7 +1,7 @@
 
 from sqlalchemy import (
     Boolean, Column, ForeignKey, Integer, String, Float, DateTime, Enum,
-    Table, UniqueConstraint, event, Index
+    Table, UniqueConstraint, event, Index, JSON
 )
 from sqlalchemy.orm import relationship
 from datetime import datetime
@@ -97,6 +97,9 @@ class Model(Base):
     # Amazon A+ Content
     amazon_a_plus_content = relationship("ModelAmazonAPlusContent", back_populates="model", cascade="all, delete-orphan")
     
+    # eBay Variation SKUs
+    variation_skus = relationship("ModelVariationSKU", back_populates="model", cascade="all, delete-orphan")
+    
     __table_args__ = (UniqueConstraint('series_id', 'name', name='uq_model_series_name'),)
 
 class Material(Base):
@@ -112,6 +115,10 @@ class Material(Base):
     package_quantity = Column(Float, nullable=True)
     weight_per_sq_in_oz = Column(Float, nullable=True)
     
+    # eBay variation SKU fields
+    sku_abbreviation = Column(String(3), nullable=True)
+    ebay_variation_enabled = Column(Boolean, default=False, nullable=False)
+    
     colour_surcharges = relationship("MaterialColourSurcharge", back_populates="material", cascade="all, delete-orphan")
     supplier_materials = relationship("SupplierMaterial", back_populates="material", cascade="all, delete-orphan")
     order_lines = relationship("OrderLine", back_populates="material")
@@ -123,6 +130,11 @@ class MaterialColourSurcharge(Base):
     material_id = Column(Integer, ForeignKey("materials.id"), nullable=False)
     colour = Column(String, nullable=False)
     surcharge = Column(Float, nullable=False)
+    
+    # eBay variation SKU fields
+    color_friendly_name = Column(String(64), nullable=True)
+    sku_abbreviation = Column(String(3), nullable=True)
+    ebay_variation_enabled = Column(Boolean, default=False, nullable=False)
     
     material = relationship("Material", back_populates="colour_surcharges")
 
@@ -202,7 +214,16 @@ class PricingOption(Base):
     name = Column(String, unique=True, nullable=False)
     price = Column(Float, nullable=False)
     
+    # eBay variation SKU fields
+    sku_abbreviation = Column(String(3), nullable=True)
+    ebay_variation_enabled = Column(Boolean, default=False, nullable=False)
+    
+    # Optional mapping to design option (for features representing same real-world option)
+    linked_design_option_id = Column(Integer, ForeignKey("design_options.id"), nullable=True)
+    
+    # Relationships
     equipment_types = relationship("EquipmentTypePricingOption", back_populates="pricing_option")
+    linked_design_option = relationship("DesignOption", foreign_keys=[linked_design_option_id])
 
 class EquipmentTypePricingOption(Base):
     __tablename__ = "equipment_type_pricing_options"
@@ -244,6 +265,11 @@ class DesignOption(Base):
     description = Column(String, nullable=True)
     option_type = Column(String, nullable=False, index=True)
     is_pricing_relevant = Column(Boolean, nullable=False, default=False, server_default="false")
+    price_cents = Column(Integer, nullable=False, default=0, server_default="0")
+    
+    # eBay variation SKU fields
+    sku_abbreviation = Column(String(3), nullable=True)
+    ebay_variation_enabled = Column(Boolean, default=False, nullable=False)
     
     equipment_types = relationship("EquipmentTypeDesignOption", back_populates="design_option")
 
@@ -281,6 +307,43 @@ class MaterialRoleAssignment(Base):
         # For effective dating, (role, end_date) is useful.
         # We'll rely on simple indexing for now.
     )
+
+class MaterialRoleConfig(Base):
+    __tablename__ = "material_role_configs"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    # Identifier key (stored uppercase by API)
+    # Example: "CHOICE_WATERPROOF_FABRIC"
+    role = Column(String, nullable=False, index=True)
+
+    # Optional friendly name for admin/UI use
+    display_name = Column(String, nullable=True)
+
+    # Role-level SKU abbreviations used for variation generation
+    # Example: "C" (no padding), "CG" (with padding)
+    sku_abbrev_no_padding = Column(String(4), nullable=True)
+    sku_abbrev_with_padding = Column(String(4), nullable=True)
+
+    ebay_variation_enabled = Column(
+        Boolean, nullable=False, default=False, server_default="0"
+    )
+    sort_order = Column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
+
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(
+        DateTime,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow,
+        nullable=False
+    )
+
+    __table_args__ = (
+        UniqueConstraint("role", name="uq_material_role_config_role"),
+    )
+
 
 class ShippingRateCard(Base):
     __tablename__ = "shipping_rate_cards"
@@ -487,6 +550,35 @@ class MarketplaceListing(Base):
         Index('ix_marketplace_listings_model_id', 'model_id'),
         Index('ix_marketplace_listings_marketplace_external_id', 'marketplace', 'external_id')
     )
+
+class ModelVariationSKU(Base):
+    __tablename__ = "model_variation_skus"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    model_id = Column(Integer, ForeignKey("models.id", ondelete="CASCADE"), nullable=False, index=True)
+    sku = Column(String, nullable=False, unique=True, index=True)
+    
+    # Variation components
+    material_id = Column(Integer, ForeignKey("materials.id"), nullable=False)
+    material_colour_surcharge_id = Column(Integer, ForeignKey("material_colour_surcharges.id"), nullable=True)
+    
+    # Stored as JSON arrays
+    design_option_ids = Column(JSON, nullable=False, default=list)
+    pricing_option_ids = Column(JSON, nullable=False, default=list)
+    
+    # Legacy/additional fields
+    is_parent = Column(Boolean, default=False, nullable=False)
+    retail_price_cents = Column(Integer, nullable=True)
+    
+    # Timestamps
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    
+    # Relationships
+    model = relationship("Model", back_populates="variation_skus")
+    material = relationship("Material")
+    material_colour_surcharge = relationship("MaterialColourSurcharge")
+
 
 # Post-class relationship definitions to handle forward references
 EquipmentType.pricing_options = relationship("EquipmentTypePricingOption", back_populates="equipment_type", cascade="all, delete-orphan")

@@ -208,7 +208,13 @@ def get_pricing_option(id: int, db: Session = Depends(get_db)):
 @router.post("/options", response_model=PricingOptionResponse)
 def create_pricing_option(data: PricingOptionCreate, db: Session = Depends(get_db)):
     try:
-        option = PricingOption(name=data.name, price=data.price)
+        option = PricingOption(
+            name=data.name,
+            price=data.price,
+            sku_abbreviation=data.sku_abbreviation,
+            ebay_variation_enabled=data.ebay_variation_enabled,
+            linked_design_option_id=data.linked_design_option_id
+        )
         db.add(option)
         db.commit()
         db.refresh(option)
@@ -225,6 +231,9 @@ def update_pricing_option(id: int, data: PricingOptionCreate, db: Session = Depe
     try:
         option.name = data.name
         option.price = data.price
+        option.sku_abbreviation = data.sku_abbreviation
+        option.ebay_variation_enabled = data.ebay_variation_enabled
+        option.linked_design_option_id = data.linked_design_option_id
         db.commit()
         db.refresh(option)
         return option
