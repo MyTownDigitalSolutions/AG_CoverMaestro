@@ -1084,32 +1084,69 @@ def enrich_reverb_orders(
                 for ship_data in shipments:
                     tracking = ship_data.get("tracking_number")
                     carrier = ship_data.get("carrier")
+                    dedupe_key = ship_data.get("dedupe_key", "")
+                    
                     preview_item["shipments"].append({
                         "carrier": carrier,
                         "tracking_number": tracking,
                         "shipped_at": ship_data.get("shipped_at"),
+                        "dedupe_key": dedupe_key,
                     })
                     
                     if not request.dry_run:
-                        # Check for existing shipment by tracking + carrier
+                        # Check for existing shipment using multiple strategies:
+                        # 1. By tracking number (if present)
+                        # 2. By carrier + shipped_at (if no tracking)
                         existing_ship = None
+                        
                         if tracking:
+                            # Find by order_id and tracking_number
                             existing_ship = db.query(MarketplaceOrderShipment).filter(
                                 MarketplaceOrderShipment.order_id == order.id,
                                 MarketplaceOrderShipment.tracking_number == tracking
                             ).first()
+                        else:
+                            # No tracking - check by carrier + shipped_at
+                            shipped_at_str = ship_data.get("shipped_at")
+                            if shipped_at_str and carrier:
+                                # Parse to datetime for comparison
+                                try:
+                                    if shipped_at_str.endswith("Z"):
+                                        shipped_at_str_parsed = shipped_at_str[:-1] + "+00:00"
+                                    else:
+                                        shipped_at_str_parsed = shipped_at_str
+                                    target_shipped_at = datetime.fromisoformat(shipped_at_str_parsed)
+                                    
+                                    # Query by carrier and check shipped_at manually
+                                    candidates = db.query(MarketplaceOrderShipment).filter(
+                                        MarketplaceOrderShipment.order_id == order.id,
+                                        MarketplaceOrderShipment.carrier == carrier
+                                    ).all()
+                                    
+                                    for cand in candidates:
+                                        if cand.shipped_at and abs((cand.shipped_at - target_shipped_at).total_seconds()) < 60:
+                                            existing_ship = cand
+                                            break
+                                except (ValueError, TypeError):
+                                    pass
                         
                         if existing_ship:
-                            for key in ["carrier", "shipped_at", "delivered_at"]:
-                                new_val = ship_data.get(key)
+                            # Update existing shipment if needed
+                            updated = False
+                            for key in ["carrier", "tracking_number"]:
+                                new_val = ship_data.get(key if key != "tracking_number" else "tracking_number")
+                                if key == "tracking_number":
+                                    new_val = tracking
                                 if new_val is not None and (getattr(existing_ship, key, None) is None or request.force):
                                     setattr(existing_ship, key, new_val)
+                                    updated = True
+                            # Don't count as upserted if just updating existing
                         else:
                             # Parse shipped_at datetime
                             shipped_at = None
-                            if ship_data.get("shipped_at"):
+                            shipped_at_str = ship_data.get("shipped_at")
+                            if shipped_at_str:
                                 try:
-                                    shipped_at_str = ship_data["shipped_at"]
                                     if shipped_at_str.endswith("Z"):
                                         shipped_at_str = shipped_at_str[:-1] + "+00:00"
                                     shipped_at = datetime.fromisoformat(shipped_at_str)
@@ -1117,9 +1154,9 @@ def enrich_reverb_orders(
                                     pass
                             
                             delivered_at = None
-                            if ship_data.get("delivered_at"):
+                            delivered_at_str = ship_data.get("delivered_at")
+                            if delivered_at_str:
                                 try:
-                                    delivered_at_str = ship_data["delivered_at"]
                                     if delivered_at_str.endswith("Z"):
                                         delivered_at_str = delivered_at_str[:-1] + "+00:00"
                                     delivered_at = datetime.fromisoformat(delivered_at_str)
@@ -1135,9 +1172,9 @@ def enrich_reverb_orders(
                                 raw_marketplace_data=ship_data.get("raw_payload")
                             )
                             db.add(new_ship)
-                        
-                        shipments_upserted += 1
+                            shipments_upserted += 1
                     else:
+                        # Dry run - count as would be inserted (first run only matters)
                         shipments_upserted += 1
                 
                 order_enriched = True

@@ -5,12 +5,15 @@ Provides endpoints for:
 - Upserting orders from marketplace API imports
 - Creating manual orders
 - Querying orders with filters
+- Deduplicating shipments (admin-only maintenance)
 """
+import os
 import traceback
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Header
 from sqlalchemy.orm import Session
-from typing import List, Optional
+from typing import List, Literal, Optional
 from datetime import datetime
+from pydantic import BaseModel
 
 from app.database import get_db
 from app.models import templates  # Ensure AmazonCustomizationTemplate is registered for SQLAlchemy relationships
@@ -26,6 +29,62 @@ from app.schemas.core import (
 )
 
 router = APIRouter(prefix="/marketplace-orders", tags=["marketplace-orders"])
+
+
+# ============================================================
+# Admin Key Configuration (same pattern as marketplace_credentials.py)
+# ============================================================
+
+ADMIN_KEY = os.getenv("ADMIN_KEY", "")
+
+
+def verify_admin_key(x_admin_key: Optional[str] = Header(None, alias="X-Admin-Key")):
+    """
+    Dependency that verifies the X-Admin-Key header.
+    Returns 401 if ADMIN_KEY is not configured or header doesn't match.
+    """
+    if not ADMIN_KEY:
+        raise HTTPException(
+            status_code=500,
+            detail="ADMIN_KEY environment variable not configured"
+        )
+    
+    if not x_admin_key:
+        raise HTTPException(
+            status_code=401,
+            detail="X-Admin-Key header required"
+        )
+    
+    if x_admin_key != ADMIN_KEY:
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid admin key"
+        )
+    
+    return True
+
+
+# ============================================================
+# Shipment Cleanup Request/Response Models
+# ============================================================
+
+class CleanupShipmentsRequest(BaseModel):
+    marketplace: str = "reverb"
+    order_id: Optional[int] = None
+    dry_run: bool = True
+    mode: Literal["strict", "prefer_tracked"] = "strict"
+
+
+class CleanupShipmentsResponse(BaseModel):
+    dry_run: bool
+    marketplace: str
+    order_id: Optional[int]
+    mode: str
+    rows_scanned: int
+    duplicate_groups_found: int
+    rows_to_delete: int
+    rows_deleted: int
+    affected_order_ids_sample: List[int]
 
 
 def _replace_children_if_provided(
@@ -511,3 +570,154 @@ def delete_marketplace_order(id: int, db: Session = Depends(get_db)):
         print("[MARKETPLACE_ORDERS] Unhandled exception in delete_marketplace_order:", repr(e))
         print(traceback.format_exc())
         raise
+
+
+# ============================================================
+# Admin-Only Maintenance Endpoints
+# ============================================================
+
+@router.post("/cleanup-shipments", response_model=CleanupShipmentsResponse)
+def cleanup_duplicate_shipments(
+    request: CleanupShipmentsRequest,
+    db: Session = Depends(get_db),
+    _admin: bool = Depends(verify_admin_key)
+):
+    """
+    Admin-only endpoint to deduplicate shipment rows in marketplace_order_shipments.
+    
+    Modes:
+    - "strict" (default): Dedupe on full key (order_id, carrier, tracking_number, shipped_at)
+      Keep row with smallest id in each group.
+    - "prefer_tracked": Remove empty-tracking rows when a tracked row exists for same (order_id, carrier)
+      Keeps all tracked rows, removes only untracked ones.
+    
+    Default: dry_run=true (no deletes)
+    """
+    try:
+        # Build query for shipments
+        query = db.query(MarketplaceOrderShipment).join(
+            MarketplaceOrder,
+            MarketplaceOrderShipment.order_id == MarketplaceOrder.id
+        )
+        
+        # Filter by marketplace if provided
+        if request.marketplace:
+            # Convert string to enum for comparison
+            try:
+                marketplace_enum = Marketplace(request.marketplace.lower())
+                query = query.filter(MarketplaceOrder.marketplace == marketplace_enum)
+            except ValueError:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Invalid marketplace: {request.marketplace}"
+                )
+        
+        # Filter by order_id if provided
+        if request.order_id is not None:
+            query = query.filter(MarketplaceOrderShipment.order_id == request.order_id)
+        
+        # Fetch all matching shipments
+        shipments = query.all()
+        rows_scanned = len(shipments)
+        
+        ids_to_delete: List[int] = []
+        affected_order_ids: set[int] = set()
+        duplicate_groups_found = 0
+        
+        if request.mode == "prefer_tracked":
+            # ============================================================
+            # prefer_tracked mode: Remove untracked rows when tracked exists
+            # ============================================================
+            # Group by (order_id, carrier)
+            groups: dict[tuple, list[MarketplaceOrderShipment]] = {}
+            
+            for ship in shipments:
+                carrier_key = (ship.carrier or "").strip().lower()
+                key = (ship.order_id, carrier_key)
+                
+                if key not in groups:
+                    groups[key] = []
+                groups[key].append(ship)
+            
+            # For each group, check if tracked row exists and mark untracked for deletion
+            for key, group in groups.items():
+                # Separate tracked vs untracked
+                tracked = [s for s in group if s.tracking_number and s.tracking_number.strip()]
+                untracked = [s for s in group if not s.tracking_number or not s.tracking_number.strip()]
+                
+                # Only delete untracked if at least one tracked exists
+                if tracked and untracked:
+                    duplicate_groups_found += 1
+                    for ship in untracked:
+                        ids_to_delete.append(ship.id)
+                        affected_order_ids.add(ship.order_id)
+        
+        else:
+            # ============================================================
+            # strict mode (default): Dedupe on full 4-tuple key
+            # ============================================================
+            # Group shipments by dedupe key: (order_id, carrier, tracking_number, shipped_at)
+            groups: dict[tuple, list[MarketplaceOrderShipment]] = {}
+            
+            for ship in shipments:
+                # Build key with NULL handling
+                carrier_key = (ship.carrier or "").strip().lower()
+                tracking_key = (ship.tracking_number or "").strip()
+                shipped_at_key = ship.shipped_at.isoformat() if ship.shipped_at else ""
+                
+                key = (ship.order_id, carrier_key, tracking_key, shipped_at_key)
+                
+                if key not in groups:
+                    groups[key] = []
+                groups[key].append(ship)
+            
+            # Find groups with duplicates (len > 1)
+            duplicate_groups = {k: v for k, v in groups.items() if len(v) > 1}
+            duplicate_groups_found = len(duplicate_groups)
+            
+            # Determine rows to delete (all except the one with smallest id)
+            for key, group in duplicate_groups.items():
+                # Sort by id ascending
+                sorted_group = sorted(group, key=lambda s: s.id)
+                # Keep first (smallest id), mark rest for deletion
+                for ship in sorted_group[1:]:
+                    ids_to_delete.append(ship.id)
+                    affected_order_ids.add(ship.order_id)
+        
+        rows_to_delete = len(ids_to_delete)
+        rows_deleted = 0
+        
+        # Perform delete if not dry_run
+        if not request.dry_run and ids_to_delete:
+            rows_deleted = db.query(MarketplaceOrderShipment).filter(
+                MarketplaceOrderShipment.id.in_(ids_to_delete)
+            ).delete(synchronize_session=False)
+            db.commit()
+        
+        # Build sample of affected order IDs (max 20)
+        affected_order_ids_sample = sorted(list(affected_order_ids))[:20]
+        
+        # Log summary
+        print(f"[SHIPMENT_DEDUPE] mode={request.mode} marketplace={request.marketplace} order_id={request.order_id} dry_run={request.dry_run} scanned={rows_scanned} groups={duplicate_groups_found} to_delete={rows_to_delete} deleted={rows_deleted}")
+        
+        return CleanupShipmentsResponse(
+            dry_run=request.dry_run,
+            marketplace=request.marketplace,
+            order_id=request.order_id,
+            mode=request.mode,
+            rows_scanned=rows_scanned,
+            duplicate_groups_found=duplicate_groups_found,
+            rows_to_delete=rows_to_delete,
+            rows_deleted=rows_deleted,
+            affected_order_ids_sample=affected_order_ids_sample
+        )
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"[SHIPMENT_DEDUPE] ERROR: {type(e).__name__}: {str(e)}")
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=500,
+            detail=f"Shipment cleanup failed: {str(e)}"
+        )

@@ -607,34 +607,88 @@ def parse_order_detail_for_enrichment(detail: Dict[str, Any], external_order_id:
         result["lines"].append(line_item)
     
     # === Shipments ===
+    def parse_timestamp_to_utc(ts_str: Optional[str]) -> Optional[str]:
+        """Parse timestamp string to UTC ISO format for consistent comparison."""
+        if not ts_str:
+            return None
+        try:
+            # Handle Z suffix
+            if ts_str.endswith("Z"):
+                ts_str = ts_str[:-1] + "+00:00"
+            dt = datetime.fromisoformat(ts_str)
+            # Convert to UTC if timezone-aware
+            if dt.tzinfo is not None:
+                dt = dt.astimezone(timezone.utc)
+            else:
+                # Assume UTC if naive
+                dt = dt.replace(tzinfo=timezone.utc)
+            # Return ISO format without microseconds for consistent dedupe
+            return dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+        except (ValueError, TypeError):
+            return ts_str  # Return original if parsing fails
+    
+    def compute_shipment_dedupe_key(carrier: Optional[str], tracking: Optional[str], shipped_at_utc: Optional[str]) -> str:
+        """Compute a stable dedupe key for shipments."""
+        c = (carrier or "").strip().lower()
+        t = (tracking or "").strip()
+        s = (shipped_at_utc or "").strip()
+        if t:
+            return f"{c}|{t}|{s}"
+        else:
+            return f"{c}||{s}"
+    
+    seen_dedupe_keys = set()
+    
     # Check for shipping_provider and tracking info at top level
-    if detail.get("shipping_provider") or detail.get("tracking_code"):
-        shipment = {
-            "carrier": detail.get("shipping_provider"),
-            "tracking_number": detail.get("tracking_code"),
-            "shipped_at": detail.get("shipped_at"),
-            "delivered_at": detail.get("delivered_at"),
-            "raw_payload": {
-                "shipping_provider": detail.get("shipping_provider"),
-                "tracking_code": detail.get("tracking_code"),
-                "shipped_at": detail.get("shipped_at"),
-                "delivered_at": detail.get("delivered_at"),
-            },
-        }
-        result["shipments"].append(shipment)
+    # Prefer tracking_code, fallback to shipping_code
+    top_tracking = detail.get("tracking_code") or detail.get("shipping_code")
+    if detail.get("shipping_provider") or top_tracking:
+        shipped_at_utc = parse_timestamp_to_utc(detail.get("shipped_at"))
+        delivered_at_utc = parse_timestamp_to_utc(detail.get("delivered_at"))
+        carrier = detail.get("shipping_provider")
+        
+        dedupe_key = compute_shipment_dedupe_key(carrier, top_tracking, shipped_at_utc)
+        if dedupe_key not in seen_dedupe_keys:
+            seen_dedupe_keys.add(dedupe_key)
+            shipment = {
+                "carrier": carrier,
+                "tracking_number": top_tracking,
+                "shipped_at": shipped_at_utc,
+                "delivered_at": delivered_at_utc,
+                "dedupe_key": dedupe_key,
+                "raw_payload": {
+                    "shipping_provider": detail.get("shipping_provider"),
+                    "tracking_code": detail.get("tracking_code"),
+                    "shipping_code": detail.get("shipping_code"),
+                    "shipped_at": detail.get("shipped_at"),
+                    "delivered_at": detail.get("delivered_at"),
+                },
+            }
+            result["shipments"].append(shipment)
     
     # Also check for shipments array if present
     shipments_array = detail.get("shipments", []) or []
     for ship in shipments_array:
         if isinstance(ship, dict):
-            shipment = {
-                "carrier": ship.get("provider") or ship.get("carrier"),
-                "tracking_number": ship.get("tracking_code") or ship.get("tracking_number"),
-                "shipped_at": ship.get("shipped_at"),
-                "delivered_at": ship.get("delivered_at"),
-                "raw_payload": ship,
-            }
-            result["shipments"].append(shipment)
+            carrier = ship.get("provider") or ship.get("carrier") or ship.get("shipping_provider")
+            # Prefer tracking_code, fallback to shipping_code, then tracking_number
+            tracking = ship.get("tracking_code") or ship.get("shipping_code") or ship.get("tracking_number")
+            shipped_at_utc = parse_timestamp_to_utc(ship.get("shipped_at"))
+            delivered_at_utc = parse_timestamp_to_utc(ship.get("delivered_at"))
+            
+            dedupe_key = compute_shipment_dedupe_key(carrier, tracking, shipped_at_utc)
+            if dedupe_key not in seen_dedupe_keys:
+                seen_dedupe_keys.add(dedupe_key)
+                shipment = {
+                    "carrier": carrier,
+                    "tracking_number": tracking,
+                    "shipped_at": shipped_at_utc,
+                    "delivered_at": delivered_at_utc,
+                    "dedupe_key": dedupe_key,
+                    "raw_payload": ship,
+                }
+                result["shipments"].append(shipment)
     
     return result
+
 

@@ -6,6 +6,7 @@ import {
 } from '@mui/material'
 import SearchIcon from '@mui/icons-material/Search'
 import ListAltIcon from '@mui/icons-material/ListAlt'
+import CleaningServicesIcon from '@mui/icons-material/CleaningServices'
 
 interface MarketplaceOrder {
     id: number
@@ -53,6 +54,18 @@ interface OrderShipment {
     shipped_at?: string
 }
 
+interface CleanupResult {
+    dry_run: boolean
+    marketplace: string
+    order_id: number | null
+    mode: string
+    rows_scanned: number
+    duplicate_groups_found: number
+    rows_to_delete: number
+    rows_deleted: number
+    affected_order_ids_sample: number[]
+}
+
 interface OrderDetail extends MarketplaceOrder {
     addresses: OrderAddress[]
     lines: OrderLine[]
@@ -78,6 +91,17 @@ export default function MarketplaceOrdersPage() {
     const [orderDetail, setOrderDetail] = useState<OrderDetail | null>(null)
     const [isLoadingDetail, setIsLoadingDetail] = useState(false)
     const [detailError, setDetailError] = useState<string | null>(null)
+
+    // Admin key state
+    const [adminKey, setAdminKey] = useState('')
+
+    // Cleanup state
+    const [cleanupLoadingPreview, setCleanupLoadingPreview] = useState(false)
+    const [cleanupLoadingRun, setCleanupLoadingRun] = useState(false)
+    const [cleanupPreviewResult, setCleanupPreviewResult] = useState<CleanupResult | null>(null)
+    const [cleanupRunResult, setCleanupRunResult] = useState<CleanupResult | null>(null)
+    const [cleanupError, setCleanupError] = useState<string | null>(null)
+    const [cleanupPreviewOrderId, setCleanupPreviewOrderId] = useState<number | null>(null)
 
     const handleSearch = async () => {
         setIsSearching(true)
@@ -140,7 +164,105 @@ export default function MarketplaceOrdersPage() {
         setSelectedOrderId(null)
         setOrderDetail(null)
         setDetailError(null)
+        // Reset cleanup state when closing
+        setCleanupPreviewResult(null)
+        setCleanupRunResult(null)
+        setCleanupError(null)
+        setCleanupPreviewOrderId(null)
     }
+
+    const handleCleanupShipmentsPreview = async () => {
+        if (!orderDetail || !adminKey.trim()) {
+            setCleanupError('Admin key is required for cleanup operations.')
+            return
+        }
+
+        setCleanupLoadingPreview(true)
+        setCleanupError(null)
+        setCleanupPreviewResult(null)
+        setCleanupRunResult(null)
+
+        try {
+            const response = await fetch('/api/marketplace-orders/cleanup-shipments', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-Admin-Key': adminKey.trim()
+                },
+                body: JSON.stringify({
+                    marketplace: orderDetail.marketplace,
+                    order_id: orderDetail.id,
+                    mode: 'prefer_tracked',
+                    dry_run: true
+                })
+            })
+
+            if (!response.ok) {
+                const text = await response.text()
+                throw new Error(`Error ${response.status}: ${text.slice(0, 150)}`)
+            }
+
+            const data: CleanupResult = await response.json()
+            setCleanupPreviewResult(data)
+            setCleanupPreviewOrderId(orderDetail.id)
+        } catch (err) {
+            setCleanupError(err instanceof Error ? err.message : 'Cleanup preview failed')
+        } finally {
+            setCleanupLoadingPreview(false)
+        }
+    }
+
+    const handleCleanupShipmentsRun = async () => {
+        if (!orderDetail || !adminKey.trim()) {
+            setCleanupError('Admin key is required for cleanup operations.')
+            return
+        }
+
+        setCleanupLoadingRun(true)
+        setCleanupError(null)
+        setCleanupRunResult(null)
+
+        try {
+            const response = await fetch('/api/marketplace-orders/cleanup-shipments', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-Admin-Key': adminKey.trim()
+                },
+                body: JSON.stringify({
+                    marketplace: orderDetail.marketplace,
+                    order_id: orderDetail.id,
+                    mode: 'prefer_tracked',
+                    dry_run: false
+                })
+            })
+
+            if (!response.ok) {
+                const text = await response.text()
+                throw new Error(`Error ${response.status}: ${text.slice(0, 150)}`)
+            }
+
+            const data: CleanupResult = await response.json()
+            setCleanupRunResult(data)
+
+            // Re-fetch order detail to update shipments list
+            const detailResponse = await fetch(`/api/marketplace-orders/${orderDetail.id}`)
+            if (detailResponse.ok) {
+                const detailData: OrderDetail = await detailResponse.json()
+                setOrderDetail(detailData)
+            }
+        } catch (err) {
+            setCleanupError(err instanceof Error ? err.message : 'Cleanup run failed')
+        } finally {
+            setCleanupLoadingRun(false)
+        }
+    }
+
+    // Check if cleanup confirm button should be enabled
+    const canRunCleanup = cleanupPreviewResult !== null &&
+        cleanupPreviewOrderId === orderDetail?.id &&
+        cleanupPreviewResult.rows_to_delete > 0 &&
+        !cleanupLoadingRun
 
     const formatCurrency = (cents?: number, currency?: string) => {
         if (cents === null || cents === undefined) return '—'
@@ -169,6 +291,24 @@ export default function MarketplaceOrdersPage() {
                     View and search orders imported from connected marketplaces.
                 </Typography>
             </Box>
+
+            {/* Admin Key Input */}
+            <Paper sx={{ p: 2, mb: 3 }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                    <TextField
+                        label="Admin Key"
+                        type="password"
+                        value={adminKey}
+                        onChange={(e) => setAdminKey(e.target.value)}
+                        size="small"
+                        sx={{ width: 300 }}
+                        placeholder="Required for cleanup operations"
+                    />
+                    <Typography variant="body2" color="text.secondary">
+                        Admin key is required for shipment cleanup operations in order detail.
+                    </Typography>
+                </Box>
+            </Paper>
 
             {/* Filters */}
             <Paper sx={{ p: 3, mb: 3 }}>
@@ -436,6 +576,83 @@ export default function MarketplaceOrdersPage() {
                                     ))}
                                 </>
                             )}
+
+                            <Divider sx={{ my: 2 }} />
+
+                            {/* Shipment Cleanup Section */}
+                            <Typography variant="subtitle1" fontWeight="bold" gutterBottom sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                <CleaningServicesIcon fontSize="small" />
+                                Shipment Cleanup (Prefer Tracked)
+                            </Typography>
+                            <Box sx={{ pl: 2 }}>
+                                <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                                    Remove duplicate shipment rows that have no tracking number when a tracked shipment exists for the same carrier.
+                                </Typography>
+
+                                {!adminKey.trim() && (
+                                    <Alert severity="info" sx={{ mb: 2 }}>
+                                        Enter an Admin Key at the top of the page to enable cleanup operations.
+                                    </Alert>
+                                )}
+
+                                {cleanupError && (
+                                    <Alert severity="error" sx={{ mb: 2 }}>
+                                        {cleanupError}
+                                    </Alert>
+                                )}
+
+                                <Box sx={{ display: 'flex', gap: 2, mb: 2 }}>
+                                    <Button
+                                        variant="outlined"
+                                        onClick={handleCleanupShipmentsPreview}
+                                        disabled={!adminKey.trim() || cleanupLoadingPreview || cleanupLoadingRun}
+                                        startIcon={cleanupLoadingPreview ? <CircularProgress size={16} /> : undefined}
+                                    >
+                                        Preview Cleanup
+                                    </Button>
+                                    <Button
+                                        variant="contained"
+                                        color="warning"
+                                        onClick={handleCleanupShipmentsRun}
+                                        disabled={!canRunCleanup}
+                                        startIcon={cleanupLoadingRun ? <CircularProgress size={16} color="inherit" /> : undefined}
+                                    >
+                                        Run Cleanup
+                                    </Button>
+                                </Box>
+
+                                {/* Preview Results */}
+                                {cleanupPreviewResult && cleanupPreviewOrderId === orderDetail.id && (
+                                    <Paper variant="outlined" sx={{ p: 2, mb: 2, bgcolor: 'grey.50' }}>
+                                        <Typography variant="body2" fontWeight="bold" gutterBottom>
+                                            Preview Results (Dry Run)
+                                        </Typography>
+                                        <Typography variant="body2">Rows Scanned: {cleanupPreviewResult.rows_scanned}</Typography>
+                                        <Typography variant="body2">Duplicate Groups Found: {cleanupPreviewResult.duplicate_groups_found}</Typography>
+                                        <Typography variant="body2" color={cleanupPreviewResult.rows_to_delete > 0 ? 'warning.main' : 'text.secondary'}>
+                                            Rows to Delete: {cleanupPreviewResult.rows_to_delete}
+                                        </Typography>
+                                        {cleanupPreviewResult.rows_to_delete === 0 && (
+                                            <Typography variant="body2" color="success.main" sx={{ mt: 1 }}>
+                                                ✓ Nothing to delete. All shipments are clean.
+                                            </Typography>
+                                        )}
+                                    </Paper>
+                                )}
+
+                                {/* Run Results */}
+                                {cleanupRunResult && (
+                                    <Paper variant="outlined" sx={{ p: 2, bgcolor: 'success.50', borderColor: 'success.main' }}>
+                                        <Typography variant="body2" fontWeight="bold" gutterBottom color="success.main">
+                                            Cleanup Complete
+                                        </Typography>
+                                        <Typography variant="body2">Rows Deleted: {cleanupRunResult.rows_deleted}</Typography>
+                                        <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+                                            Shipments list has been refreshed.
+                                        </Typography>
+                                    </Paper>
+                                )}
+                            </Box>
                         </Box>
                     )}
                 </DialogContent>
