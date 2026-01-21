@@ -4,6 +4,7 @@ from sqlalchemy.exc import IntegrityError
 from typing import List, Optional
 from datetime import datetime
 import traceback
+from app.utils.normalization import normalize_marketplace, normalize_identifier
 from app.database import get_db
 from app.models.core import Model, Series, Manufacturer, ModelPricingSnapshot, ModelPricingHistory, DesignOption, MarketplaceListing, ModelAmazonAPlusContent
 from app.schemas.core import ModelCreate, ModelResponse, ModelPricingSnapshotResponse, ModelPricingHistoryResponse, MarketplaceListingCreate
@@ -121,6 +122,127 @@ def list_models(series_id: Optional[int] = Query(None), db: Session = Depends(ge
     if series_id:
         query = query.filter(Model.series_id == series_id)
     return query.all()
+
+
+@router.get("/search")
+def search_models(
+    q: str = Query("", description="Search query for model name, series name, or manufacturer name"),
+    limit: int = Query(20, ge=1, le=100),
+    db: Session = Depends(get_db)
+):
+    """
+    Lightweight model search for UI autocomplete.
+    Returns: id, name, manufacturer_name, series_name, reverb_product_id
+    """
+    from sqlalchemy import or_, func
+    
+    query = db.query(Model).join(Series, Model.series_id == Series.id).join(
+        Manufacturer, Series.manufacturer_id == Manufacturer.id
+    )
+    
+    # Search if query provided
+    if q.strip():
+        search_term = f"%{q.strip()}%"
+        query = query.filter(
+            or_(
+                Model.name.ilike(search_term),
+                Series.name.ilike(search_term),
+                Manufacturer.name.ilike(search_term),
+                Model.reverb_product_id.ilike(search_term)
+            )
+        )
+    
+    # Order by manufacturer, series, model name
+    query = query.order_by(Manufacturer.name, Series.name, Model.name)
+    query = query.limit(limit)
+    
+    results = []
+    for model in query.all():
+        results.append({
+            "id": model.id,
+            "name": model.name,
+            "manufacturer_name": model.series.manufacturer.name if model.series and model.series.manufacturer else None,
+            "series_name": model.series.name if model.series else None,
+            "reverb_product_id": model.reverb_product_id
+        })
+    
+    return results
+
+
+def lookup_models_by_marketplace_listing(db: Session, marketplace: str, identifier: str, limit: int = 25):
+    """
+    Helper function to find models by marketplace listing external_id.
+    Used by both the API endpoint and order detail resolution.
+    
+    Args:
+        db: Database session
+        marketplace: Marketplace name (case-insensitive, e.g., "reverb")
+        identifier: External listing ID (e.g., "77054514")
+        limit: Maximum results to return
+        
+    Returns:
+        List of dicts with model info and matched listing data
+    """
+    from sqlalchemy import func
+    
+    # Normalize inputs using centralized helpers
+    marketplace_normalized = normalize_marketplace(marketplace)
+    identifier_normalized = normalize_identifier(identifier)
+    
+    if not marketplace_normalized or not identifier_normalized:
+        return []
+    
+    # Query marketplace_listings table joined with model, series, manufacturer
+    query = db.query(MarketplaceListing, Model, Series, Manufacturer).join(
+        Model, MarketplaceListing.model_id == Model.id
+    ).join(
+        Series, Model.series_id == Series.id
+    ).join(
+        Manufacturer, Series.manufacturer_id == Manufacturer.id
+    ).filter(
+        func.lower(func.trim(MarketplaceListing.marketplace)) == marketplace_normalized,
+        # Match external_id as string (both trimmed)
+        func.trim(MarketplaceListing.external_id) == identifier_normalized
+    ).limit(limit)
+    
+    # Collect results, dedupe by model_id
+    seen_model_ids = set()
+    results = []
+    
+    for listing, model, series, manufacturer in query.all():
+        if model.id in seen_model_ids:
+            continue
+        seen_model_ids.add(model.id)
+        
+        results.append({
+            "model_id": model.id,
+            "model_name": model.name,
+            "manufacturer_name": manufacturer.name,
+            "series_name": series.name,
+            "sku": model.parent_sku,
+            "matched_listing_marketplace": listing.marketplace,
+            "matched_listing_identifier": listing.external_id
+        })
+    
+    return results
+
+
+@router.get("/marketplace-lookup")
+def lookup_models_by_marketplace(
+    marketplace: str = Query(..., description="Marketplace name (e.g., 'reverb')"),
+    identifier: str = Query(..., description="External listing ID (e.g., '77054514')"),
+    limit: int = Query(25, ge=1, le=100),
+    db: Session = Depends(get_db)
+):
+    """
+    Find models by marketplace listing identifier (external_id).
+    Searches the marketplace_listings table used by the Models UI.
+    
+    Returns: list of models with matched listing info
+    """
+    results = lookup_models_by_marketplace_listing(db, marketplace, identifier, limit)
+    return results
+
 
 @router.get("/{id}", response_model=ModelResponse)
 def get_model(id: int, db: Session = Depends(get_db)):

@@ -129,6 +129,7 @@ class ModelBase(BaseModel):
     top_handle_height_in: Optional[float] = None
     top_handle_rear_edge_to_center_in: Optional[float] = None
     model_notes: Optional[str] = None
+    reverb_product_id: Optional[str] = None
     exclude_from_amazon_export: bool = False
     exclude_from_ebay_export: bool = False
     exclude_from_reverb_export: bool = False
@@ -813,6 +814,11 @@ class MarketplaceOrderLineUpdate(BaseModel):
 class MarketplaceOrderLineResponse(MarketplaceOrderLineBase):
     id: int
     order_id: int
+    # Resolved model information (populated during GET)
+    resolved_model_id: Optional[int] = None
+    resolved_model_name: Optional[str] = None
+    resolved_manufacturer_name: Optional[str] = None
+    resolved_series_name: Optional[str] = None
 
     class Config:
         from_attributes = True

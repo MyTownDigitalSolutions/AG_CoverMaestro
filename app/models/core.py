@@ -83,6 +83,9 @@ class Model(Base):
     # Universal model notes field (not a design option)
     model_notes = Column(String, nullable=True)
     
+    # Reverb product ID for order line resolution
+    reverb_product_id = Column(String(32), nullable=True, index=True)
+    
     series = relationship("Series", back_populates="models")
     equipment_type = relationship("EquipmentType", back_populates="models")
     order_lines = relationship("OrderLine", back_populates="model")

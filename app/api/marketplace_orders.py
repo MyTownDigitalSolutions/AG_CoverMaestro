@@ -19,13 +19,15 @@ from app.database import get_db
 from app.models import templates  # Ensure AmazonCustomizationTemplate is registered for SQLAlchemy relationships
 from app.models.core import (
     MarketplaceOrder, MarketplaceOrderAddress, MarketplaceOrderLine, 
-    MarketplaceOrderShipment, MarketplaceImportRun
+    MarketplaceOrderShipment, MarketplaceImportRun, Model, MarketplaceListing
 )
+from app.api.models import lookup_models_by_marketplace_listing
 from app.models.enums import OrderSource, NormalizedOrderStatus, Marketplace
 from app.schemas.core import (
     MarketplaceOrderCreate, MarketplaceOrderUpdate, MarketplaceOrderResponse,
     MarketplaceOrderDetailResponse, MarketplaceOrderAddressCreate,
-    MarketplaceOrderLineCreate, MarketplaceOrderShipmentCreate
+    MarketplaceOrderLineCreate, MarketplaceOrderShipmentCreate,
+    MarketplaceOrderLineResponse
 )
 
 router = APIRouter(prefix="/marketplace-orders", tags=["marketplace-orders"])
@@ -541,12 +543,139 @@ def list_marketplace_orders(
 def get_marketplace_order(id: int, db: Session = Depends(get_db)):
     """
     Get a single marketplace order by ID with nested children.
+    Resolves line items to internal Models when possible.
     """
     try:
         order = db.query(MarketplaceOrder).filter(MarketplaceOrder.id == id).first()
         if not order:
             raise HTTPException(status_code=404, detail="Marketplace order not found")
-        return order
+        
+        # Build response with resolved model information for each line
+        # Convert order to dict for response construction
+        order_data = {
+            "id": order.id,
+            "import_run_id": order.import_run_id,
+            "source": order.source,
+            "marketplace": order.marketplace,
+            "external_order_id": order.external_order_id,
+            "external_order_number": order.external_order_number,
+            "external_store_id": order.external_store_id,
+            "order_date": order.order_date,
+            "created_at_external": order.created_at_external,
+            "updated_at_external": order.updated_at_external,
+            "status_raw": order.status_raw,
+            "status_normalized": order.status_normalized,
+            "buyer_name": order.buyer_name,
+            "buyer_email": order.buyer_email,
+            "buyer_phone": order.buyer_phone,
+            "currency_code": order.currency_code,
+            "items_subtotal_cents": order.items_subtotal_cents,
+            "shipping_cents": order.shipping_cents,
+            "tax_cents": order.tax_cents,
+            "discount_cents": order.discount_cents,
+            "fees_cents": order.fees_cents,
+            "refunded_cents": order.refunded_cents,
+            "order_total_cents": order.order_total_cents,
+            "fulfillment_channel": order.fulfillment_channel,
+            "shipping_service_level": order.shipping_service_level,
+            "ship_by_date": order.ship_by_date,
+            "deliver_by_date": order.deliver_by_date,
+            "notes": order.notes,
+            "import_error": order.import_error,
+            "raw_marketplace_data": order.raw_marketplace_data,
+            "last_synced_at": order.last_synced_at,
+            "created_at": order.created_at,
+            "updated_at": order.updated_at,
+            "addresses": order.addresses,
+            "shipments": order.shipments,
+            "lines": []
+        }
+        
+        # Resolve each line item
+        for line in order.lines:
+            resolved_model = None
+            resolved_model_id = None
+            resolved_model_name = None
+            resolved_manufacturer_name = None
+            resolved_series_name = None
+            
+            # Resolution priority:
+            # 1. If line.model_id is set, use that model
+            # 2. Else if marketplace is "reverb" and line.product_id exists, 
+            #    lookup via MarketplaceListing.external_id (auto-persist if unique match)
+            
+            auto_persisted = False
+            
+            if line.model_id:
+                resolved_model = db.query(Model).filter(Model.id == line.model_id).first()
+            elif order.marketplace == Marketplace.REVERB and line.product_id:
+                # Use marketplace listings lookup (same as /api/models/marketplace-lookup)
+                matches = lookup_models_by_marketplace_listing(
+                    db, 
+                    marketplace="reverb", 
+                    identifier=str(line.product_id),
+                    limit=5
+                )
+                
+                if len(matches) == 1:
+                    # Exactly one match - auto-persist model_id
+                    matched_model_id = matches[0]["model_id"]
+                    line.model_id = matched_model_id
+                    resolved_model = db.query(Model).filter(Model.id == matched_model_id).first()
+                    auto_persisted = True
+                elif len(matches) > 1:
+                    # Multiple matches - take first for display but don't persist
+                    matched_model_id = matches[0]["model_id"]
+                    resolved_model = db.query(Model).filter(Model.id == matched_model_id).first()
+                # else: no matches, resolved_model stays None
+            
+            if resolved_model:
+                resolved_model_id = resolved_model.id
+                resolved_model_name = resolved_model.name
+                if resolved_model.series:
+                    resolved_series_name = resolved_model.series.name
+                    if resolved_model.series.manufacturer:
+                        resolved_manufacturer_name = resolved_model.series.manufacturer.name
+            
+            # Build line response with resolved fields
+            line_data = {
+                "id": line.id,
+                "order_id": line.order_id,
+                "external_line_item_id": line.external_line_item_id,
+                "marketplace_item_id": line.marketplace_item_id,
+                "sku": line.sku,
+                "asin": line.asin,
+                "listing_id": line.listing_id,
+                "product_id": line.product_id,
+                "title": line.title,
+                "variant": line.variant,
+                "quantity": line.quantity,
+                "currency_code": line.currency_code,
+                "unit_price_cents": line.unit_price_cents,
+                "line_subtotal_cents": line.line_subtotal_cents,
+                "tax_cents": line.tax_cents,
+                "discount_cents": line.discount_cents,
+                "line_total_cents": line.line_total_cents,
+                "fulfillment_status_raw": line.fulfillment_status_raw,
+                "fulfillment_status_normalized": line.fulfillment_status_normalized,
+                "model_id": line.model_id,
+                "customization_data": line.customization_data,
+                "raw_marketplace_data": line.raw_marketplace_data,
+                "resolved_model_id": resolved_model_id,
+                "resolved_model_name": resolved_model_name,
+                "resolved_manufacturer_name": resolved_manufacturer_name,
+                "resolved_series_name": resolved_series_name,
+            }
+            order_data["lines"].append(line_data)
+        
+        # Commit any auto-persisted model_id changes
+        try:
+            db.commit()
+        except Exception as commit_err:
+            print(f"[MARKETPLACE_ORDERS_DETAIL] Warning: Failed to commit auto-resolved model_ids: {commit_err}")
+            db.rollback()
+        
+        return order_data
     except Exception as e:
         print(f"[MARKETPLACE_ORDERS_DETAIL] id={id} ERROR: {type(e).__name__}: {str(e)}")
         traceback.print_exc()
@@ -570,6 +699,79 @@ def delete_marketplace_order(id: int, db: Session = Depends(get_db)):
         print("[MARKETPLACE_ORDERS] Unhandled exception in delete_marketplace_order:", repr(e))
         print(traceback.format_exc())
         raise
+
+
+# ============================================================
+# Line Item Update Request/Response Models
+# ============================================================
+
+class UpdateLineRequest(BaseModel):
+    product_id: Optional[str] = None
+    model_id: Optional[int] = None
+
+
+class UpdateLineResponse(BaseModel):
+    id: int
+    order_id: int
+    product_id: Optional[str] = None
+    model_id: Optional[int] = None
+    message: str
+
+
+@router.put("/lines/{line_id}", response_model=UpdateLineResponse)
+def update_order_line(
+    line_id: int,
+    request: UpdateLineRequest,
+    db: Session = Depends(get_db),
+    _admin: bool = Depends(verify_admin_key)
+):
+    """
+    Admin-protected endpoint to update a single marketplace order line.
+    Allows setting product_id and/or model_id for manual resolution.
+    """
+    try:
+        line = db.query(MarketplaceOrderLine).filter(MarketplaceOrderLine.id == line_id).first()
+        if not line:
+            raise HTTPException(status_code=404, detail="Order line not found")
+        
+        updated_fields = []
+        
+        # Update product_id if provided
+        if request.product_id is not None:
+            line.product_id = request.product_id if request.product_id else None
+            updated_fields.append("product_id")
+        
+        # Update model_id if provided
+        if request.model_id is not None:
+            # Validate model exists if non-zero
+            if request.model_id > 0:
+                model = db.query(Model).filter(Model.id == request.model_id).first()
+                if not model:
+                    raise HTTPException(status_code=400, detail=f"Model with id {request.model_id} not found")
+                line.model_id = request.model_id
+            else:
+                # Allow clearing by setting to 0 or None
+                line.model_id = None
+            updated_fields.append("model_id")
+        
+        db.commit()
+        db.refresh(line)
+        
+        print(f"[MARKETPLACE_ORDER_LINE_UPDATE] line_id={line_id} updated_fields={updated_fields}")
+        
+        return UpdateLineResponse(
+            id=line.id,
+            order_id=line.order_id,
+            product_id=line.product_id,
+            model_id=line.model_id,
+            message=f"Updated fields: {', '.join(updated_fields) if updated_fields else 'none'}"
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"[MARKETPLACE_ORDER_LINE_UPDATE] line_id={line_id} ERROR: {type(e).__name__}: {str(e)}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Failed to update line: {str(e)}")
 
 
 # ============================================================
@@ -720,4 +922,65 @@ def cleanup_duplicate_shipments(
         raise HTTPException(
             status_code=500,
             detail=f"Shipment cleanup failed: {str(e)}"
+        )
+
+
+# ============================================================
+# Invoice Generation Endpoints
+# ============================================================
+
+class InvoiceRequest(BaseModel):
+    order_ids: List[int]
+    mode: Literal["html"] = "html"  # Only HTML for now; PDF in future chunks
+
+
+class InvoiceResponse(BaseModel):
+    html: str
+    order_count: int
+
+
+@router.post("/invoice", response_model=InvoiceResponse)
+def generate_invoice(
+    request: InvoiceRequest,
+    db: Session = Depends(get_db),
+    _admin: bool = Depends(verify_admin_key)
+):
+    """
+    Admin-protected endpoint to generate an invoice for selected marketplace orders.
+    
+    Returns HTML content that can be displayed in a new tab or printed.
+    Uses resolved model identity for line items with safe fallbacks.
+    """
+    from app.services.invoice_generator import generate_invoice_html
+    
+    try:
+        if not request.order_ids:
+            raise HTTPException(status_code=400, detail="No order IDs provided")
+        
+        # Fetch all requested orders
+        orders = db.query(MarketplaceOrder).filter(
+            MarketplaceOrder.id.in_(request.order_ids)
+        ).all()
+        
+        if not orders:
+            raise HTTPException(status_code=404, detail="No orders found with provided IDs")
+        
+        # Generate HTML invoice
+        html = generate_invoice_html(orders, db)
+        
+        print(f"[INVOICE] Generated invoice for {len(orders)} orders: {request.order_ids}")
+        
+        return InvoiceResponse(
+            html=html,
+            order_count=len(orders)
+        )
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"[INVOICE] ERROR: {type(e).__name__}: {str(e)}")
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=500,
+            detail=f"Invoice generation failed: {str(e)}"
         )

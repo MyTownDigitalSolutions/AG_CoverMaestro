@@ -2,11 +2,15 @@ import { useState } from 'react'
 import {
     Box, Typography, Container, TextField, Button, Paper, Table, TableBody, TableCell,
     TableContainer, TableHead, TableRow, MenuItem, Alert, CircularProgress, Dialog,
-    DialogTitle, DialogContent, DialogActions, Divider, Chip
+    DialogTitle, DialogContent, DialogActions, Divider, Chip, IconButton, Autocomplete, Checkbox
 } from '@mui/material'
 import SearchIcon from '@mui/icons-material/Search'
 import ListAltIcon from '@mui/icons-material/ListAlt'
 import CleaningServicesIcon from '@mui/icons-material/CleaningServices'
+import EditIcon from '@mui/icons-material/Edit'
+import CheckIcon from '@mui/icons-material/Check'
+import CloseIcon from '@mui/icons-material/Close'
+import ReceiptIcon from '@mui/icons-material/Receipt'
 
 interface MarketplaceOrder {
     id: number
@@ -45,6 +49,27 @@ interface OrderLine {
     quantity: number
     unit_price_cents?: number
     line_total_cents?: number
+    product_id?: string
+    model_id?: number
+    // Resolved fields from backend
+    resolved_model_id?: number
+    resolved_model_name?: string
+    resolved_manufacturer_name?: string
+    resolved_series_name?: string
+}
+
+interface ModelSearchResult {
+    id: number
+    name: string
+    manufacturer_name?: string
+    series_name?: string
+    reverb_product_id?: string
+    // Fields from marketplace-lookup endpoint
+    model_id?: number
+    model_name?: string
+    sku?: string
+    matched_listing_marketplace?: string
+    matched_listing_identifier?: string
 }
 
 interface OrderShipment {
@@ -102,6 +127,20 @@ export default function MarketplaceOrdersPage() {
     const [cleanupRunResult, setCleanupRunResult] = useState<CleanupResult | null>(null)
     const [cleanupError, setCleanupError] = useState<string | null>(null)
     const [cleanupPreviewOrderId, setCleanupPreviewOrderId] = useState<number | null>(null)
+
+    // Line edit state
+    const [editingLineId, setEditingLineId] = useState<number | null>(null)
+    const [editProductId, setEditProductId] = useState('')
+    const [editModelId, setEditModelId] = useState<number | null>(null)
+    const [lineEditLoading, setLineEditLoading] = useState(false)
+    const [lineEditError, setLineEditError] = useState<string | null>(null)
+    const [modelSearchQuery, setModelSearchQuery] = useState('')
+    const [modelSearchResults, setModelSearchResults] = useState<ModelSearchResult[]>([])
+    const [modelSearchLoading, setModelSearchLoading] = useState(false)
+
+    // Order selection state (for invoice generation)
+    const [selectedOrderIds, setSelectedOrderIds] = useState<number[]>([])
+    const [invoiceLoading, setInvoiceLoading] = useState(false)
 
     const handleSearch = async () => {
         setIsSearching(true)
@@ -169,6 +208,184 @@ export default function MarketplaceOrdersPage() {
         setCleanupRunResult(null)
         setCleanupError(null)
         setCleanupPreviewOrderId(null)
+        // Reset line edit state when closing
+        setEditingLineId(null)
+        setEditProductId('')
+        setEditModelId(null)
+        setLineEditError(null)
+    }
+
+    const handleStartLineEdit = async (line: OrderLine) => {
+        setEditingLineId(line.id)
+        setEditProductId(line.product_id || '')
+        setEditModelId(line.resolved_model_id || null)
+        setLineEditError(null)
+        setModelSearchResults([]) // Clear previous results
+
+        // If order is Reverb and product_id exists, pre-load marketplace lookup results
+        if (orderDetail?.marketplace?.toLowerCase() === 'reverb' && line.product_id) {
+            setModelSearchLoading(true)
+            try {
+                const response = await fetch(
+                    `/api/models/marketplace-lookup?marketplace=reverb&identifier=${encodeURIComponent(line.product_id)}`
+                )
+                if (response.ok) {
+                    const data = await response.json()
+                    // Convert marketplace-lookup response to ModelSearchResult format
+                    const results: ModelSearchResult[] = data.map((item: any) => ({
+                        id: item.model_id,
+                        name: item.model_name,
+                        manufacturer_name: item.manufacturer_name,
+                        series_name: item.series_name,
+                        sku: item.sku,
+                        matched_listing_marketplace: item.matched_listing_marketplace,
+                        matched_listing_identifier: item.matched_listing_identifier
+                    }))
+                    setModelSearchResults(results)
+                }
+            } catch (err) {
+                console.error('Marketplace lookup failed:', err)
+            } finally {
+                setModelSearchLoading(false)
+            }
+        }
+    }
+
+    const handleCancelLineEdit = () => {
+        setEditingLineId(null)
+        setEditProductId('')
+        setEditModelId(null)
+        setLineEditError(null)
+    }
+
+    const handleSaveLineEdit = async () => {
+        if (!editingLineId || !adminKey.trim()) {
+            setLineEditError('Admin key is required')
+            return
+        }
+
+        setLineEditLoading(true)
+        setLineEditError(null)
+
+        try {
+            const response = await fetch(`/api/marketplace-orders/lines/${editingLineId}`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-Admin-Key': adminKey.trim()
+                },
+                body: JSON.stringify({
+                    product_id: editProductId || null,
+                    model_id: editModelId || 0  // 0 clears the model_id
+                })
+            })
+
+            if (!response.ok) {
+                const text = await response.text()
+                throw new Error(`Error ${response.status}: ${text.slice(0, 100)}`)
+            }
+
+            // Re-fetch order detail to get updated resolved fields
+            if (orderDetail) {
+                const detailResponse = await fetch(`/api/marketplace-orders/${orderDetail.id}`)
+                if (detailResponse.ok) {
+                    const detailData: OrderDetail = await detailResponse.json()
+                    setOrderDetail(detailData)
+                }
+            }
+
+            handleCancelLineEdit()
+        } catch (err) {
+            setLineEditError(err instanceof Error ? err.message : 'Failed to save')
+        } finally {
+            setLineEditLoading(false)
+        }
+    }
+
+    const searchModels = async (query: string) => {
+        if (!query.trim()) {
+            setModelSearchResults([])
+            return
+        }
+
+        setModelSearchLoading(true)
+        setModelSearchQuery(query)
+
+        try {
+            const response = await fetch(`/api/models/search?q=${encodeURIComponent(query)}&limit=10`)
+            if (response.ok) {
+                const data: ModelSearchResult[] = await response.json()
+                setModelSearchResults(data)
+            }
+        } catch (err) {
+            console.error('Model search failed:', err)
+        } finally {
+            setModelSearchLoading(false)
+        }
+    }
+
+    // Order selection handlers
+    const handleOrderSelect = (orderId: number, checked: boolean) => {
+        if (checked) {
+            setSelectedOrderIds(prev => [...prev, orderId])
+        } else {
+            setSelectedOrderIds(prev => prev.filter(id => id !== orderId))
+        }
+    }
+
+    const handleSelectAll = (checked: boolean) => {
+        if (checked) {
+            setSelectedOrderIds(orders.map(o => o.id))
+        } else {
+            setSelectedOrderIds([])
+        }
+    }
+
+    const handleGenerateInvoice = async (orderIds?: number[]) => {
+        const idsToGenerate = orderIds || selectedOrderIds
+        if (idsToGenerate.length === 0) {
+            setError('Please select at least one order')
+            return
+        }
+        if (!adminKey.trim()) {
+            setError('Admin key is required for invoice generation')
+            return
+        }
+
+        setInvoiceLoading(true)
+        setError(null)
+
+        try {
+            const response = await fetch('/api/marketplace-orders/invoice', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-Admin-Key': adminKey.trim()
+                },
+                body: JSON.stringify({
+                    order_ids: idsToGenerate,
+                    mode: 'html'
+                })
+            })
+
+            if (!response.ok) {
+                const text = await response.text()
+                throw new Error(`Error ${response.status}: ${text.slice(0, 100)}`)
+            }
+
+            const data = await response.json()
+
+            // Open invoice in new tab
+            const invoiceWindow = window.open('', '_blank')
+            if (invoiceWindow) {
+                invoiceWindow.document.write(data.html)
+                invoiceWindow.document.close()
+            }
+        } catch (err) {
+            setError(err instanceof Error ? err.message : 'Invoice generation failed')
+        } finally {
+            setInvoiceLoading(false)
+        }
     }
 
     const handleCleanupShipmentsPreview = async () => {
@@ -407,43 +624,73 @@ export default function MarketplaceOrdersPage() {
 
             {/* Results table */}
             {orders.length > 0 && (
-                <TableContainer component={Paper}>
-                    <Table>
-                        <TableHead>
-                            <TableRow>
-                                <TableCell>Order Date</TableCell>
-                                <TableCell>Marketplace</TableCell>
-                                <TableCell>Order ID</TableCell>
-                                <TableCell>Status</TableCell>
-                                <TableCell>Buyer Email</TableCell>
-                                <TableCell align="right">Total</TableCell>
-                            </TableRow>
-                        </TableHead>
-                        <TableBody>
-                            {orders.map((order) => (
-                                <TableRow
-                                    key={order.id}
-                                    hover
-                                    onClick={() => handleRowClick(order.id)}
-                                    sx={{ cursor: 'pointer' }}
-                                >
-                                    <TableCell>{formatDate(order.order_date)}</TableCell>
-                                    <TableCell>
-                                        <Chip label={order.marketplace} size="small" color="primary" variant="outlined" />
+                <>
+                    {/* Selection actions bar */}
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2 }}>
+                        <Typography variant="body2" color="text.secondary">
+                            {selectedOrderIds.length > 0
+                                ? `${selectedOrderIds.length} order(s) selected`
+                                : 'Select orders to generate invoice'}
+                        </Typography>
+                        <Button
+                            variant="contained"
+                            startIcon={invoiceLoading ? <CircularProgress size={16} /> : <ReceiptIcon />}
+                            onClick={() => handleGenerateInvoice()}
+                            disabled={selectedOrderIds.length === 0 || invoiceLoading || !adminKey.trim()}
+                        >
+                            Generate Invoice
+                        </Button>
+                    </Box>
+                    <TableContainer component={Paper}>
+                        <Table>
+                            <TableHead>
+                                <TableRow>
+                                    <TableCell padding="checkbox">
+                                        <Checkbox
+                                            checked={orders.length > 0 && selectedOrderIds.length === orders.length}
+                                            indeterminate={selectedOrderIds.length > 0 && selectedOrderIds.length < orders.length}
+                                            onChange={(e) => handleSelectAll(e.target.checked)}
+                                        />
                                     </TableCell>
-                                    <TableCell>{order.external_order_number || order.external_order_id}</TableCell>
-                                    <TableCell>
-                                        {order.status_normalized || order.status_raw || '—'}
-                                    </TableCell>
-                                    <TableCell>{order.buyer_email || '—'}</TableCell>
-                                    <TableCell align="right">
-                                        {formatCurrency(order.order_total_cents, order.currency_code)}
-                                    </TableCell>
+                                    <TableCell>Order Date</TableCell>
+                                    <TableCell>Marketplace</TableCell>
+                                    <TableCell>Order ID</TableCell>
+                                    <TableCell>Status</TableCell>
+                                    <TableCell>Buyer Email</TableCell>
+                                    <TableCell align="right">Total</TableCell>
                                 </TableRow>
-                            ))}
-                        </TableBody>
-                    </Table>
-                </TableContainer>
+                            </TableHead>
+                            <TableBody>
+                                {orders.map((order) => (
+                                    <TableRow
+                                        key={order.id}
+                                        hover
+                                        sx={{ cursor: 'pointer' }}
+                                    >
+                                        <TableCell padding="checkbox" onClick={(e) => e.stopPropagation()}>
+                                            <Checkbox
+                                                checked={selectedOrderIds.includes(order.id)}
+                                                onChange={(e) => handleOrderSelect(order.id, e.target.checked)}
+                                            />
+                                        </TableCell>
+                                        <TableCell onClick={() => handleRowClick(order.id)}>{formatDate(order.order_date)}</TableCell>
+                                        <TableCell onClick={() => handleRowClick(order.id)}>
+                                            <Chip label={order.marketplace} size="small" color="primary" variant="outlined" />
+                                        </TableCell>
+                                        <TableCell onClick={() => handleRowClick(order.id)}>{order.external_order_number || order.external_order_id}</TableCell>
+                                        <TableCell onClick={() => handleRowClick(order.id)}>
+                                            {order.status_normalized || order.status_raw || '—'}
+                                        </TableCell>
+                                        <TableCell onClick={() => handleRowClick(order.id)}>{order.buyer_email || '—'}</TableCell>
+                                        <TableCell align="right" onClick={() => handleRowClick(order.id)}>
+                                            {formatCurrency(order.order_total_cents, order.currency_code)}
+                                        </TableCell>
+                                    </TableRow>
+                                ))}
+                            </TableBody>
+                        </Table>
+                    </TableContainer>
+                </>
             )}
 
             {/* Order Detail Dialog */}
@@ -521,34 +768,118 @@ export default function MarketplaceOrdersPage() {
                                     <Typography variant="subtitle1" fontWeight="bold" gutterBottom>
                                         Line Items
                                     </Typography>
-                                    <TableContainer>
-                                        <Table size="small">
-                                            <TableHead>
-                                                <TableRow>
-                                                    <TableCell>SKU</TableCell>
-                                                    <TableCell>Title</TableCell>
-                                                    <TableCell align="right">Qty</TableCell>
-                                                    <TableCell align="right">Unit Price</TableCell>
-                                                    <TableCell align="right">Total</TableCell>
-                                                </TableRow>
-                                            </TableHead>
-                                            <TableBody>
-                                                {orderDetail.lines.map((line) => (
-                                                    <TableRow key={line.id}>
-                                                        <TableCell>{line.sku || '—'}</TableCell>
-                                                        <TableCell>{line.title || '—'}</TableCell>
-                                                        <TableCell align="right">{line.quantity}</TableCell>
-                                                        <TableCell align="right">
-                                                            {formatCurrency(line.unit_price_cents, orderDetail.currency_code)}
-                                                        </TableCell>
-                                                        <TableCell align="right">
-                                                            {formatCurrency(line.line_total_cents, orderDetail.currency_code)}
-                                                        </TableCell>
-                                                    </TableRow>
-                                                ))}
-                                            </TableBody>
-                                        </Table>
-                                    </TableContainer>
+                                    {orderDetail.lines.map((line) => (
+                                        <Paper key={line.id} variant="outlined" sx={{ p: 2, mb: 2 }}>
+                                            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 1 }}>
+                                                <Box>
+                                                    <Typography variant="body2" fontWeight="bold">
+                                                        {line.title || line.sku || '—'}
+                                                    </Typography>
+                                                    <Typography variant="body2" color="text.secondary">
+                                                        SKU: {line.sku || '—'} | Qty: {line.quantity} | {formatCurrency(line.line_total_cents, orderDetail.currency_code)}
+                                                    </Typography>
+                                                </Box>
+                                                {editingLineId !== line.id && (
+                                                    <IconButton size="small" onClick={() => handleStartLineEdit(line)} disabled={!adminKey.trim()}>
+                                                        <EditIcon fontSize="small" />
+                                                    </IconButton>
+                                                )}
+                                            </Box>
+
+                                            {/* Resolved Model Info */}
+                                            {line.resolved_model_name ? (
+                                                <Box sx={{ mb: 1, p: 1, bgcolor: 'success.50', borderRadius: 1, border: '1px solid', borderColor: 'success.light' }}>
+                                                    <Typography variant="body2" color="success.dark">
+                                                        <strong>Linked:</strong> {line.resolved_manufacturer_name} / {line.resolved_series_name} / {line.resolved_model_name}
+                                                    </Typography>
+                                                </Box>
+                                            ) : (
+                                                <Chip label="Unmatched" size="small" color="warning" variant="outlined" sx={{ mb: 1 }} />
+                                            )}
+
+                                            {/* Reverb Product ID */}
+                                            <Typography variant="caption" color="text.secondary">
+                                                Reverb Product ID: {line.product_id || '—'}
+                                            </Typography>
+
+                                            {/* Edit Mode */}
+                                            {editingLineId === line.id && (
+                                                <Box sx={{ mt: 2, p: 2, bgcolor: 'grey.50', borderRadius: 1 }}>
+                                                    <Typography variant="body2" fontWeight="bold" gutterBottom>
+                                                        Edit Line Mapping
+                                                    </Typography>
+
+                                                    {lineEditError && (
+                                                        <Alert severity="error" sx={{ mb: 2 }} onClose={() => setLineEditError(null)}>
+                                                            {lineEditError}
+                                                        </Alert>
+                                                    )}
+
+                                                    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                                                        <TextField
+                                                            label="Reverb Product ID"
+                                                            value={editProductId}
+                                                            onChange={(e) => setEditProductId(e.target.value)}
+                                                            size="small"
+                                                            fullWidth
+                                                        />
+
+                                                        <Autocomplete
+                                                            options={modelSearchResults}
+                                                            getOptionLabel={(option) =>
+                                                                `${option.manufacturer_name || ''} / ${option.series_name || ''} / ${option.name}`
+                                                            }
+                                                            loading={modelSearchLoading}
+                                                            value={modelSearchResults.find(m => m.id === editModelId) || null}
+                                                            onInputChange={(_, value) => searchModels(value)}
+                                                            onChange={(_, value) => setEditModelId(value?.id || null)}
+                                                            renderInput={(params) => (
+                                                                <TextField
+                                                                    {...params}
+                                                                    label="Link to Model"
+                                                                    size="small"
+                                                                    placeholder="Search models..."
+                                                                />
+                                                            )}
+                                                            renderOption={(props, option) => (
+                                                                <li {...props} key={option.id}>
+                                                                    <Box>
+                                                                        <Typography variant="body2">
+                                                                            {option.manufacturer_name} / {option.series_name} / {option.name}
+                                                                        </Typography>
+                                                                        {option.reverb_product_id && (
+                                                                            <Typography variant="caption" color="text.secondary">
+                                                                                Reverb ID: {option.reverb_product_id}
+                                                                            </Typography>
+                                                                        )}
+                                                                    </Box>
+                                                                </li>
+                                                            )}
+                                                        />
+
+                                                        <Box sx={{ display: 'flex', gap: 1, justifyContent: 'flex-end' }}>
+                                                            <Button
+                                                                size="small"
+                                                                onClick={handleCancelLineEdit}
+                                                                startIcon={<CloseIcon />}
+                                                            >
+                                                                Cancel
+                                                            </Button>
+                                                            <Button
+                                                                size="small"
+                                                                variant="contained"
+                                                                onClick={handleSaveLineEdit}
+                                                                disabled={lineEditLoading}
+                                                                startIcon={lineEditLoading ? <CircularProgress size={16} /> : <CheckIcon />}
+                                                            >
+                                                                Save
+                                                            </Button>
+                                                        </Box>
+                                                    </Box>
+                                                </Box>
+                                            )}
+                                        </Paper>
+                                    ))}
                                     <Divider sx={{ my: 2 }} />
                                 </>
                             )}
