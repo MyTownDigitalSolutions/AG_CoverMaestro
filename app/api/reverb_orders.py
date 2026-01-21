@@ -71,6 +71,27 @@ class SampleOrderResponse(BaseModel):
     message: str
 
 
+class NormalizeOrdersRequest(BaseModel):
+    """Request body for normalize orders endpoint."""
+    days_back: int = 30
+    limit: int = 200
+    dry_run: bool = True
+    debug: bool = False
+    force_rebuild_lines: bool = False  # If true, rebuild lines even if they exist
+
+
+class NormalizeOrdersResponse(BaseModel):
+    """Response for normalize orders endpoint."""
+    dry_run: bool
+    orders_scanned: int
+    orders_updated: int
+    addresses_upserted: int
+    lines_upserted: int
+    orders_skipped: int
+    preview: Optional[List[dict]] = None
+    debug: Optional[dict] = None
+
+
 # =============================================================================
 # Helper Functions
 # =============================================================================
@@ -512,5 +533,298 @@ def get_sample_reverb_order(
         raise
     except Exception as e:
         print(f"[REVERB_IMPORT] sample_error error={repr(e)}")
+        print(traceback.format_exc())
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
+# =============================================================================
+# Normalization Helpers
+# =============================================================================
+
+def _extract_reverb_buyer_info(raw: dict) -> dict:
+    """Extract buyer info from Reverb raw_marketplace_data."""
+    return {
+        "buyer_email": raw.get("buyer_email"),
+        "buyer_name": raw.get("buyer", {}).get("first_name") if raw.get("buyer") else None,
+    }
+
+
+def _extract_reverb_totals(raw: dict) -> dict:
+    """Extract monetary totals from Reverb raw_marketplace_data."""
+    totals = {}
+    
+    # amount_product → items_subtotal_cents
+    amount_product = raw.get("amount_product", {})
+    if amount_product and amount_product.get("amount_cents") is not None:
+        totals["items_subtotal_cents"] = amount_product.get("amount_cents")
+    
+    # shipping → shipping_cents
+    shipping = raw.get("shipping", {})
+    if shipping and shipping.get("amount_cents") is not None:
+        totals["shipping_cents"] = shipping.get("amount_cents")
+    
+    # amount_tax → tax_cents
+    amount_tax = raw.get("amount_tax", {})
+    if amount_tax and amount_tax.get("amount_cents") is not None:
+        totals["tax_cents"] = amount_tax.get("amount_cents")
+    
+    # total → order_total_cents
+    total = raw.get("total", {})
+    if total and total.get("amount_cents") is not None:
+        totals["order_total_cents"] = total.get("amount_cents")
+    
+    # Currency code (prefer from total, fallback to amount_product)
+    currency = None
+    if total and total.get("currency"):
+        currency = total.get("currency")
+    elif amount_product and amount_product.get("currency"):
+        currency = amount_product.get("currency")
+    
+    if currency:
+        totals["currency_code"] = currency
+    
+    return totals
+
+
+def _extract_reverb_shipping_address(raw: dict, external_order_id: str) -> Optional[dict]:
+    """Extract shipping address from Reverb raw_marketplace_data."""
+    shipping_addr = raw.get("shipping_address")
+    if not shipping_addr:
+        return None
+    
+    return {
+        "address_type": "shipping",
+        "name": shipping_addr.get("name"),
+        "line1": shipping_addr.get("street_address"),
+        "line2": shipping_addr.get("extended_address"),
+        "city": shipping_addr.get("locality"),
+        "state_or_region": shipping_addr.get("region"),
+        "postal_code": shipping_addr.get("postal_code"),
+        "country_code": shipping_addr.get("country_code"),
+        "phone": shipping_addr.get("phone"),
+        "raw_payload": shipping_addr,  # Store original for debugging
+    }
+
+
+def _extract_reverb_line_item(raw: dict, external_order_id: str) -> dict:
+    """Create a minimal line item from Reverb raw_marketplace_data."""
+    product_id = raw.get("product_id") or raw.get("product", {}).get("id")
+    quantity = raw.get("quantity", 1)
+    
+    # Get price from amount_product
+    amount_product = raw.get("amount_product", {})
+    line_total_cents = amount_product.get("amount_cents") if amount_product else None
+    unit_price_cents = line_total_cents // quantity if line_total_cents and quantity else None
+    
+    # Generate deterministic external_line_item_id
+    external_line_item_id = f"{external_order_id}-1"
+    
+    # Try to get title from product
+    title = None
+    product = raw.get("product")
+    if product:
+        title = product.get("title") or product.get("name")
+    if not title and product_id:
+        title = f"(Reverb product {product_id})"
+    
+    return {
+        "external_line_item_id": external_line_item_id,
+        "product_id": str(product_id) if product_id else None,
+        "quantity": quantity,
+        "unit_price_cents": unit_price_cents,
+        "line_total_cents": line_total_cents,
+        "title": title,
+        "sku": raw.get("sku"),
+    }
+
+
+@router.post("/normalize", response_model=NormalizeOrdersResponse)
+def normalize_reverb_orders(
+    request: NormalizeOrdersRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    Normalize existing Reverb orders by populating buyer, totals, addresses, and lines
+    from raw_marketplace_data.
+    
+    Parameters:
+    - days_back: Number of days back to filter orders (default 30)
+    - limit: Maximum orders to process (default 200)
+    - dry_run: If true, compute but don't write changes (default true)
+    - debug: If true, include debug info in response
+    - force_rebuild_lines: If true, rebuild lines even if they exist (default false)
+    """
+    try:
+        # Calculate date cutoff
+        cutoff = datetime.utcnow() - timedelta(days=request.days_back)
+        
+        print(f"[REVERB_NORMALIZE] action=START days_back={request.days_back} limit={request.limit} dry_run={request.dry_run} force_rebuild_lines={request.force_rebuild_lines}")
+        
+        # Query Reverb orders with raw_marketplace_data
+        orders = db.query(MarketplaceOrder).filter(
+            MarketplaceOrder.marketplace == Marketplace.REVERB,
+            MarketplaceOrder.order_date >= cutoff,
+            MarketplaceOrder.raw_marketplace_data.isnot(None)
+        ).order_by(MarketplaceOrder.order_date.desc()).limit(request.limit).all()
+        
+        orders_scanned = len(orders)
+        orders_updated = 0
+        orders_skipped = 0
+        addresses_upserted = 0
+        lines_upserted = 0
+        preview = []
+        debug_info = {} if request.debug else None
+        
+        for order in orders:
+            raw = order.raw_marketplace_data
+            if not isinstance(raw, dict):
+                orders_skipped += 1
+                continue
+            
+            external_order_id = order.external_order_id or str(order.id)
+            order_updated = False
+            preview_item = {"order_id": order.id, "external_order_id": external_order_id}
+            
+            # 1. Extract and apply buyer info
+            buyer_info = _extract_reverb_buyer_info(raw)
+            if buyer_info.get("buyer_email") and not order.buyer_email:
+                if not request.dry_run:
+                    order.buyer_email = buyer_info["buyer_email"]
+                preview_item["buyer_email"] = buyer_info["buyer_email"]
+                order_updated = True
+            if buyer_info.get("buyer_name") and not order.buyer_name:
+                if not request.dry_run:
+                    order.buyer_name = buyer_info["buyer_name"]
+                preview_item["buyer_name"] = buyer_info["buyer_name"]
+                order_updated = True
+            
+            # 2. Extract and apply totals
+            totals = _extract_reverb_totals(raw)
+            for field, value in totals.items():
+                current_value = getattr(order, field, None)
+                if value is not None and current_value is None:
+                    if not request.dry_run:
+                        setattr(order, field, value)
+                    preview_item[field] = value
+                    order_updated = True
+            
+            # 3. Extract and upsert shipping address
+            addr_data = _extract_reverb_shipping_address(raw, external_order_id)
+            if addr_data:
+                preview_item["address"] = {
+                    "city": addr_data.get("city"),
+                    "state_or_region": addr_data.get("state_or_region"),
+                    "country_code": addr_data.get("country_code"),
+                }
+                
+                if not request.dry_run:
+                    # Check if shipping address already exists
+                    existing_addr = db.query(MarketplaceOrderAddress).filter(
+                        MarketplaceOrderAddress.order_id == order.id,
+                        MarketplaceOrderAddress.address_type == "shipping"
+                    ).first()
+                    
+                    if existing_addr:
+                        # Update existing
+                        for key, val in addr_data.items():
+                            if key != "address_type" and val is not None:
+                                setattr(existing_addr, key, val)
+                    else:
+                        # Create new
+                        new_addr = MarketplaceOrderAddress(
+                            order_id=order.id,
+                            address_type=addr_data.get("address_type", "shipping"),
+                            name=addr_data.get("name"),
+                            line1=addr_data.get("line1"),
+                            line2=addr_data.get("line2"),
+                            city=addr_data.get("city"),
+                            state_or_region=addr_data.get("state_or_region"),
+                            postal_code=addr_data.get("postal_code"),
+                            country_code=addr_data.get("country_code"),
+                            phone=addr_data.get("phone"),
+                            raw_payload=addr_data.get("raw_payload")
+                        )
+                        db.add(new_addr)
+                    
+                    addresses_upserted += 1
+                else:
+                    addresses_upserted += 1  # Count for preview
+                
+                order_updated = True
+            
+            # 4. Extract and upsert line item (only if no lines exist or force_rebuild)
+            existing_lines_count = db.query(MarketplaceOrderLine).filter(
+                MarketplaceOrderLine.order_id == order.id
+            ).count()
+            
+            should_create_line = (existing_lines_count == 0) or request.force_rebuild_lines
+            
+            if should_create_line:
+                line_data = _extract_reverb_line_item(raw, external_order_id)
+                preview_item["line"] = {
+                    "title": line_data.get("title"),
+                    "quantity": line_data.get("quantity"),
+                    "line_total_cents": line_data.get("line_total_cents"),
+                }
+                
+                if not request.dry_run:
+                    if request.force_rebuild_lines and existing_lines_count > 0:
+                        # Delete existing lines first
+                        db.query(MarketplaceOrderLine).filter(
+                            MarketplaceOrderLine.order_id == order.id
+                        ).delete(synchronize_session=False)
+                    
+                    new_line = MarketplaceOrderLine(
+                        order_id=order.id,
+                        external_line_item_id=line_data.get("external_line_item_id"),
+                        product_id=line_data.get("product_id"),
+                        sku=line_data.get("sku"),
+                        title=line_data.get("title"),
+                        quantity=line_data.get("quantity", 1),
+                        unit_price_cents=line_data.get("unit_price_cents"),
+                        line_total_cents=line_data.get("line_total_cents"),
+                    )
+                    db.add(new_line)
+                    lines_upserted += 1
+                else:
+                    lines_upserted += 1  # Count for preview
+                
+                order_updated = True
+            else:
+                preview_item["line_skipped"] = f"existing_lines={existing_lines_count}"
+            
+            if order_updated:
+                orders_updated += 1
+                if len(preview) < 3:
+                    preview.append(preview_item)
+            else:
+                orders_skipped += 1
+        
+        if not request.dry_run:
+            db.commit()
+        
+        print(f"[REVERB_NORMALIZE] scanned={orders_scanned} updated={orders_updated} skipped={orders_skipped} addresses={addresses_upserted} lines={lines_upserted} dry_run={request.dry_run}")
+        
+        if request.debug:
+            debug_info = {
+                "cutoff_utc": cutoff.isoformat(),
+                "days_back": request.days_back,
+                "limit": request.limit,
+                "force_rebuild_lines": request.force_rebuild_lines,
+            }
+        
+        return NormalizeOrdersResponse(
+            dry_run=request.dry_run,
+            orders_scanned=orders_scanned,
+            orders_updated=orders_updated,
+            addresses_upserted=addresses_upserted,
+            lines_upserted=lines_upserted,
+            orders_skipped=orders_skipped,
+            preview=preview if preview else None,
+            debug=debug_info
+        )
+        
+    except Exception as e:
+        print(f"[REVERB_NORMALIZE] unhandled_exception error={repr(e)}")
         print(traceback.format_exc())
         raise HTTPException(status_code=500, detail="Internal server error")
