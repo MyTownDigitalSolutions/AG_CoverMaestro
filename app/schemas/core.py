@@ -905,3 +905,36 @@ class MarketplaceOrderDetailResponse(MarketplaceOrderResponse):
 
     class Config:
         from_attributes = True
+
+
+# ============================================================
+# Marketplace Credentials Schemas (Reverb)
+# ============================================================
+
+class ReverbCredentialsUpsertRequest(BaseModel):
+    """Request schema for creating/updating Reverb API credentials."""
+    is_enabled: bool = True
+    api_token: str
+    base_url: Optional[str] = "https://api.reverb.com"
+
+
+class ReverbCredentialsResponse(BaseModel):
+    """Response schema for Reverb credentials (token may be masked)."""
+    marketplace: str = "reverb"
+    is_enabled: bool
+    api_token: str  # Either revealed or masked "********" depending on flag
+    base_url: str
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class CredentialsTestResponse(BaseModel):
+    """Response schema for credential testing endpoint."""
+    ok: bool
+    marketplace: str
+    status_code: int
+    account: Optional[Dict[str, Any]] = None
+    error: Optional[str] = None
+

@@ -759,6 +759,27 @@ class MarketplaceOrderShipment(Base):
     order = relationship("MarketplaceOrder", back_populates="shipments")
 
 
+class MarketplaceCredential(Base):
+    """Storage for marketplace API credentials.
+    
+    Stores encrypted (or plaintext if allowed) credentials for each marketplace.
+    Only one row per marketplace is allowed (unique constraint).
+    """
+    __tablename__ = "marketplace_credentials"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    marketplace = Column(String(50), nullable=False, unique=True, index=True)
+    is_enabled = Column(Boolean, nullable=False, default=True)
+    label = Column(String(255), nullable=True)
+    secrets_blob = Column(Text, nullable=False)  # Encrypted or plaintext JSON
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    __table_args__ = (
+        UniqueConstraint('marketplace', name='uq_marketplace_credentials_marketplace'),
+    )
+
+
 # Post-class relationship definitions to handle forward references
 EquipmentType.pricing_options = relationship("EquipmentTypePricingOption", back_populates="equipment_type", cascade="all, delete-orphan")
 EquipmentType.design_options = relationship("EquipmentTypeDesignOption", back_populates="equipment_type", cascade="all, delete-orphan")
