@@ -2,7 +2,8 @@ import { useState } from 'react'
 import {
     Box, Typography, Paper, Container, TextField, Button, Switch,
     FormControlLabel, Alert, CircularProgress, IconButton, InputAdornment,
-    Divider, Card, CardContent, CardHeader, Chip
+    Divider, Card, CardContent, CardHeader, Chip, Checkbox, Table, TableBody,
+    TableCell, TableHead, TableRow, TableContainer
 } from '@mui/material'
 import StorefrontIcon from '@mui/icons-material/Storefront'
 import RefreshIcon from '@mui/icons-material/Refresh'
@@ -12,6 +13,7 @@ import VisibilityIcon from '@mui/icons-material/Visibility'
 import VisibilityOffIcon from '@mui/icons-material/VisibilityOff'
 import CheckCircleIcon from '@mui/icons-material/CheckCircle'
 import ErrorIcon from '@mui/icons-material/Error'
+import DownloadIcon from '@mui/icons-material/Download'
 
 // Masked token placeholder returned by backend when reveal is disabled
 const MASKED_TOKEN = '********'
@@ -35,6 +37,37 @@ interface TestResult {
         locale?: string
     }
     error?: string
+}
+
+interface OrderPreview {
+    external_order_id: string
+    external_order_number?: string
+    order_date: string
+    status_raw: string
+    currency_code: string
+    order_total_cents: number
+    line_count: number
+    address_count: number
+}
+
+interface ImportResult {
+    import_run_id?: number
+    dry_run: boolean
+    total_fetched: number
+    total_created: number
+    total_updated: number
+    total_failed: number
+    failed_order_ids: string[]
+    preview_orders?: OrderPreview[]
+    // Debug fields
+    filter_since_utc?: string
+    filter_mode?: string
+    timestamp_field_used?: string
+    raw_fetched?: number
+    filtered?: number
+    pages_fetched?: number
+    early_stop?: boolean
+    undated_count?: number
 }
 
 type StatusType = 'idle' | 'loading' | 'success' | 'error' | 'not_configured'
@@ -70,6 +103,16 @@ export default function MarketplaceCredentialsPage() {
     const [isRefreshing, setIsRefreshing] = useState(false)
     const [isSaving, setIsSaving] = useState(false)
     const [isTesting, setIsTesting] = useState(false)
+
+    // Reverb Orders Import state
+    const [daysBack, setDaysBack] = useState(30)
+    const [sinceIso, setSinceIso] = useState('')
+    const [limit, setLimit] = useState(50)
+    const [dryRun, setDryRun] = useState(true)
+    const [debug, setDebug] = useState(false)
+    const [importStatus, setImportStatus] = useState<Status>({ type: 'idle', message: '' })
+    const [isImporting, setIsImporting] = useState(false)
+    const [importResult, setImportResult] = useState<ImportResult | null>(null)
 
     const hasAdminKey = adminKey.trim().length > 0
 
@@ -231,6 +274,72 @@ export default function MarketplaceCredentialsPage() {
             setTestStatus({ type: 'error', message: `Connection error: ${err instanceof Error ? err.message : 'Unknown'}` })
         } finally {
             setIsTesting(false)
+        }
+    }
+
+    // Import Reverb orders
+    const handleImportOrders = async () => {
+        if (!hasAdminKey) return
+
+        setIsImporting(true)
+        setImportStatus({ type: 'loading', message: 'Importing orders...' })
+        setImportResult(null)
+
+        try {
+            const requestBody: Record<string, unknown> = {
+                days_back: daysBack,
+                limit,
+                dry_run: dryRun,
+                debug,
+            }
+
+            // If since_iso is provided, include it
+            if (sinceIso.trim()) {
+                requestBody.since_iso = sinceIso.trim()
+            }
+
+            const response = await authFetch('/api/reverb/orders/import', {
+                method: 'POST',
+                body: JSON.stringify(requestBody),
+            })
+
+            if (response.status === 401) {
+                setImportStatus({ type: 'error', message: 'Invalid Admin Key' })
+                return
+            }
+
+            if (response.status === 400) {
+                const text = await response.text()
+                setImportStatus({ type: 'error', message: text || 'Credentials not configured or disabled' })
+                return
+            }
+
+            if (response.status === 502) {
+                const text = await response.text()
+                setImportStatus({ type: 'error', message: `Reverb API error: ${text.slice(0, 150)}` })
+                return
+            }
+
+            if (!response.ok) {
+                const text = await response.text()
+                setImportStatus({ type: 'error', message: `Error ${response.status}: ${text.slice(0, 100)}` })
+                return
+            }
+
+            const data: ImportResult = await response.json()
+            setImportResult(data)
+
+            if (data.total_failed === 0) {
+                setImportStatus({ type: 'success', message: dryRun ? 'Dry run completed successfully!' : 'Import completed successfully!' })
+            } else if (data.total_created + data.total_updated > 0) {
+                setImportStatus({ type: 'success', message: `Completed with ${data.total_failed} failures` })
+            } else {
+                setImportStatus({ type: 'error', message: 'Import failed for all orders' })
+            }
+        } catch (err) {
+            setImportStatus({ type: 'error', message: `Connection error: ${err instanceof Error ? err.message : 'Unknown'}` })
+        } finally {
+            setIsImporting(false)
         }
     }
 
@@ -442,6 +551,196 @@ export default function MarketplaceCredentialsPage() {
                                 <Typography variant="body2" sx={{ pl: 4 }}>
                                     {testResult.error || `HTTP ${testResult.status_code}`}
                                 </Typography>
+                            </Paper>
+                        )}
+                    </Box>
+                </CardContent>
+            </Card>
+
+            {/* Reverb Orders Import Card */}
+            <Card sx={{ mb: 3 }}>
+                <CardHeader
+                    title={
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                            <Typography variant="h6">Reverb Orders Import</Typography>
+                        </Box>
+                    }
+                    action={
+                        <Button
+                            variant="contained"
+                            color="primary"
+                            size="small"
+                            startIcon={isImporting ? <CircularProgress size={16} color="inherit" /> : <DownloadIcon />}
+                            onClick={handleImportOrders}
+                            disabled={!hasAdminKey || isImporting}
+                        >
+                            Run Import
+                        </Button>
+                    }
+                />
+                <Divider />
+                <CardContent>
+                    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                        {/* Import controls */}
+                        <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
+                            <TextField
+                                label="Days Back"
+                                type="number"
+                                value={daysBack}
+                                onChange={(e) => setDaysBack(parseInt(e.target.value) || 30)}
+                                size="small"
+                                sx={{ width: 150 }}
+                                helperText="Default: 30 days"
+                                inputProps={{ min: 1, max: 365 }}
+                            />
+                            <TextField
+                                label="Limit"
+                                type="number"
+                                value={limit}
+                                onChange={(e) => setLimit(parseInt(e.target.value) || 50)}
+                                size="small"
+                                sx={{ width: 150 }}
+                                helperText="Max orders"
+                                inputProps={{ min: 1, max: 500 }}
+                            />
+                            <TextField
+                                label="Since ISO (optional)"
+                                value={sinceIso}
+                                onChange={(e) => setSinceIso(e.target.value)}
+                                size="small"
+                                sx={{ width: 250 }}
+                                helperText="e.g., 2025-12-01T00:00:00Z"
+                                placeholder="2025-12-01T00:00:00Z"
+                            />
+                        </Box>
+
+                        {/* Checkboxes */}
+                        <Box sx={{ display: 'flex', gap: 2 }}>
+                            <FormControlLabel
+                                control={
+                                    <Checkbox
+                                        checked={dryRun}
+                                        onChange={(e) => setDryRun(e.target.checked)}
+                                    />
+                                }
+                                label="Dry Run (preview only)"
+                            />
+                            <FormControlLabel
+                                control={
+                                    <Checkbox
+                                        checked={debug}
+                                        onChange={(e) => setDebug(e.target.checked)}
+                                    />
+                                }
+                                label="Debug (show diagnostics)"
+                            />
+                        </Box>
+
+                        {/* Import status */}
+                        {renderStatus(importStatus, isImporting)}
+
+                        {/* Import results */}
+                        {importResult && (
+                            <Paper variant="outlined" sx={{ p: 2, mt: 2 }}>
+                                <Typography variant="subtitle1" fontWeight="bold" gutterBottom>
+                                    Import Results
+                                </Typography>
+                                <Box sx={{ display: 'flex', gap: 3, flexWrap: 'wrap', mb: 2 }}>
+                                    <Box>
+                                        <Typography variant="body2" color="text.secondary">Fetched</Typography>
+                                        <Typography variant="h6">{importResult.total_fetched}</Typography>
+                                    </Box>
+                                    <Box>
+                                        <Typography variant="body2" color="text.secondary">Created</Typography>
+                                        <Typography variant="h6" color="success.main">{importResult.total_created}</Typography>
+                                    </Box>
+                                    <Box>
+                                        <Typography variant="body2" color="text.secondary">Updated</Typography>
+                                        <Typography variant="h6" color="info.main">{importResult.total_updated}</Typography>
+                                    </Box>
+                                    <Box>
+                                        <Typography variant="body2" color="text.secondary">Failed</Typography>
+                                        <Typography variant="h6" color="error.main">{importResult.total_failed}</Typography>
+                                    </Box>
+                                </Box>
+
+                                {/* Failed order IDs */}
+                                {importResult.failed_order_ids && importResult.failed_order_ids.length > 0 && (
+                                    <Alert severity="warning" sx={{ mt: 1 }}>
+                                        <strong>Failed Order IDs:</strong> {importResult.failed_order_ids.join(', ')}
+                                    </Alert>
+                                )}
+
+                                {/* Preview orders table (dry run) */}
+                                {importResult.preview_orders && importResult.preview_orders.length > 0 && (
+                                    <Box sx={{ mt: 2 }}>
+                                        <Typography variant="subtitle2" gutterBottom>
+                                            Preview Orders (First {importResult.preview_orders.length})
+                                        </Typography>
+                                        <TableContainer>
+                                            <Table size="small">
+                                                <TableHead>
+                                                    <TableRow>
+                                                        <TableCell>Order ID</TableCell>
+                                                        <TableCell>Date</TableCell>
+                                                        <TableCell>Status</TableCell>
+                                                        <TableCell>Currency</TableCell>
+                                                        <TableCell align="right">Total</TableCell>
+                                                        <TableCell align="right">Lines</TableCell>
+                                                    </TableRow>
+                                                </TableHead>
+                                                <TableBody>
+                                                    {importResult.preview_orders.map((order, idx) => (
+                                                        <TableRow key={idx}>
+                                                            <TableCell>{order.external_order_id}</TableCell>
+                                                            <TableCell>{new Date(order.order_date).toLocaleDateString()}</TableCell>
+                                                            <TableCell>{order.status_raw}</TableCell>
+                                                            <TableCell>{order.currency_code}</TableCell>
+                                                            <TableCell align="right">
+                                                                {(order.order_total_cents / 100).toFixed(2)}
+                                                            </TableCell>
+                                                            <TableCell align="right">{order.line_count}</TableCell>
+                                                        </TableRow>
+                                                    ))}
+                                                </TableBody>
+                                            </Table>
+                                        </TableContainer>
+                                    </Box>
+                                )}
+
+                                {/* Debug fields */}
+                                {debug && importResult.filter_since_utc && (
+                                    <Box sx={{ mt: 2, p: 2, bgcolor: 'grey.100', borderRadius: 1 }}>
+                                        <Typography variant="subtitle2" gutterBottom>
+                                            Debug Diagnostics
+                                        </Typography>
+                                        <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: 1, fontSize: '0.875rem' }}>
+                                            <Typography variant="body2" fontWeight="bold">Filter Mode:</Typography>
+                                            <Typography variant="body2">{importResult.filter_mode}</Typography>
+
+                                            <Typography variant="body2" fontWeight="bold">Filter Since (UTC):</Typography>
+                                            <Typography variant="body2">{importResult.filter_since_utc}</Typography>
+
+                                            <Typography variant="body2" fontWeight="bold">Timestamp Field:</Typography>
+                                            <Typography variant="body2">{importResult.timestamp_field_used}</Typography>
+
+                                            <Typography variant="body2" fontWeight="bold">Raw Fetched:</Typography>
+                                            <Typography variant="body2">{importResult.raw_fetched}</Typography>
+
+                                            <Typography variant="body2" fontWeight="bold">Filtered:</Typography>
+                                            <Typography variant="body2">{importResult.filtered}</Typography>
+
+                                            <Typography variant="body2" fontWeight="bold">Pages Fetched:</Typography>
+                                            <Typography variant="body2">{importResult.pages_fetched}</Typography>
+
+                                            <Typography variant="body2" fontWeight="bold">Early Stop:</Typography>
+                                            <Typography variant="body2">{importResult.early_stop ? 'Yes' : 'No'}</Typography>
+
+                                            <Typography variant="body2" fontWeight="bold">Undated Count:</Typography>
+                                            <Typography variant="body2">{importResult.undated_count}</Typography>
+                                        </Box>
+                                    </Box>
+                                )}
                             </Paper>
                         )}
                     </Box>

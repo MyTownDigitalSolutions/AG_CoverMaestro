@@ -489,8 +489,8 @@ def get_marketplace_order(id: int, db: Session = Depends(get_db)):
             raise HTTPException(status_code=404, detail="Marketplace order not found")
         return order
     except Exception as e:
-        print("[MARKETPLACE_ORDERS] Unhandled exception in get_marketplace_order:", repr(e))
-        print(traceback.format_exc())
+        print(f"[MARKETPLACE_ORDERS_DETAIL] id={id} ERROR: {type(e).__name__}: {str(e)}")
+        traceback.print_exc()
         raise
 
 

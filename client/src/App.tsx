@@ -30,6 +30,7 @@ import ShippingDefaultsPage from './pages/ShippingDefaultsPage'
 import MaterialRoleConfigsPage from './pages/MaterialRoleConfigsPage'
 import MaterialRoleAssignmentsPage from './pages/MaterialRoleAssignmentsPage'
 import MarketplaceCredentialsPage from './pages/MarketplaceCredentialsPage'
+import MarketplaceOrdersPage from './pages/MarketplaceOrdersPage'
 
 function App() {
   return (
@@ -65,6 +66,7 @@ function App() {
           <Route path="/settings/material-role-configs" element={<MaterialRoleConfigsPage />} />
           <Route path="/settings/material-role-assignments" element={<MaterialRoleAssignmentsPage />} />
           <Route path="/marketplaces/credentials" element={<MarketplaceCredentialsPage />} />
+          <Route path="/marketplaces/orders" element={<MarketplaceOrdersPage />} />
         </Routes>
       </Layout>
     </Box>
