@@ -462,3 +462,179 @@ def _map_reverb_status(reverb_status: str) -> str:
     }
     
     return status_map.get(status_lower, "unknown")
+
+
+def get_order_detail(credentials: ReverbCredentials, order_id: str, timeout: int = 15) -> Dict[str, Any]:
+    """
+    Fetch full order details from Reverb API for a specific order.
+    
+    Args:
+        credentials: Reverb credentials
+        order_id: The Reverb order number/ID
+        timeout: Request timeout in seconds
+        
+    Returns:
+        Dict with order details or error info
+        
+    Raises:
+        ReverbAPIError: If API call fails
+    """
+    headers = _build_reverb_headers(credentials.api_token)
+    url = f"{credentials.base_url}/api/my/orders/selling/{order_id}"
+    
+    try:
+        response = requests.get(url, headers=headers, timeout=timeout)
+        
+        if response.status_code == 404:
+            return {"error": "Order not found", "status_code": 404}
+        
+        if response.status_code == 401:
+            raise ReverbAPIError("Invalid API token", status_code=401)
+        
+        if response.status_code != 200:
+            return {"error": f"API returned {response.status_code}", "status_code": response.status_code}
+        
+        return response.json()
+        
+    except requests.exceptions.Timeout:
+        return {"error": "Request timeout", "status_code": 0}
+    except requests.exceptions.RequestException as e:
+        return {"error": str(e), "status_code": 0}
+
+
+def parse_order_detail_for_enrichment(detail: Dict[str, Any], external_order_id: str) -> Dict[str, Any]:
+    """
+    Parse Reverb order detail response for enrichment data.
+    
+    Extracts:
+    - Buyer info (name, email)
+    - Totals (subtotal, shipping, tax, total in cents)
+    - Full shipping address
+    - Line items with product details
+    - Shipment tracking info
+    
+    Args:
+        detail: Raw Reverb order detail response
+        external_order_id: The order ID for generating stable line IDs
+        
+    Returns:
+        Dict with parsed enrichment data
+    """
+    result = {
+        "buyer": {},
+        "totals": {},
+        "shipping_address": None,
+        "lines": [],
+        "shipments": [],
+    }
+    
+    # Skip if error response
+    if detail.get("error"):
+        return result
+    
+    # Helper to convert dollars to cents
+    def to_cents(val):
+        if val is None:
+            return None
+        try:
+            return int(float(val) * 100)
+        except (ValueError, TypeError):
+            return None
+    
+    # === Buyer Info ===
+    buyer = detail.get("buyer", {}) or {}
+    if buyer:
+        result["buyer"] = {
+            "buyer_name": buyer.get("full_name") or buyer.get("first_name"),
+            "buyer_email": buyer.get("email"),
+        }
+    
+    # Also check top-level buyer_email
+    if detail.get("buyer_email"):
+        result["buyer"]["buyer_email"] = detail.get("buyer_email")
+    
+    # === Totals ===
+    amount_product = detail.get("amount_product", {}) or {}
+    amount_shipping = detail.get("shipping", {}) or {}
+    amount_tax = detail.get("amount_tax", {}) or {}
+    amount_total = detail.get("total", {}) or {}
+    
+    result["totals"] = {
+        "items_subtotal_cents": to_cents(amount_product.get("amount")),
+        "shipping_cents": to_cents(amount_shipping.get("amount")),
+        "tax_cents": to_cents(amount_tax.get("amount")),
+        "order_total_cents": to_cents(amount_total.get("amount")),
+        "currency_code": amount_total.get("currency") or amount_product.get("currency") or "USD",
+    }
+    
+    # === Status ===
+    if detail.get("status"):
+        result["status_raw"] = detail.get("status")
+        result["status_normalized"] = _map_reverb_status(detail.get("status"))
+    
+    # === Shipping Address ===
+    shipping_addr = detail.get("shipping_address", {}) or {}
+    if shipping_addr:
+        result["shipping_address"] = {
+            "address_type": "shipping",
+            "name": shipping_addr.get("name"),
+            "phone": shipping_addr.get("phone"),
+            "line1": shipping_addr.get("street_address"),
+            "line2": shipping_addr.get("extended_address"),
+            "city": shipping_addr.get("locality"),
+            "state_or_region": shipping_addr.get("region"),
+            "postal_code": shipping_addr.get("postal_code"),
+            "country_code": shipping_addr.get("country_code"),
+            "raw_payload": shipping_addr,
+        }
+    
+    # === Line Items ===
+    product = detail.get("product", {}) or {}
+    if product:
+        product_id = str(product.get("id", ""))
+        line_item = {
+            "external_line_item_id": product_id or f"{external_order_id}-1",
+            "product_id": product_id,
+            "listing_id": str(product.get("listing_id", "")) if product.get("listing_id") else None,
+            "sku": product.get("sku"),
+            "title": product.get("title"),
+            "quantity": detail.get("quantity", 1),
+            "unit_price_cents": to_cents(amount_product.get("amount")),
+            "line_total_cents": to_cents(amount_product.get("amount")),
+            "currency_code": amount_product.get("currency") or "USD",
+            "raw_marketplace_data": product,
+        }
+        result["lines"].append(line_item)
+    
+    # === Shipments ===
+    # Check for shipping_provider and tracking info at top level
+    if detail.get("shipping_provider") or detail.get("tracking_code"):
+        shipment = {
+            "carrier": detail.get("shipping_provider"),
+            "tracking_number": detail.get("tracking_code"),
+            "shipped_at": detail.get("shipped_at"),
+            "delivered_at": detail.get("delivered_at"),
+            "raw_payload": {
+                "shipping_provider": detail.get("shipping_provider"),
+                "tracking_code": detail.get("tracking_code"),
+                "shipped_at": detail.get("shipped_at"),
+                "delivered_at": detail.get("delivered_at"),
+            },
+        }
+        result["shipments"].append(shipment)
+    
+    # Also check for shipments array if present
+    shipments_array = detail.get("shipments", []) or []
+    for ship in shipments_array:
+        if isinstance(ship, dict):
+            shipment = {
+                "carrier": ship.get("provider") or ship.get("carrier"),
+                "tracking_number": ship.get("tracking_code") or ship.get("tracking_number"),
+                "shipped_at": ship.get("shipped_at"),
+                "delivered_at": ship.get("delivered_at"),
+                "raw_payload": ship,
+            }
+            result["shipments"].append(shipment)
+    
+    return result
+

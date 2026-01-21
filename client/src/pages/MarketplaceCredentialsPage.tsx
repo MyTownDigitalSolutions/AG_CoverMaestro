@@ -114,6 +114,36 @@ export default function MarketplaceCredentialsPage() {
     const [isImporting, setIsImporting] = useState(false)
     const [importResult, setImportResult] = useState<ImportResult | null>(null)
 
+    // Reverb Orders Enrich state
+    const [enrichDaysBack, setEnrichDaysBack] = useState(30)
+    const [enrichSinceIso, setEnrichSinceIso] = useState('')
+    const [enrichLimit, setEnrichLimit] = useState(50)
+    const [enrichDryRun, setEnrichDryRun] = useState(true)
+    const [enrichDebug, setEnrichDebug] = useState(false)
+    const [enrichForce, setEnrichForce] = useState(false)
+    const [enrichStatus, setEnrichStatus] = useState<Status>({ type: 'idle', message: '' })
+    const [isEnriching, setIsEnriching] = useState(false)
+    const [enrichResult, setEnrichResult] = useState<{
+        dry_run: boolean
+        orders_scanned: number
+        orders_enriched: number
+        orders_skipped: number
+        lines_upserted: number
+        addresses_upserted: number
+        shipments_upserted: number
+        failed_order_ids?: Record<string, string>
+        preview_orders?: Array<{
+            external_order_id: string
+            order_id: number
+            buyer_email?: string
+            order_total_cents?: number
+            shipping?: { name?: string; city?: string; postal_code?: string; country_code?: string }
+            lines?: Array<{ title?: string; quantity?: number; line_total_cents?: number }>
+            shipments?: Array<{ carrier?: string; tracking_number?: string }>
+        }>
+        debug?: Record<string, unknown>
+    } | null>(null)
+
     const hasAdminKey = adminKey.trim().length > 0
 
     // Helper to make authenticated requests
@@ -340,6 +370,64 @@ export default function MarketplaceCredentialsPage() {
             setImportStatus({ type: 'error', message: `Connection error: ${err instanceof Error ? err.message : 'Unknown'}` })
         } finally {
             setIsImporting(false)
+        }
+    }
+
+    // Enrich Reverb orders with full details
+    const handleEnrichOrders = async () => {
+        if (!hasAdminKey) return
+
+        setIsEnriching(true)
+        setEnrichStatus({ type: 'loading', message: 'Enriching orders...' })
+        setEnrichResult(null)
+
+        try {
+            const requestBody: Record<string, unknown> = {
+                days_back: enrichDaysBack,
+                limit: enrichLimit,
+                dry_run: enrichDryRun,
+                debug: enrichDebug,
+                force: enrichForce,
+            }
+
+            if (enrichSinceIso.trim()) {
+                requestBody.since_iso = enrichSinceIso.trim()
+            }
+
+            const response = await authFetch('/api/reverb/orders/enrich', {
+                method: 'POST',
+                body: JSON.stringify(requestBody),
+            })
+
+            if (response.status === 401) {
+                setEnrichStatus({ type: 'error', message: 'Invalid Admin Key' })
+                return
+            }
+
+            if (response.status === 400) {
+                const text = await response.text()
+                setEnrichStatus({ type: 'error', message: text || 'Credentials not configured or disabled' })
+                return
+            }
+
+            if (!response.ok) {
+                const text = await response.text()
+                setEnrichStatus({ type: 'error', message: `Error ${response.status}: ${text.slice(0, 100)}` })
+                return
+            }
+
+            const data = await response.json()
+            setEnrichResult(data)
+
+            if (data.orders_enriched > 0) {
+                setEnrichStatus({ type: 'success', message: enrichDryRun ? 'Dry run completed!' : 'Enrichment completed!' })
+            } else {
+                setEnrichStatus({ type: 'success', message: 'No orders needed enrichment' })
+            }
+        } catch (err) {
+            setEnrichStatus({ type: 'error', message: `Connection error: ${err instanceof Error ? err.message : 'Unknown'}` })
+        } finally {
+            setIsEnriching(false)
         }
     }
 
@@ -739,6 +827,159 @@ export default function MarketplaceCredentialsPage() {
                                             <Typography variant="body2" fontWeight="bold">Undated Count:</Typography>
                                             <Typography variant="body2">{importResult.undated_count}</Typography>
                                         </Box>
+                                    </Box>
+                                )}
+                            </Paper>
+                        )}
+                    </Box>
+                </CardContent>
+            </Card>
+
+            {/* Reverb Orders Enrich */}
+            <Card sx={{ mt: 3 }}>
+                <CardHeader
+                    title="Reverb Orders Enrich"
+                    subheader="Fetch full order details from Reverb API (shipping address, line items, shipments)"
+                    avatar={<DownloadIcon color="primary" />}
+                />
+                <CardContent>
+                    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                        {/* Enrich Controls */}
+                        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2, alignItems: 'center' }}>
+                            <TextField
+                                label="Days Back"
+                                type="number"
+                                size="small"
+                                value={enrichDaysBack}
+                                onChange={(e) => setEnrichDaysBack(parseInt(e.target.value) || 30)}
+                                sx={{ width: 120 }}
+                            />
+
+                            <TextField
+                                label="Limit"
+                                type="number"
+                                size="small"
+                                value={enrichLimit}
+                                onChange={(e) => setEnrichLimit(parseInt(e.target.value) || 50)}
+                                sx={{ width: 100 }}
+                            />
+
+                            <TextField
+                                label="Since ISO (optional)"
+                                size="small"
+                                value={enrichSinceIso}
+                                onChange={(e) => setEnrichSinceIso(e.target.value)}
+                                placeholder="2026-01-01T00:00:00Z"
+                                sx={{ width: 220 }}
+                            />
+
+                            <FormControlLabel
+                                control={<Checkbox checked={enrichDryRun} onChange={(e) => setEnrichDryRun(e.target.checked)} />}
+                                label="Dry Run"
+                            />
+
+                            <FormControlLabel
+                                control={<Checkbox checked={enrichDebug} onChange={(e) => setEnrichDebug(e.target.checked)} />}
+                                label="Debug"
+                            />
+
+                            <FormControlLabel
+                                control={<Checkbox checked={enrichForce} onChange={(e) => setEnrichForce(e.target.checked)} />}
+                                label="Force Overwrite"
+                            />
+
+                            <Button
+                                variant="contained"
+                                color="secondary"
+                                startIcon={isEnriching ? <CircularProgress size={16} color="inherit" /> : <PlayArrowIcon />}
+                                onClick={handleEnrichOrders}
+                                disabled={!hasAdminKey || isEnriching}
+                            >
+                                Run Enrich
+                            </Button>
+                        </Box>
+
+                        {/* Enrich Status */}
+                        {renderStatus(enrichStatus, isEnriching)}
+
+                        {/* Enrich Results */}
+                        {enrichResult && (
+                            <Paper variant="outlined" sx={{ p: 2 }}>
+                                <Box sx={{ display: 'flex', gap: 3, flexWrap: 'wrap' }}>
+                                    <Box>
+                                        <Typography variant="body2" color="text.secondary">Scanned</Typography>
+                                        <Typography variant="h6">{enrichResult.orders_scanned}</Typography>
+                                    </Box>
+                                    <Box>
+                                        <Typography variant="body2" color="text.secondary">Enriched</Typography>
+                                        <Typography variant="h6" color="success.main">{enrichResult.orders_enriched}</Typography>
+                                    </Box>
+                                    <Box>
+                                        <Typography variant="body2" color="text.secondary">Skipped</Typography>
+                                        <Typography variant="h6">{enrichResult.orders_skipped}</Typography>
+                                    </Box>
+                                    <Box>
+                                        <Typography variant="body2" color="text.secondary">Addresses</Typography>
+                                        <Typography variant="h6">{enrichResult.addresses_upserted}</Typography>
+                                    </Box>
+                                    <Box>
+                                        <Typography variant="body2" color="text.secondary">Lines</Typography>
+                                        <Typography variant="h6">{enrichResult.lines_upserted}</Typography>
+                                    </Box>
+                                    <Box>
+                                        <Typography variant="body2" color="text.secondary">Shipments</Typography>
+                                        <Typography variant="h6">{enrichResult.shipments_upserted}</Typography>
+                                    </Box>
+                                </Box>
+
+                                {/* Failed order IDs */}
+                                {enrichResult.failed_order_ids && Object.keys(enrichResult.failed_order_ids).length > 0 && (
+                                    <Alert severity="warning" sx={{ mt: 1 }}>
+                                        <strong>Failed Orders:</strong>{' '}
+                                        {Object.entries(enrichResult.failed_order_ids).map(([id, err]) => `${id}: ${err}`).join(', ')}
+                                    </Alert>
+                                )}
+
+                                {/* Preview orders */}
+                                {enrichResult.preview_orders && enrichResult.preview_orders.length > 0 && (
+                                    <Box sx={{ mt: 2 }}>
+                                        <Typography variant="subtitle2" gutterBottom>
+                                            Preview (First {enrichResult.preview_orders.length})
+                                        </Typography>
+                                        <TableContainer>
+                                            <Table size="small">
+                                                <TableHead>
+                                                    <TableRow>
+                                                        <TableCell>Order ID</TableCell>
+                                                        <TableCell>Buyer</TableCell>
+                                                        <TableCell>Shipping</TableCell>
+                                                        <TableCell>Lines</TableCell>
+                                                        <TableCell>Shipments</TableCell>
+                                                    </TableRow>
+                                                </TableHead>
+                                                <TableBody>
+                                                    {enrichResult.preview_orders.map((order, idx) => (
+                                                        <TableRow key={idx}>
+                                                            <TableCell>{order.external_order_id}</TableCell>
+                                                            <TableCell>{order.buyer_email || '—'}</TableCell>
+                                                            <TableCell>
+                                                                {order.shipping
+                                                                    ? `${order.shipping.city || ''}, ${order.shipping.postal_code || ''} ${order.shipping.country_code || ''}`
+                                                                    : '—'}
+                                                            </TableCell>
+                                                            <TableCell>
+                                                                {order.lines?.length || 0} item(s)
+                                                            </TableCell>
+                                                            <TableCell>
+                                                                {order.shipments?.map((s, i) => (
+                                                                    <span key={i}>{s.carrier}: {s.tracking_number || 'no tracking'}</span>
+                                                                )) || '—'}
+                                                            </TableCell>
+                                                        </TableRow>
+                                                    ))}
+                                                </TableBody>
+                                            </Table>
+                                        </TableContainer>
                                     </Box>
                                 )}
                             </Paper>

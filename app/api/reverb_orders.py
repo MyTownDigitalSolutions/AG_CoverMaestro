@@ -21,7 +21,7 @@ from app.models.core import (
 from app.models.enums import Marketplace, OrderSource, NormalizedOrderStatus
 from app.services.reverb_service import (
     get_reverb_credentials, fetch_reverb_orders, fetch_single_reverb_order,
-    map_reverb_order_to_schema, FetchResult,
+    map_reverb_order_to_schema, FetchResult, get_order_detail, parse_order_detail_for_enrichment,
     CredentialsNotConfiguredError, CredentialsDisabledError, ReverbAPIError
 )
 
@@ -89,6 +89,30 @@ class NormalizeOrdersResponse(BaseModel):
     lines_upserted: int
     orders_skipped: int
     preview: Optional[List[dict]] = None
+    debug: Optional[dict] = None
+
+
+class EnrichOrdersRequest(BaseModel):
+    """Request body for enrich orders endpoint."""
+    days_back: int = 30
+    since_iso: Optional[str] = None
+    limit: int = 50
+    dry_run: bool = True
+    debug: bool = False
+    force: bool = False  # If true, overwrite existing non-null fields
+
+
+class EnrichOrdersResponse(BaseModel):
+    """Response for enrich orders endpoint."""
+    dry_run: bool
+    orders_scanned: int
+    orders_enriched: int
+    orders_skipped: int
+    lines_upserted: int
+    addresses_upserted: int
+    shipments_upserted: int
+    failed_order_ids: Optional[dict] = None
+    preview_orders: Optional[List[dict]] = None
     debug: Optional[dict] = None
 
 
@@ -828,3 +852,334 @@ def normalize_reverb_orders(
         print(f"[REVERB_NORMALIZE] unhandled_exception error={repr(e)}")
         print(traceback.format_exc())
         raise HTTPException(status_code=500, detail="Internal server error")
+
+
+@router.post("/enrich", response_model=EnrichOrdersResponse)
+def enrich_reverb_orders(
+    request: EnrichOrdersRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    Enrich existing Reverb orders by fetching full details from Reverb API.
+    
+    For each order, calls Reverb's order detail endpoint to get:
+    - Full shipping address
+    - Line items with product details
+    - Shipment tracking info
+    
+    Parameters:
+    - days_back: Number of days back to filter orders (default 30)
+    - since_iso: ISO datetime to filter from (overrides days_back)
+    - limit: Maximum orders to process (default 50)
+    - dry_run: If true, fetch details but don't write to DB (default true)
+    - debug: If true, include debug info in response
+    - force: If true, overwrite existing non-null fields
+    """
+    import time
+    
+    try:
+        # Get credentials
+        try:
+            credentials = get_reverb_credentials(db)
+        except CredentialsNotConfiguredError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        except CredentialsDisabledError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        
+        # Calculate date cutoff
+        filter_mode = "days_back"
+        if request.since_iso:
+            try:
+                cutoff = _parse_since_iso(request.since_iso)
+                filter_mode = "since_iso"
+            except ValueError as e:
+                raise HTTPException(status_code=400, detail=str(e))
+        else:
+            cutoff = datetime.utcnow() - timedelta(days=request.days_back)
+        
+        print(f"[REVERB_ENRICH] action=START days_back={request.days_back} limit={request.limit} dry_run={request.dry_run} force={request.force}")
+        
+        # Query Reverb orders
+        orders = db.query(MarketplaceOrder).filter(
+            MarketplaceOrder.marketplace == Marketplace.REVERB,
+            MarketplaceOrder.order_date >= cutoff
+        ).order_by(MarketplaceOrder.order_date.desc()).limit(request.limit).all()
+        
+        orders_scanned = len(orders)
+        orders_enriched = 0
+        orders_skipped = 0
+        lines_upserted = 0
+        addresses_upserted = 0
+        shipments_upserted = 0
+        failed_order_ids = {}
+        preview_orders = []
+        
+        for order in orders:
+            external_order_id = order.external_order_id
+            if not external_order_id:
+                orders_skipped += 1
+                continue
+            
+            # Fetch order detail from Reverb API
+            detail = get_order_detail(credentials, external_order_id)
+            
+            # Small delay between API calls to avoid rate limiting
+            time.sleep(0.15)
+            
+            # Check for API errors
+            if detail.get("error"):
+                failed_order_ids[external_order_id] = detail.get("error")
+                orders_skipped += 1
+                continue
+            
+            # Parse enrichment data
+            enrichment = parse_order_detail_for_enrichment(detail, external_order_id)
+            
+            preview_item = {
+                "external_order_id": external_order_id,
+                "order_id": order.id,
+            }
+            order_enriched = False
+            
+            # === Update order scalar fields ===
+            buyer_info = enrichment.get("buyer", {})
+            totals = enrichment.get("totals", {})
+            
+            # Buyer email
+            if buyer_info.get("buyer_email"):
+                if order.buyer_email is None or request.force:
+                    if not request.dry_run:
+                        order.buyer_email = buyer_info["buyer_email"]
+                    preview_item["buyer_email"] = buyer_info["buyer_email"]
+                    order_enriched = True
+            
+            # Buyer name
+            if buyer_info.get("buyer_name"):
+                if order.buyer_name is None or request.force:
+                    if not request.dry_run:
+                        order.buyer_name = buyer_info["buyer_name"]
+                    preview_item["buyer_name"] = buyer_info["buyer_name"]
+                    order_enriched = True
+            
+            # Totals
+            for field in ["items_subtotal_cents", "shipping_cents", "tax_cents", "order_total_cents", "currency_code"]:
+                new_val = totals.get(field)
+                if new_val is not None:
+                    current_val = getattr(order, field, None)
+                    if current_val is None or request.force:
+                        if not request.dry_run:
+                            setattr(order, field, new_val)
+                        preview_item[field] = new_val
+                        order_enriched = True
+            
+            # Status
+            if enrichment.get("status_raw"):
+                if order.status_raw is None or request.force:
+                    if not request.dry_run:
+                        order.status_raw = enrichment["status_raw"]
+                        if enrichment.get("status_normalized"):
+                            try:
+                                order.status_normalized = NormalizedOrderStatus(enrichment["status_normalized"])
+                            except ValueError:
+                                pass
+                    order_enriched = True
+            
+            # === Upsert shipping address ===
+            addr_data = enrichment.get("shipping_address")
+            if addr_data and any(addr_data.get(k) for k in ["line1", "city", "postal_code"]):
+                preview_item["shipping"] = {
+                    "name": addr_data.get("name"),
+                    "line1": addr_data.get("line1"),
+                    "city": addr_data.get("city"),
+                    "state_or_region": addr_data.get("state_or_region"),
+                    "postal_code": addr_data.get("postal_code"),
+                    "country_code": addr_data.get("country_code"),
+                }
+                
+                if not request.dry_run:
+                    existing_addr = db.query(MarketplaceOrderAddress).filter(
+                        MarketplaceOrderAddress.order_id == order.id,
+                        MarketplaceOrderAddress.address_type == "shipping"
+                    ).first()
+                    
+                    if existing_addr:
+                        for key in ["name", "phone", "line1", "line2", "city", "state_or_region", "postal_code", "country_code", "raw_payload"]:
+                            new_val = addr_data.get(key)
+                            if new_val is not None and (getattr(existing_addr, key, None) is None or request.force):
+                                setattr(existing_addr, key, new_val)
+                    else:
+                        new_addr = MarketplaceOrderAddress(
+                            order_id=order.id,
+                            address_type="shipping",
+                            name=addr_data.get("name"),
+                            phone=addr_data.get("phone"),
+                            line1=addr_data.get("line1"),
+                            line2=addr_data.get("line2"),
+                            city=addr_data.get("city"),
+                            state_or_region=addr_data.get("state_or_region"),
+                            postal_code=addr_data.get("postal_code"),
+                            country_code=addr_data.get("country_code"),
+                            raw_payload=addr_data.get("raw_payload")
+                        )
+                        db.add(new_addr)
+                    
+                    addresses_upserted += 1
+                else:
+                    addresses_upserted += 1
+                
+                order_enriched = True
+            
+            # === Upsert line items ===
+            lines = enrichment.get("lines", [])
+            if lines:
+                preview_item["lines"] = []
+                for line_data in lines:
+                    ext_line_id = line_data.get("external_line_item_id")
+                    preview_item["lines"].append({
+                        "title": line_data.get("title"),
+                        "sku": line_data.get("sku"),
+                        "quantity": line_data.get("quantity"),
+                        "line_total_cents": line_data.get("line_total_cents"),
+                    })
+                    
+                    if not request.dry_run:
+                        existing_line = None
+                        if ext_line_id:
+                            existing_line = db.query(MarketplaceOrderLine).filter(
+                                MarketplaceOrderLine.order_id == order.id,
+                                MarketplaceOrderLine.external_line_item_id == ext_line_id
+                            ).first()
+                        
+                        if existing_line:
+                            for key in ["product_id", "listing_id", "sku", "title", "quantity", "unit_price_cents", "line_total_cents", "currency_code", "raw_marketplace_data"]:
+                                new_val = line_data.get(key)
+                                if new_val is not None and (getattr(existing_line, key, None) is None or request.force):
+                                    setattr(existing_line, key, new_val)
+                        else:
+                            new_line = MarketplaceOrderLine(
+                                order_id=order.id,
+                                external_line_item_id=ext_line_id,
+                                product_id=line_data.get("product_id"),
+                                listing_id=line_data.get("listing_id"),
+                                sku=line_data.get("sku"),
+                                title=line_data.get("title"),
+                                quantity=line_data.get("quantity", 1),
+                                unit_price_cents=line_data.get("unit_price_cents"),
+                                line_total_cents=line_data.get("line_total_cents"),
+                                currency_code=line_data.get("currency_code"),
+                                raw_marketplace_data=line_data.get("raw_marketplace_data")
+                            )
+                            db.add(new_line)
+                        
+                        lines_upserted += 1
+                    else:
+                        lines_upserted += 1
+                
+                order_enriched = True
+            
+            # === Upsert shipments ===
+            shipments = enrichment.get("shipments", [])
+            if shipments:
+                preview_item["shipments"] = []
+                for ship_data in shipments:
+                    tracking = ship_data.get("tracking_number")
+                    carrier = ship_data.get("carrier")
+                    preview_item["shipments"].append({
+                        "carrier": carrier,
+                        "tracking_number": tracking,
+                        "shipped_at": ship_data.get("shipped_at"),
+                    })
+                    
+                    if not request.dry_run:
+                        # Check for existing shipment by tracking + carrier
+                        existing_ship = None
+                        if tracking:
+                            existing_ship = db.query(MarketplaceOrderShipment).filter(
+                                MarketplaceOrderShipment.order_id == order.id,
+                                MarketplaceOrderShipment.tracking_number == tracking
+                            ).first()
+                        
+                        if existing_ship:
+                            for key in ["carrier", "shipped_at", "delivered_at"]:
+                                new_val = ship_data.get(key)
+                                if new_val is not None and (getattr(existing_ship, key, None) is None or request.force):
+                                    setattr(existing_ship, key, new_val)
+                        else:
+                            # Parse shipped_at datetime
+                            shipped_at = None
+                            if ship_data.get("shipped_at"):
+                                try:
+                                    shipped_at_str = ship_data["shipped_at"]
+                                    if shipped_at_str.endswith("Z"):
+                                        shipped_at_str = shipped_at_str[:-1] + "+00:00"
+                                    shipped_at = datetime.fromisoformat(shipped_at_str)
+                                except (ValueError, TypeError):
+                                    pass
+                            
+                            delivered_at = None
+                            if ship_data.get("delivered_at"):
+                                try:
+                                    delivered_at_str = ship_data["delivered_at"]
+                                    if delivered_at_str.endswith("Z"):
+                                        delivered_at_str = delivered_at_str[:-1] + "+00:00"
+                                    delivered_at = datetime.fromisoformat(delivered_at_str)
+                                except (ValueError, TypeError):
+                                    pass
+                            
+                            new_ship = MarketplaceOrderShipment(
+                                order_id=order.id,
+                                carrier=carrier,
+                                tracking_number=tracking,
+                                shipped_at=shipped_at,
+                                delivered_at=delivered_at,
+                                raw_marketplace_data=ship_data.get("raw_payload")
+                            )
+                            db.add(new_ship)
+                        
+                        shipments_upserted += 1
+                    else:
+                        shipments_upserted += 1
+                
+                order_enriched = True
+            
+            if order_enriched:
+                orders_enriched += 1
+                if len(preview_orders) < 3:
+                    preview_orders.append(preview_item)
+            else:
+                orders_skipped += 1
+        
+        if not request.dry_run:
+            db.commit()
+        
+        print(f"[REVERB_ENRICH] scanned={orders_scanned} enriched={orders_enriched} skipped={orders_skipped} addresses={addresses_upserted} lines={lines_upserted} shipments={shipments_upserted} dry_run={request.dry_run}")
+        
+        debug_info = None
+        if request.debug:
+            debug_info = {
+                "filter_mode": filter_mode,
+                "filter_since_utc": cutoff.isoformat(),
+                "limit": request.limit,
+                "force": request.force,
+            }
+        
+        return EnrichOrdersResponse(
+            dry_run=request.dry_run,
+            orders_scanned=orders_scanned,
+            orders_enriched=orders_enriched,
+            orders_skipped=orders_skipped,
+            lines_upserted=lines_upserted,
+            addresses_upserted=addresses_upserted,
+            shipments_upserted=shipments_upserted,
+            failed_order_ids=failed_order_ids if failed_order_ids else None,
+            preview_orders=preview_orders if preview_orders else None,
+            debug=debug_info
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"[REVERB_ENRICH] unhandled_exception error={repr(e)}")
+        print(traceback.format_exc())
+        raise HTTPException(status_code=500, detail="Internal server error")
+
