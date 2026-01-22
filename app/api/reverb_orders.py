@@ -7,8 +7,9 @@ Provides endpoints for:
 """
 import traceback
 import time
+import hashlib
 from datetime import datetime, timedelta, timezone
-from typing import Optional, List, Dict
+from typing import Optional, List, Dict, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
@@ -23,7 +24,8 @@ from app.models.enums import Marketplace, OrderSource, NormalizedOrderStatus
 from app.services.reverb_service import (
     get_reverb_credentials, fetch_reverb_orders, fetch_single_reverb_order,
     map_reverb_order_to_schema, FetchResult, get_order_detail, parse_order_detail_for_enrichment,
-    CredentialsNotConfiguredError, CredentialsDisabledError, ReverbAPIError
+    CredentialsNotConfiguredError, CredentialsDisabledError, ReverbAPIError,
+    fetch_reverb_conversations, fetch_reverb_conversation_detail
 )
 from app.services.customer_service import upsert_customer_from_marketplace_order, extract_address_dict
 
@@ -823,10 +825,10 @@ def import_reverb_messages(
         except (CredentialsNotConfiguredError, CredentialsDisabledError) as e:
             raise HTTPException(status_code=400, detail=str(e))
 
-        # 1. Fetch Conversations List
+        # 1. Fetch Conversations List (with debug for raw samples)
         print(f"[REVERB_MESSAGES] action=START limit={request.limit} dry_run={request.dry_run}")
         
-        list_result = fetch_reverb_conversations(credentials, limit=request.limit)
+        list_result = fetch_reverb_conversations(credentials, limit=request.limit, debug=request.debug)
         conversations = list_result.get("conversations", [])
         
         conversations_fetched = len(conversations)
@@ -835,37 +837,111 @@ def import_reverb_messages(
         messages_fetched = 0
         messages_created = 0
         customers_linked = 0
-        debug_samples = []
+        skipped_missing_id = 0
+        debug_samples: List[Dict[str, Any]] = []
+        
+        # Include raw samples from service if debug
+        if request.debug and "raw_samples" in list_result:
+            for raw_sample in list_result["raw_samples"]:
+                debug_samples.append({
+                    "_raw_conversation_sample": True,
+                    "keys": list(raw_sample.keys()),
+                    "id": raw_sample.get("id"),
+                    "_links": raw_sample.get("_links"),
+                })
         
         # Create import run only if not dry run (optional, reusing MarketplaceImportRun could vary)
         import_run_id = None 
 
-        for conv in conversations:
-            external_id = str(conv.get("id"))
+        for idx, conv in enumerate(conversations):
+            # Use normalized ID from service
+            external_id = conv.get("_normalized_id")
+            raw_has_id = conv.get("id") is not None
+            self_href = conv.get("_links", {}).get("self", {}).get("href", "")
+            
+            # Handle missing conversation ID
+            if not external_id:
+                skipped_missing_id += 1
+                if request.debug:
+                    debug_samples.append({
+                        "missing_conversation_id": True,
+                        "raw_has_id": raw_has_id,
+                        "self_href": self_href,
+                        "available_keys": list(conv.keys()),
+                    })
+                continue
+            
+            # Rate limit: sleep between detail calls (except first)
+            if idx > 0:
+                time.sleep(0.15)
             
             # 2. Fetch Detail (to get messages)
             detail = fetch_reverb_conversation_detail(credentials, external_id)
             if detail.get("error"):
-                 print(f"[REVERB_MESSAGES] error fetching detail id={external_id} err={detail.get('error')}")
-                 continue
+                print(f"[REVERB_MESSAGES] error fetching detail id={external_id} err={detail.get('error')}")
+                if request.debug:
+                    debug_samples.append({
+                        "conversation_id": external_id,
+                        "error": detail.get("error"),
+                        "status_code": detail.get("status_code"),
+                    })
+                continue
+            
+            # Count messages in this conversation
+            msgs = detail.get("messages", []) or []
+            messages_fetched += len(msgs)
+            
+            # Find last_message_at if present
+            last_message_at = None
+            if msgs:
+                # Try to find the most recent message timestamp
+                for msg in msgs:
+                    msg_time = msg.get("created_at") or msg.get("sent_at")
+                    if msg_time and (last_message_at is None or msg_time > last_message_at):
+                        last_message_at = msg_time
                  
             # 3. Upsert Logic
             if request.dry_run:
-                # Preview logic
-                pass
+                # Build debug sample with consistent structure
+                sample: Dict[str, Any] = {
+                    "conversation_id": external_id,
+                    "raw_has_id": raw_has_id,
+                    "self_href": self_href,
+                    "messages_found": len(msgs),
+                    "last_message_at": last_message_at,
+                }
+                # Look for order references in the conversation data
+                for key in detail.keys():
+                    if "order" in key.lower():
+                        sample[key] = detail[key]
+                # Also check listing info which may link to orders
+                if "listing" in detail:
+                    sample["listing"] = detail.get("listing")
+                    
+                debug_samples.append(sample)
             else:
-                 # Helper to process conversation
-                 res = _upsert_conversation(db, detail)
-                 if res["created"]: conversations_created += 1
-                 else: conversations_updated += 1
+                # Helper to process conversation (pass debug for first 3)
+                collect_debug = request.debug and len(debug_samples) < 3
+                res = _upsert_conversation(db, detail, debug=collect_debug)
+                if res["created"]: conversations_created += 1
+                else: conversations_updated += 1
                  
-                 messages_fetched += res["msg_count"]
-                 messages_created += res["msg_created"]
+                messages_created += res["msg_created"]
                  
-                 if res["linked_customer"]:
-                     customers_linked += 1
+                if res["linked_customer"]:
+                    customers_linked += 1
+                
+                # Collect debug stats for first 3 conversations
+                if collect_debug and "debug_stats" in res:
+                    debug_samples.append({
+                        "conversation_id": external_id,
+                        "upsert_stats": res["debug_stats"]
+                    })
 
-        db.commit()
+        if not request.dry_run:
+            db.commit()
+        
+        print(f"[REVERB_MESSAGES] action=DONE fetched={conversations_fetched} created={conversations_created} updated={conversations_updated} msgs_fetched={messages_fetched} msgs_created={messages_created} skipped_missing_id={skipped_missing_id}")
 
         return ImportMessagesResponse(
             import_run_id=None,
@@ -876,7 +952,7 @@ def import_reverb_messages(
             messages_fetched=messages_fetched,
             messages_created=messages_created,
             customers_linked=customers_linked,
-            debug_samples=debug_samples
+            debug_samples=debug_samples if request.debug else []
         )
 
     except HTTPException:
@@ -886,11 +962,134 @@ def import_reverb_messages(
         print(traceback.format_exc())
         raise HTTPException(status_code=500, detail="Internal server error")
 
+import re as _re_module  # Use module-level import to avoid re-importing
 
-def _upsert_conversation(db: Session, data: Dict[str, Any]) -> Dict[str, Any]:
+def _normalize_text(s: Optional[str]) -> str:
+    """
+    Normalize text for stable hashing.
+    
+    - None -> ""
+    - Convert \\r\\n to \\n
+    - Strip leading/trailing whitespace
+    - Collapse all internal whitespace (spaces, tabs, newlines) to single space
+    """
+    if s is None:
+        return ""
+    text = str(s)
+    # Convert Windows line endings to Unix
+    text = text.replace("\r\n", "\n")
+    # Strip leading/trailing whitespace
+    text = text.strip()
+    # Collapse all internal whitespace to single space
+    text = _re_module.sub(r'\s+', ' ', text)
+    return text
+
+
+def _parse_dt_utc(dt_raw: Optional[str]) -> str:
+    """
+    Parse an ISO datetime string and convert to normalized UTC string.
+    
+    - If dt_raw missing/None/empty -> ""
+    - Parse ISO string with timezone offsets (-06:00, +01:00, Z)
+    - Convert to UTC
+    - Return isoformat(timespec="seconds"), e.g., "2026-01-15T00:24:55+00:00"
+    
+    This prevents drift from different timezone representations of the same instant.
+    """
+    if not dt_raw:
+        return ""
+    try:
+        dt_str = str(dt_raw).strip()
+        if not dt_str:
+            return ""
+        # Handle 'Z' suffix (UTC)
+        if dt_str.endswith("Z"):
+            dt_str = dt_str[:-1] + "+00:00"
+        # Parse the datetime
+        dt = datetime.fromisoformat(dt_str)
+        # Convert to UTC
+        if dt.tzinfo is not None:
+            dt_utc = dt.astimezone(timezone.utc)
+        else:
+            # If no timezone, assume UTC
+            dt_utc = dt.replace(tzinfo=timezone.utc)
+        # Return normalized format
+        return dt_utc.isoformat(timespec="seconds")
+    except Exception:
+        # If parsing fails, return empty string (will still hash but won't be stable)
+        return ""
+
+
+def _stable_synthetic_message_id(conversation_external_id: str, msg: Dict[str, Any]) -> str:
+    """
+    Generate a stable, deterministic synthetic message ID.
+    
+    Seed components (in exact order, newline-separated):
+    1. conversation_external_id (string)
+    2. created_at_utc = _parse_dt_utc(msg.get("created_at"))
+    3. author_stable = first non-empty from author.id/user_id/username/name, sender_id, user_id
+    4. body_norm = normalized body text (try body, message, text fields)
+    5. photos_count = len(msg.get("photos") or [])
+    
+    Returns: "synthetic:{24-char-hex}"
+    """
+    # 1. conversation_external_id
+    conv_id = str(conversation_external_id).strip() if conversation_external_id else ""
+    
+    # 2. created_at_utc - NORMALIZE TO UTC
+    created_at_utc = _parse_dt_utc(msg.get("created_at"))
+    
+    # 3. author_stable - pick first non-empty
+    author_stable = ""
+    author = msg.get("author")
+    if author and isinstance(author, dict):
+        for key in ["id", "user_id", "username", "name"]:
+            val = author.get(key)
+            if val is not None and str(val).strip():
+                author_stable = str(val).strip()
+                break
+    if not author_stable:
+        # Try top-level sender_id or user_id
+        if msg.get("sender_id"):
+            author_stable = str(msg.get("sender_id")).strip()
+        elif msg.get("user_id"):
+            author_stable = str(msg.get("user_id")).strip()
+    
+    # 4. body_norm - normalized body text (try multiple fields)
+    body_raw = msg.get("body") or msg.get("message") or msg.get("text") or ""
+    body_norm = _normalize_text(body_raw)
+    
+    # 5. photos_count
+    photos = msg.get("photos") or []
+    photos_count = len(photos) if isinstance(photos, list) else 0
+    
+    # Build seed as newline-separated parts (as specified)
+    seed_parts = [
+        conv_id,
+        created_at_utc,
+        author_stable,
+        body_norm,
+        str(photos_count)
+    ]
+    seed = "\n".join(seed_parts)
+    
+    # Hash with SHA256, take first 24 chars
+    digest = hashlib.sha256(seed.encode("utf-8")).hexdigest()[:24]
+    
+    return f"synthetic:{digest}"
+
+
+def _upsert_conversation(db: Session, data: Dict[str, Any], debug: bool = False) -> Dict[str, Any]:
     """Upsert conversation and its messages."""
     
-    external_id = str(data.get("id"))
+    # Extract conversation ID - try normalized ID first, then raw id
+    external_id = data.get("_normalized_id") or data.get("id")
+    if external_id:
+        external_id = str(external_id).strip()
+    else:
+        # Fallback: should not happen if caller validates
+        external_id = "unknown"
+    
     marketplace = Marketplace.REVERB.value
     
     # Check exist
@@ -909,23 +1108,24 @@ def _upsert_conversation(db: Session, data: Dict[str, Any]) -> Dict[str, Any]:
         db.add(conv)
     
     # Update fields
-    # Reverb structure: participants, messages, subject?
-    # Usually "subject" isn't explicit in API for Reverb, sometimes implied by listing
-    
-    # Try to find buyer info
-    # Participants array: find the one that is NOT me (the seller)
-    # This is heuristic, better to rely on order linkage if possible
-    
     conv.raw_conversation_data = data
     
-    # Process Messages (reverse chronological usually)
+    # Process Messages
     msgs = data.get("messages", []) or []
-    msg_created_count = 0
+    
+    # Debug stats
+    messages_total_in_payload = len(msgs)
+    messages_skipped_existing_db = 0
+    messages_skipped_duplicate_in_payload = 0
+    messages_inserted = 0
+    synthetic_ids_used_count = 0
+    messages_skipped_no_data = 0
+    synthetic_id_preview: List[Dict[str, str]] = []  # For debug
     
     # Sort messages by date to find last message time deterministically
     def parse_msg_time(t):
         if not t: return datetime.min
-        try: return datetime.fromisoformat(t.replace("Z", "+00:00"))
+        try: return datetime.fromisoformat(str(t).replace("Z", "+00:00"))
         except: return datetime.min
         
     sorted_msgs = sorted(msgs, key=lambda x: parse_msg_time(x.get("created_at")))
@@ -933,33 +1133,76 @@ def _upsert_conversation(db: Session, data: Dict[str, Any]) -> Dict[str, Any]:
         last_msg = sorted_msgs[-1]
         conv.last_message_at = parse_msg_time(last_msg.get("created_at"))
     
-    # Try to link Order ID?
-    # Reverb detail may contain order_id or order_number?
-    # Often it's inside `context` or similar, but let's check top levels
-    # Based on research, `order_id` might be present
+    # Try to link Order ID
     if data.get("order_id"):
         conv.external_order_id = str(data.get("order_id"))
     
-    db.flush() # Get ID
+    db.flush()  # Get conv.id
     
-    existing_msg_ids = set()
-    if not is_new:
-        start_ids = db.query(MarketplaceMessage.external_message_id).filter(
-            MarketplaceMessage.conversation_id == conv.id
-        ).all()
-        existing_msg_ids = {m[0] for m in start_ids}
+    # Fetch existing message IDs from DB for this conversation (once)
+    existing_msg_ids: set = set()
+    existing_rows = db.query(MarketplaceMessage.external_message_id).filter(
+        MarketplaceMessage.conversation_id == conv.id
+    ).all()
+    for r in existing_rows:
+        if r and r[0] is not None and str(r[0]).strip():
+            existing_msg_ids.add(str(r[0]).strip())
+    
+    # In-memory dedupe for this payload
+    payload_seen_ids: set = set()
         
     for m in msgs:
-        m_id = str(m.get("id"))
-        if m_id in existing_msg_ids:
-            continue
-            
-        body = m.get("body")
-        sent_ts = parse_msg_time(m.get("created_at"))
+        raw_id = m.get("id")
         
-        # Sender type
-        # account_id vs local user?
-        # We can heuristic this later, for now store raw
+        # Determine external_message_id
+        if raw_id is not None and str(raw_id).strip() and str(raw_id).strip() != "None":
+            m_id = str(raw_id).strip()
+            is_synthetic = False
+        else:
+            # Check if we have any data to create stable ID
+            created_at_raw = m.get("created_at") or ""
+            body_raw = m.get("body") or m.get("message") or m.get("text") or ""
+            if not created_at_raw and not body_raw:
+                # Cannot generate stable synthetic ID - skip
+                messages_skipped_no_data += 1
+                continue
+            
+            m_id = _stable_synthetic_message_id(external_id, m)
+            is_synthetic = True
+            synthetic_ids_used_count += 1
+            
+            # Collect preview for debug (first 3 only)
+            if debug and len(synthetic_id_preview) < 3:
+                created_at_utc = _parse_dt_utc(created_at_raw)
+                synthetic_id_preview.append({
+                    "synthetic_id": m_id,
+                    "created_at_raw": str(created_at_raw) if created_at_raw else "",
+                    "created_at_utc": created_at_utc,
+                    "body_preview": (_normalize_text(body_raw)[:50] + "...") if len(_normalize_text(body_raw)) > 50 else _normalize_text(body_raw)
+                })
+        
+        # Ensure m_id is valid (never empty, None, or "None")
+        m_id = str(m_id).strip() if m_id else ""
+        if not m_id or m_id == "None":
+            messages_skipped_no_data += 1
+            continue
+        
+        # DB dedupe: skip if already exists in database
+        if m_id in existing_msg_ids:
+            messages_skipped_existing_db += 1
+            continue
+        
+        # In-memory dedupe: skip if already seen in this payload
+        if m_id in payload_seen_ids:
+            messages_skipped_duplicate_in_payload += 1
+            continue
+        
+        # Mark as seen in this payload
+        payload_seen_ids.add(m_id)
+        
+        # Insert the message
+        body = m.get("body") or ""
+        sent_ts = parse_msg_time(m.get("created_at"))
         sender_type = "unknown"
         
         new_msg = MarketplaceMessage(
@@ -971,14 +1214,32 @@ def _upsert_conversation(db: Session, data: Dict[str, Any]) -> Dict[str, Any]:
             sent_at=sent_ts
         )
         db.add(new_msg)
-        msg_created_count += 1
+        messages_inserted += 1
         
-    return {
+        # Add to existing set to prevent re-inserting in same run
+        existing_msg_ids.add(m_id)
+        
+    result: Dict[str, Any] = {
         "created": is_new,
-        "msg_count": len(msgs),
-        "msg_created": msg_created_count,
+        "msg_count": messages_total_in_payload,
+        "msg_created": messages_inserted,
         "linked_customer": False
     }
+    
+    # Add debug stats if requested
+    if debug:
+        result["debug_stats"] = {
+            "conversation_external_id": external_id,
+            "messages_total_in_payload": messages_total_in_payload,
+            "messages_inserted": messages_inserted,
+            "messages_skipped_existing_db": messages_skipped_existing_db,
+            "messages_skipped_duplicate_in_payload": messages_skipped_duplicate_in_payload,
+            "messages_skipped_no_data": messages_skipped_no_data,
+            "synthetic_ids_used": synthetic_ids_used_count,
+            "synthetic_id_preview": synthetic_id_preview
+        }
+        
+    return result
 
 
 # =============================================================================

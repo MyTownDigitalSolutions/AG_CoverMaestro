@@ -2,16 +2,31 @@ import { useEffect, useState } from 'react'
 import {
   Box, Typography, Paper, Button, TextField, Dialog, DialogTitle,
   DialogContent, DialogActions, Grid, IconButton, Table, TableBody,
-  TableCell, TableContainer, TableHead, TableRow, Chip, Divider
+  TableCell, TableContainer, TableHead, TableRow, Chip, Divider,
+  CircularProgress, Link, Collapse
 } from '@mui/material'
 import DeleteIcon from '@mui/icons-material/Delete'
 import EditIcon from '@mui/icons-material/Edit'
 import AddIcon from '@mui/icons-material/Add'
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
+import ExpandLessIcon from '@mui/icons-material/ExpandLess'
+import ReceiptIcon from '@mui/icons-material/Receipt'
 import { customersApi } from '../services/api'
 import type { Customer } from '../types'
 
 // Helper for empty strings
 const emptyIfNull = (val: string | undefined | null) => val || ''
+
+interface CustomerOrder {
+  id: number
+  external_order_id: string
+  external_order_number?: string
+  order_date: string
+  order_total_cents?: number
+  currency_code?: string
+  status_normalized?: string
+  marketplace?: string
+}
 
 export default function CustomersPage() {
   const [customers, setCustomers] = useState<Customer[]>([])
@@ -19,6 +34,19 @@ export default function CustomersPage() {
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null)
 
   const [formData, setFormData] = useState<Partial<Customer>>({})
+
+  // Orders expansion state
+  const [expandedCustomerId, setExpandedCustomerId] = useState<number | null>(null)
+  const [customerOrders, setCustomerOrders] = useState<CustomerOrder[]>([])
+  const [ordersLoading, setOrdersLoading] = useState(false)
+
+  // Invoice modal state
+  const [invoiceModalOpen, setInvoiceModalOpen] = useState(false)
+  const [invoiceHtml, setInvoiceHtml] = useState('')
+  const [invoiceLoading, setInvoiceLoading] = useState(false)
+
+  // Admin key for invoice generation
+  const [adminKey, setAdminKey] = useState('')
 
   const loadCustomers = async () => {
     const data = await customersApi.list()
@@ -126,17 +154,106 @@ export default function CustomersPage() {
     setFormData(prev => ({ ...prev, [field]: value }))
   }
 
+  // Toggle orders expansion
+  const handleToggleOrders = async (customerId: number) => {
+    if (expandedCustomerId === customerId) {
+      // Collapse
+      setExpandedCustomerId(null)
+      setCustomerOrders([])
+    } else {
+      // Expand and load orders
+      setExpandedCustomerId(customerId)
+      setOrdersLoading(true)
+      setCustomerOrders([])
+
+      try {
+        const response = await fetch(`/api/marketplace-orders?customer_id=${customerId}&limit=50`)
+        if (response.ok) {
+          const orders: CustomerOrder[] = await response.json()
+          setCustomerOrders(orders)
+        }
+      } catch (err) {
+        console.error('Failed to fetch orders:', err)
+      } finally {
+        setOrdersLoading(false)
+      }
+    }
+  }
+
+  // Open invoice preview for a single order
+  const handleOpenInvoice = async (orderId: number) => {
+    if (!adminKey.trim()) {
+      alert('Please enter Admin Key to view invoices')
+      return
+    }
+
+    setInvoiceLoading(true)
+    setInvoiceHtml('')
+    setInvoiceModalOpen(true)
+
+    try {
+      const response = await fetch('/api/marketplace-orders/invoice', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Admin-Key': adminKey.trim()
+        },
+        body: JSON.stringify({
+          order_ids: [orderId],
+          mode: 'html'
+        })
+      })
+
+      if (!response.ok) {
+        const text = await response.text()
+        throw new Error(`Error ${response.status}: ${text.slice(0, 100)}`)
+      }
+
+      const data = await response.json()
+      setInvoiceHtml(data.html)
+    } catch (err) {
+      setInvoiceHtml(`<p style="color:red;">Failed to load invoice: ${err instanceof Error ? err.message : 'Unknown error'}</p>`)
+    } finally {
+      setInvoiceLoading(false)
+    }
+  }
+
+  const formatCurrency = (cents?: number, currency?: string) => {
+    if (cents === null || cents === undefined) return '—'
+    const dollars = cents / 100
+    return `${currency || 'USD'} ${dollars.toFixed(2)}`
+  }
+
+  const formatDate = (dateStr: string) => {
+    try {
+      return new Date(dateStr).toLocaleDateString()
+    } catch {
+      return dateStr
+    }
+  }
+
   return (
     <Box>
       <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 3 }}>
         <Typography variant="h4">Customers</Typography>
-        <Button
-          variant="contained"
-          startIcon={<AddIcon />}
-          onClick={openAdd}
-        >
-          Add Customer
-        </Button>
+        <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
+          <TextField
+            label="Admin Key"
+            type="password"
+            value={adminKey}
+            onChange={(e) => setAdminKey(e.target.value)}
+            size="small"
+            sx={{ width: 200 }}
+            placeholder="For invoice preview"
+          />
+          <Button
+            variant="contained"
+            startIcon={<AddIcon />}
+            onClick={openAdd}
+          >
+            Add Customer
+          </Button>
+        </Box>
       </Box>
 
       <TableContainer component={Paper}>
@@ -148,61 +265,104 @@ export default function CustomersPage() {
               <TableCell>Phone</TableCell>
               <TableCell>Location</TableCell>
               <TableCell>Source</TableCell>
+              <TableCell>Orders</TableCell>
               <TableCell>Actions</TableCell>
             </TableRow>
           </TableHead>
           <TableBody>
             {customers.map((customer) => (
-              <TableRow key={customer.id}>
-                <TableCell>
-                  <Typography variant="body2" fontWeight="bold">{customer.name}</Typography>
-                  {(customer.first_name || customer.last_name) && (
-                    <Typography variant="caption" color="text.secondary">
-                      {customer.first_name} {customer.last_name}
-                    </Typography>
-                  )}
-                </TableCell>
-                <TableCell>
-                  {customer.buyer_email && (
-                    <Box>{customer.buyer_email}</Box>
-                  )}
-                  {customer.marketplace_buyer_email && (
-                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
-                      Proxy: {customer.marketplace_buyer_email}
-                    </Typography>
-                  )}
-                  {!customer.buyer_email && !customer.marketplace_buyer_email && '-'}
-                </TableCell>
-                <TableCell>
-                  {customer.mobile_phone || customer.phone || '-'}
-                </TableCell>
-                <TableCell>
-                  {customer.shipping_city ? (
-                    `${customer.shipping_city}, ${customer.shipping_state || ''}`
-                  ) : (
-                    customer.address || '-'
-                  )}
-                </TableCell>
-                <TableCell>
-                  {customer.source_marketplace ? (
-                    <Chip
-                      label={customer.source_marketplace}
+              <>
+                <TableRow key={customer.id}>
+                  <TableCell>
+                    <Typography variant="body2" fontWeight="bold">{customer.name}</Typography>
+                    {(customer.first_name || customer.last_name) && (
+                      <Typography variant="caption" color="text.secondary">
+                        {customer.first_name} {customer.last_name}
+                      </Typography>
+                    )}
+                  </TableCell>
+                  <TableCell>
+                    {customer.buyer_email && (
+                      <Box>{customer.buyer_email}</Box>
+                    )}
+                    {customer.marketplace_buyer_email && (
+                      <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+                        Proxy: {customer.marketplace_buyer_email}
+                      </Typography>
+                    )}
+                    {!customer.buyer_email && !customer.marketplace_buyer_email && '-'}
+                  </TableCell>
+                  <TableCell>
+                    {customer.mobile_phone || customer.phone || '-'}
+                  </TableCell>
+                  <TableCell>
+                    {customer.shipping_city ? (
+                      `${customer.shipping_city}, ${customer.shipping_state || ''}`
+                    ) : (
+                      customer.address || '-'
+                    )}
+                  </TableCell>
+                  <TableCell>
+                    {customer.source_marketplace ? (
+                      <Chip
+                        label={customer.source_marketplace}
+                        size="small"
+                        color="primary"
+                        variant="outlined"
+                      />
+                    ) : '-'}
+                  </TableCell>
+                  <TableCell>
+                    <Button
                       size="small"
-                      color="primary"
-                      variant="outlined"
-                    />
-                  ) : '-'}
-                </TableCell>
-                <TableCell>
-                  <IconButton onClick={() => openEdit(customer)}><EditIcon /></IconButton>
-                  <IconButton onClick={() => handleDelete(customer.id)}><DeleteIcon /></IconButton>
-                </TableCell>
-              </TableRow>
+                      onClick={() => handleToggleOrders(customer.id)}
+                      endIcon={expandedCustomerId === customer.id ? <ExpandLessIcon /> : <ExpandMoreIcon />}
+                    >
+                      {expandedCustomerId === customer.id ? 'Hide' : 'View'}
+                    </Button>
+                  </TableCell>
+                  <TableCell>
+                    <IconButton onClick={() => openEdit(customer)}><EditIcon /></IconButton>
+                    <IconButton onClick={() => handleDelete(customer.id)}><DeleteIcon /></IconButton>
+                  </TableCell>
+                </TableRow>
+                {/* Orders expansion row */}
+                <TableRow key={`${customer.id}-orders`}>
+                  <TableCell colSpan={7} sx={{ py: 0, borderBottom: expandedCustomerId === customer.id ? undefined : 'none' }}>
+                    <Collapse in={expandedCustomerId === customer.id} timeout="auto" unmountOnExit>
+                      <Box sx={{ p: 2, bgcolor: 'grey.50' }}>
+                        <Typography variant="subtitle2" gutterBottom>
+                          Orders for {customer.name}
+                        </Typography>
+                        {ordersLoading ? (
+                          <CircularProgress size={20} />
+                        ) : customerOrders.length === 0 ? (
+                          <Typography variant="body2" color="text.secondary">No orders found</Typography>
+                        ) : (
+                          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+                            {customerOrders.map((order) => (
+                              <Chip
+                                key={order.id}
+                                icon={<ReceiptIcon />}
+                                label={`#${order.external_order_number || order.external_order_id} • ${formatDate(order.order_date)} • ${formatCurrency(order.order_total_cents, order.currency_code)}`}
+                                onClick={() => handleOpenInvoice(order.id)}
+                                variant="outlined"
+                                sx={{ cursor: 'pointer' }}
+                              />
+                            ))}
+                          </Box>
+                        )}
+                      </Box>
+                    </Collapse>
+                  </TableCell>
+                </TableRow>
+              </>
             ))}
           </TableBody>
         </Table>
       </TableContainer>
 
+      {/* Customer Edit Dialog */}
       <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)} maxWidth="md" fullWidth>
         <DialogTitle>{editingCustomer ? 'Edit Customer' : 'Add Customer'}</DialogTitle>
         <DialogContent dividers>
@@ -329,6 +489,40 @@ export default function CustomersPage() {
         <DialogActions>
           <Button onClick={() => setDialogOpen(false)}>Cancel</Button>
           <Button onClick={handleSave} variant="contained">Save</Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Invoice Preview Modal */}
+      <Dialog open={invoiceModalOpen} onClose={() => setInvoiceModalOpen(false)} maxWidth="md" fullWidth>
+        <DialogTitle>Invoice Preview</DialogTitle>
+        <DialogContent>
+          {invoiceLoading ? (
+            <Box sx={{ display: 'flex', justifyContent: 'center', p: 4 }}>
+              <CircularProgress />
+            </Box>
+          ) : (
+            <Box
+              sx={{ minHeight: 400 }}
+              dangerouslySetInnerHTML={{ __html: invoiceHtml }}
+            />
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setInvoiceModalOpen(false)}>Close</Button>
+          <Button
+            variant="contained"
+            onClick={() => {
+              // Open in new window for printing
+              const printWindow = window.open('', '_blank')
+              if (printWindow) {
+                printWindow.document.write(invoiceHtml)
+                printWindow.document.close()
+              }
+            }}
+            disabled={!invoiceHtml || invoiceLoading}
+          >
+            Open in New Tab
+          </Button>
         </DialogActions>
       </Dialog>
     </Box>

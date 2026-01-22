@@ -241,3 +241,105 @@ class EbayTemplateVerificationResponse(BaseModel):
     computed_sha256: Optional[str] = None
     computed_file_size: Optional[int] = None
     verified_at: str
+
+
+# --- Reverb Template Schemas ---
+
+class ReverbTemplateResponse(BaseModel):
+    id: int
+    original_filename: str
+    file_size: int
+    sha256: Optional[str] = None
+    uploaded_at: Optional[datetime] = None
+    
+    class Config:
+        from_attributes = True
+
+class ReverbTemplateParseSummary(BaseModel):
+    template_id: int
+    fields_inserted: int
+    values_inserted: int
+    defaults_applied: int
+    values_ignored_not_in_template: int
+    defaults_ignored_not_in_template: int
+    # Reverb templates are CSV, so no "sheets", but keeping structure similar
+    sheet_names: List[str] = []
+
+class ReverbFieldValueResponse(BaseModel):
+    id: int
+    value: str
+    
+    class Config:
+        from_attributes = True
+
+# Alias for clarity 
+ReverbValidValueDetailed = ReverbFieldValueResponse
+
+class ReverbFieldResponse(BaseModel):
+    id: int
+    reverb_template_id: int
+    field_name: str
+    display_name: Optional[str] = None
+    required: bool
+    order_index: Optional[int] = None
+    selected_value: Optional[str] = None
+    custom_value: Optional[str] = None
+    
+    allowed_values: List[str] = []
+    allowed_values_detailed: List[ReverbValidValueDetailed] = []
+    
+    # We will need to use a forward reference or loose type if Response is defined after
+    # But Response is defined AFTER. I need to move ReverbFieldOverrideResponse UP or use strict strings?
+    # Pydantic handles recursive if configured.
+    # Actually, I'll just put Any for now or move the class up. Moving up is cleaner.
+    # But updating file content via replace is hard for reordering.
+    # I'll just use "overrides: List['ReverbFieldOverrideResponse'] = []" and keep it where it is.
+    overrides: List['ReverbFieldOverrideResponse'] = []
+
+    @field_validator('allowed_values', mode='before')
+    def map_valid_values(cls, v):
+        if not v:
+            return []
+        if isinstance(v, list) and v and isinstance(v[0], str):
+            return v
+        return [item.value for item in v if hasattr(item, 'value')]
+
+    class Config:
+        from_attributes = True
+
+class ReverbTemplateFieldsResponse(BaseModel):
+    template_id: int
+    fields: List[ReverbFieldResponse]
+
+class ReverbFieldUpdateRequest(BaseModel):
+    required: Optional[bool] = None
+    selected_value: Optional[str] = None
+    custom_value: Optional[str] = None
+
+class ReverbValidValueCreateRequest(BaseModel):
+    value: str
+
+class ReverbTemplatePreviewResponse(BaseModel):
+    template_id: int
+    original_filename: str
+    # Reverb is CSV, so sheet_name might be "csv" or empty
+    sheet_name: str
+    max_row: int
+    max_column: int
+    preview_row_count: int
+    preview_column_count: int
+    grid: List[List[str]]
+
+class ReverbFieldOverrideResponse(BaseModel):
+    id: int
+    equipment_type_id: int
+    reverb_field_id: int
+    default_value: Optional[str] = None
+    
+    class Config:
+        from_attributes = True
+
+class ReverbFieldOverrideCreateRequest(BaseModel):
+    equipment_type_id: int
+    reverb_field_id: int
+    default_value: Optional[str] = None

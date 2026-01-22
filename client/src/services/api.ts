@@ -344,6 +344,9 @@ export const settingsApi = {
     api.post(`/settings/equipment-types/${equipmentTypeId}/amazon-customization-templates/default`, { template_id: templateId }).then(r => r.data),
   unassignEquipmentTypeCustomizationTemplate: (equipmentTypeId: number, templateId: number) =>
     api.delete(`/settings/equipment-types/${equipmentTypeId}/amazon-customization-templates/${templateId}`).then(r => r.data),
+
+  assignReverbTemplate: (equipmentTypeId: number, templateId: number | null) =>
+    api.post<EquipmentType>(`/settings/equipment-types/${equipmentTypeId}/reverb-template/assign`, { template_id: templateId }).then(r => r.data),
 }
 
 
@@ -395,6 +398,11 @@ export const exportApi = {
 
   downloadCustomizationXlsx: async (modelIds: number[], listingType: 'individual' | 'parent_child' = 'individual') => {
     const response = await api.post('/export/download/customization/xlsx', { model_ids: modelIds, listing_type: listingType }, { responseType: 'blob' })
+    return response
+  },
+
+  downloadReverbCsv: async (modelIds: number[], listingType: 'individual' | 'parent_child' = 'individual') => {
+    const response = await api.post('/export/download/reverb/csv', { model_ids: modelIds, listing_type: listingType }, { responseType: 'blob' })
     return response
   },
 
@@ -543,6 +551,93 @@ export const ebayVariationsApi = {
     api.post<GenerateVariationsResponse>('/ebay-variations/generate', data).then(r => r.data),
   getExisting: (modelIds: number[]) =>
     api.get<VariationRow[]>(`/ebay-variations/by-models?model_ids=${modelIds.join(',')}`).then(r => r.data)
+}
+
+// Reverb Templates API
+export interface ReverbTemplateResponse {
+  id: number
+  original_filename: string
+  file_size: number
+  sha256?: string
+  uploaded_at?: string
+}
+
+export interface ReverbTemplateParseSummary {
+  template_id: number
+  fields_inserted: number
+  values_inserted: number
+  defaults_applied: number
+  values_ignored_not_in_template: number
+  defaults_ignored_not_in_template: number
+  sheet_names: string[]
+}
+
+export interface ReverbValidValueDetailed {
+  id: number
+  value: string
+}
+
+export interface ReverbFieldOverrideResponse {
+  id: number
+  equipment_type_id: number
+  reverb_field_id: number
+  default_value: string | null
+}
+
+export interface ReverbFieldResponse {
+  id: number
+  reverb_template_id: number
+  field_name: string
+  display_name?: string
+  required: boolean
+  order_index?: number
+  selected_value?: string
+  custom_value?: string
+  allowed_values: string[]
+  allowed_values_detailed?: ReverbValidValueDetailed[]
+  overrides?: ReverbFieldOverrideResponse[]
+}
+
+export interface ReverbTemplatePreviewResponse {
+  template_id: number
+  original_filename: string
+  sheet_name: string
+  max_row: number
+  max_column: number
+  preview_row_count: number
+  preview_column_count: number
+  grid: string[][]
+}
+
+export interface ReverbTemplateFieldsResponse {
+  template_id: number
+  fields: ReverbFieldResponse[]
+}
+
+export const reverbTemplatesApi = {
+  list: () => api.get<ReverbTemplateResponse[]>('/reverb-templates').then(r => r.data),
+  get: (id: number) => api.get<ReverbTemplateResponse>(`/reverb-templates/${id}`).then(r => r.data),
+  upload: (file: File) => {
+    const formData = new FormData()
+    formData.append('file', file)
+    return api.post<ReverbTemplateResponse>('/reverb-templates/upload', formData).then(r => r.data)
+  },
+  getCurrent: () => api.get<ReverbTemplateResponse | null>('/reverb-templates/current').then(r => r.data),
+  parse: (id: number) => api.post<ReverbTemplateParseSummary>(`/reverb-templates/${id}/parse`).then(r => r.data),
+  getFields: (id: number) => api.get<ReverbTemplateFieldsResponse>(`/reverb-templates/${id}/fields`).then(r => r.data),
+  getCurrentFields: () => api.get<ReverbTemplateFieldsResponse>('/reverb-templates/current/fields').then(r => r.data),
+  updateField: (fieldId: number, payload: { required?: boolean; selected_value?: string | null; custom_value?: string | null }) =>
+    api.patch<ReverbFieldResponse>(`/reverb-templates/fields/${fieldId}`, payload).then(r => r.data),
+  addValidValue: (fieldId: number, value: string) =>
+    api.post<ReverbFieldResponse>(`/reverb-templates/fields/${fieldId}/valid-values`, { value }).then(r => r.data),
+  deleteValidValue: (fieldId: number, valueId: number) =>
+    api.delete<ReverbFieldResponse>(`/reverb-templates/fields/${fieldId}/valid-values/${valueId}`).then(r => r.data),
+  createFieldOverride: (fieldId: number, equipmentTypeId: number, defaultValue: string) =>
+    api.post<ReverbFieldResponse>(`/reverb-templates/fields/${fieldId}/overrides`, { equipment_type_id: equipmentTypeId, default_value: defaultValue }).then(r => r.data),
+  deleteFieldOverride: (fieldId: number, overrideId: number) =>
+    api.delete<ReverbFieldResponse>(`/reverb-templates/fields/${fieldId}/overrides/${overrideId}`).then(r => r.data),
+  previewCurrentTemplate: () => api.get<ReverbTemplatePreviewResponse>('/reverb-templates/current/preview').then(r => r.data),
+  downloadCurrentTemplateUrl: () => '/api/reverb-templates/current/download?mode=download',
 }
 
 export default api

@@ -27,6 +27,7 @@ from app.models.templates import AmazonProductType, ProductTypeField, EquipmentT
 from app.schemas.core import ModelPricingSnapshotResponse
 from app.api.pricing import recalculate_targeted, PricingRecalculateRequest
 from app.services.pricing_calculator import PricingConfigError
+from app.services.reverb_export_service import generate_reverb_export_csv
 
 logger = logging.getLogger(__name__)
 
@@ -1115,7 +1116,24 @@ def download_csv(request: ExportPreviewRequest, db: Session = Depends(get_db)):
     )
     response.headers["X-Export-Signature"] = sig
     response.headers["X-Export-Template-Code"] = template_code
+    response.headers["X-Export-Template-Code"] = template_code
     return response
+
+
+@router.post("/download/reverb/csv")
+def download_reverb_csv(request: ExportPreviewRequest, db: Session = Depends(get_db)):
+    """
+    Download Reverb export as CSV.
+    Uses the Reverb Template assigned to the models' Equipment Type.
+    """
+    csv_buffer, filename = generate_reverb_export_csv(db, request.model_ids)
+    
+    return StreamingResponse(
+        csv_buffer,
+        media_type="text/csv",
+        headers={"Content-Disposition": f"attachment; filename={filename}"}
+    )
+
 
 
 

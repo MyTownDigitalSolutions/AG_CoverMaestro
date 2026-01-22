@@ -34,6 +34,12 @@ class AmazonCustomizationTemplateResponse(BaseModel):
     class Config:
         from_attributes = True
 
+class ReverbTemplateReference(BaseModel):
+    id: int
+    original_filename: str
+    class Config:
+        from_attributes = True
+
 class AmazonCustomizationTemplatePreviewResponse(BaseModel):
     template_id: int
     original_filename: str
@@ -48,6 +54,9 @@ class AmazonCustomizationTemplatePreviewResponse(BaseModel):
         from_attributes = True
 
 class AmazonCustomizationTemplateAssignmentRequest(BaseModel):
+    template_id: Optional[int] = None
+
+class ReverbTemplateAssignmentRequest(BaseModel):
     template_id: Optional[int] = None
 
 # Multi-template assignment schemas (slot-based)
@@ -87,6 +96,9 @@ class EquipmentTypeResponse(EquipmentTypeBase):
     id: int
     amazon_customization_template_id: Optional[int] = None
     amazon_customization_template: Optional[AmazonCustomizationTemplateResponse] = None
+    
+    reverb_template_id: Optional[int] = None
+    reverb_template: Optional[ReverbTemplateReference] = None
 
     class Config:
         from_attributes = True

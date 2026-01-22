@@ -574,6 +574,7 @@ def list_marketplace_orders(
     buyer_email: Optional[str] = None,
     date_from: Optional[datetime] = None,
     date_to: Optional[datetime] = None,
+    customer_id: Optional[int] = None,
     limit: int = Query(default=100, le=500),
     db: Session = Depends(get_db)
 ):
@@ -599,6 +600,9 @@ def list_marketplace_orders(
         
         if date_to:
             query = query.filter(MarketplaceOrder.order_date <= date_to)
+        
+        if customer_id is not None:
+            query = query.filter(MarketplaceOrder.customer_id == customer_id)
         
         query = query.order_by(MarketplaceOrder.order_date.desc())
         query = query.limit(limit)

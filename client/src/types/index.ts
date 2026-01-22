@@ -17,6 +17,12 @@ export interface AmazonCustomizationTemplate {
   file_size: number
 }
 
+export interface ReverbTemplateReference {
+  id: number
+  original_filename: string
+  // Add other fields if needed, but this suffices for assignment UI
+}
+
 export interface EquipmentTypeCustomizationTemplateItem {
   template_id: number
   slot: number
@@ -35,6 +41,8 @@ export interface EquipmentType {
   name: string
   amazon_customization_template_id?: number | null
   amazon_customization_template?: AmazonCustomizationTemplate | null
+  reverb_template_id?: number | null
+  reverb_template?: ReverbTemplateReference | null
 }
 
 export interface DesignOption {

@@ -40,6 +40,9 @@ class EquipmentType(Base):
     amazon_customization_template_id = Column(Integer, ForeignKey("amazon_customization_templates.id"), nullable=True)
     amazon_customization_template = relationship("AmazonCustomizationTemplate")
 
+    reverb_template_id = Column(Integer, ForeignKey("reverb_templates.id"), nullable=True)
+    reverb_template = relationship("app.models.templates.ReverbTemplate")
+
     # product_types = relationship("EquipmentTypeProductType", back_populates="equipment_type")
     # Relationships defined at end of file to resolve forward references
 

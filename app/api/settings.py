@@ -18,7 +18,7 @@ from app.models.core import (
     LaborSetting, MarketplaceFeeRate, VariantProfitSetting, ShippingZone, ShippingDefaultSetting,
     ExportSetting, EquipmentType
 )
-from app.models.templates import AmazonCustomizationTemplate, EquipmentTypeCustomizationTemplate
+from app.models.templates import AmazonCustomizationTemplate, EquipmentTypeCustomizationTemplate, ReverbTemplate
 from app.services.storage_policy import (
     ensure_storage_dirs_exist,
     assert_allowed_write_path,
@@ -42,7 +42,8 @@ from app.schemas.core import (
     EquipmentTypeCustomizationTemplateAssignRequest,
     EquipmentTypeCustomizationTemplateItem,
     EquipmentTypeCustomizationTemplatesResponse,
-    EquipmentTypeCustomizationTemplateSetDefaultRequest
+    EquipmentTypeCustomizationTemplateSetDefaultRequest,
+    ReverbTemplateAssignmentRequest
 )
 
 router = APIRouter(prefix="/settings", tags=["settings"])
@@ -1117,3 +1118,23 @@ def unassign_equipment_type_customization_template(equipment_type_id: int, templ
     db.commit()
     
     return {"message": "Template unassigned", "removed_slots": [a.slot for a in assignments]}
+
+
+@router.post("/equipment-types/{id}/reverb-template/assign", response_model=EquipmentTypeResponse)
+def assign_reverb_template_to_equipment_type(id: int, data: ReverbTemplateAssignmentRequest, db: Session = Depends(get_db)):
+    """
+    Assign a Reverb Template to an Equipment Type.
+    """
+    equipment_type = db.query(EquipmentType).filter(EquipmentType.id == id).first()
+    if not equipment_type:
+        raise HTTPException(status_code=404, detail="Equipment type not found")
+    
+    if data.template_id is not None:
+        template = db.query(ReverbTemplate).filter(ReverbTemplate.id == data.template_id).first()
+        if not template:
+            raise HTTPException(status_code=404, detail="Reverb Template not found")
+    
+    equipment_type.reverb_template_id = data.template_id
+    db.commit()
+    db.refresh(equipment_type)
+    return equipment_type

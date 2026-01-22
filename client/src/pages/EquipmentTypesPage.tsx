@@ -10,9 +10,9 @@ import EditIcon from '@mui/icons-material/Edit'
 import AddIcon from '@mui/icons-material/Add'
 import SettingsIcon from '@mui/icons-material/Settings'
 import DesignServicesIcon from '@mui/icons-material/DesignServices'
-import { equipmentTypesApi, pricingApi, designOptionsApi, settingsApi, templatesApi } from '../services/api'
+import { equipmentTypesApi, pricingApi, designOptionsApi, settingsApi, templatesApi, reverbTemplatesApi } from '../services/api'
 import type { EquipmentTypeProductTypeLink } from '../services/api'
-import type { EquipmentType, PricingOption, DesignOption, AmazonCustomizationTemplate } from '../types'
+import type { EquipmentType, PricingOption, DesignOption, AmazonCustomizationTemplate, ReverbTemplateReference } from '../types'
 
 
 export default function EquipmentTypesPage() {
@@ -31,6 +31,10 @@ export default function EquipmentTypesPage() {
   const [name, setName] = useState('')
   const [allCustomizationTemplates, setAllCustomizationTemplates] = useState<AmazonCustomizationTemplate[]>([])
   const [selectedTemplateId, setSelectedTemplateId] = useState<number | null>(null)
+
+  const [allReverbTemplates, setAllReverbTemplates] = useState<ReverbTemplateReference[]>([])
+  const [selectedReverbTemplateId, setSelectedReverbTemplateId] = useState<number | null>(null)
+
   const [productTypeLinks, setProductTypeLinks] = useState<EquipmentTypeProductTypeLink[]>([])
 
 
@@ -80,11 +84,21 @@ export default function EquipmentTypesPage() {
     }
   }
 
+  const loadReverbTemplates = async () => {
+    try {
+      const data = await reverbTemplatesApi.list()
+      setAllReverbTemplates(data)
+    } catch (e) {
+      console.error('Failed to load Reverb templates', e)
+    }
+  }
+
   useEffect(() => {
     loadEquipmentTypes()
     loadPricingOptions()
     loadDesignOptions()
     loadCustomizationTemplates()
+    loadReverbTemplates()
     loadProductTypeLinks()
   }, [])
 
@@ -93,10 +107,12 @@ export default function EquipmentTypesPage() {
       setEditing(equipmentType)
       setName(equipmentType.name)
       setSelectedTemplateId(equipmentType.amazon_customization_template_id ?? null)
+      setSelectedReverbTemplateId(equipmentType.reverb_template_id ?? null)
     } else {
       setEditing(null)
       setName('')
       setSelectedTemplateId(null)
+      setSelectedReverbTemplateId(null)
     }
     setDialogOpen(true)
   }
@@ -114,6 +130,7 @@ export default function EquipmentTypesPage() {
 
     // Assign template (always, even if null, to handle clearing)
     await settingsApi.assignAmazonCustomizationTemplate(savedId, selectedTemplateId)
+    await settingsApi.assignReverbTemplate(savedId, selectedReverbTemplateId)
 
     setDialogOpen(false)
     loadEquipmentTypes()
@@ -207,6 +224,17 @@ export default function EquipmentTypesPage() {
                         />
                       )
                     })()}
+                    {(() => {
+                      const assigned = !!(et as any).reverb_template_id
+                      return (
+                        <Chip
+                          label={`Reverb Template: ${assigned ? 'Assigned' : 'Not assigned'}`}
+                          size="small"
+                          color={assigned ? 'success' : 'default'}
+                          variant="outlined"
+                        />
+                      )
+                    })()}
                   </Box>
                 </TableCell>
                 <TableCell>
@@ -288,6 +316,26 @@ export default function EquipmentTypesPage() {
               ))}
             </Select>
           </FormControl>
+
+          <FormControl fullWidth margin="dense">
+            <InputLabel id="reverb-template-select-label">Reverb Template</InputLabel>
+            <Select
+              labelId="reverb-template-select-label"
+              value={selectedReverbTemplateId || ''}
+              onChange={(e) => setSelectedReverbTemplateId(e.target.value === '' ? null : Number(e.target.value))}
+              input={<OutlinedInput label="Reverb Template" />}
+            >
+              <MenuItem value="">
+                <em>None</em>
+              </MenuItem>
+              {allReverbTemplates.map((template) => (
+                <MenuItem key={template.id} value={template.id}>
+                  {template.original_filename}
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+
 
         </DialogContent>
         <DialogActions>

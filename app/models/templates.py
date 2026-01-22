@@ -141,3 +141,59 @@ class EbayFieldValue(Base):
     value = Column(String, nullable=False)
     
     field = relationship("EbayField", back_populates="valid_values")
+
+
+class ReverbTemplate(Base):
+    __tablename__ = "reverb_templates"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    original_filename = Column(String, nullable=False)
+    file_path = Column(String, nullable=False)
+    file_size = Column(Integer, nullable=False)
+    sha256 = Column(String, nullable=True)
+    uploaded_at = Column(DateTime, default=datetime.utcnow)
+    
+    fields = relationship("ReverbField", back_populates="reverb_template", cascade="all, delete-orphan")
+
+
+class ReverbField(Base):
+    __tablename__ = "reverb_fields"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    reverb_template_id = Column(Integer, ForeignKey("reverb_templates.id"), nullable=False)
+    field_name = Column(String, nullable=False)
+    display_name = Column(String, nullable=True)
+    required = Column(Boolean, default=False)
+    order_index = Column(Integer, nullable=True)
+    selected_value = Column(String, nullable=True)
+    custom_value = Column(String, nullable=True)
+    
+    reverb_template = relationship("ReverbTemplate", back_populates="fields")
+    valid_values = relationship("ReverbFieldValue", back_populates="field", cascade="all, delete-orphan")
+    overrides = relationship("ReverbEquipmentTypeFieldOverride", back_populates="field", cascade="all, delete-orphan")
+
+
+class ReverbFieldValue(Base):
+    __tablename__ = "reverb_field_values"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    reverb_field_id = Column(Integer, ForeignKey("reverb_fields.id"), nullable=False)
+    value = Column(String, nullable=False)
+    
+    field = relationship("ReverbField", back_populates="valid_values")
+
+
+class ReverbEquipmentTypeFieldOverride(Base):
+    __tablename__ = "reverb_equipment_type_field_overrides"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    equipment_type_id = Column(Integer, ForeignKey("equipment_types.id"), nullable=False)
+    reverb_field_id = Column(Integer, ForeignKey("reverb_fields.id"), nullable=False)
+    default_value = Column(String, nullable=True)
+    
+    equipment_type = relationship("EquipmentType")
+    field = relationship("ReverbField", back_populates="overrides")
+    
+    __table_args__ = (
+        UniqueConstraint('equipment_type_id', 'reverb_field_id', name='uq_reverb_et_field_override'),
+    )

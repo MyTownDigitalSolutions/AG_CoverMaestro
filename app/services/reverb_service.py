@@ -749,13 +749,44 @@ def parse_order_detail_for_enrichment(detail: Dict[str, Any], external_order_id:
     return result
 
 
-def fetch_reverb_conversations(credentials: ReverbCredentials, limit: int = 50) -> Dict[str, Any]:
+def _extract_conversation_id(conv: Dict[str, Any]) -> Optional[str]:
+    """
+    Extract conversation ID from a conversation object.
+    
+    Tries:
+    1. conv.get("id")
+    2. Parse from _links.self.href (e.g., /api/my/conversations/12345)
+    
+    Returns:
+        String ID or None if not found
+    """
+    import re
+    
+    # Try direct id field
+    conv_id = conv.get("id")
+    if conv_id is not None:
+        return str(conv_id)
+    
+    # Try to extract from self link
+    self_href = conv.get("_links", {}).get("self", {}).get("href", "")
+    if self_href:
+        # Match /conversations/{id} pattern
+        match = re.search(r'/conversations/([^/?]+)', self_href)
+        if match:
+            return match.group(1)
+    
+    return None
+
+
+def fetch_reverb_conversations(credentials: ReverbCredentials, limit: int = 50, unread_only: bool = False, debug: bool = False) -> Dict[str, Any]:
     """
     Fetch list of conversations from Reverb.
     
     Args:
         credentials: Reverb credentials
         limit: Max items to fetch
+        unread_only: If True, only fetch unread conversations
+        debug: If True, include raw_samples in response for debugging
         
     Returns:
         Dict with 'conversations' list and metadata
@@ -764,16 +795,22 @@ def fetch_reverb_conversations(credentials: ReverbCredentials, limit: int = 50) 
     base_url = credentials.base_url.rstrip('/')
     url = f"{base_url}/api/my/conversations"
     
-    conversations = []
+    raw_conversations = []
     page = 1
     per_page = 50
     fetched_count = 0
+    pages_fetched = 0
+    max_pages = 20  # Safety limit
+    raw_samples = []  # For debug
     
     # We'll just implement basic pagination for now
-    while len(conversations) < limit:
+    while len(raw_conversations) < limit and page <= max_pages:
         params = {"page": page, "per_page": per_page}
+        if unread_only:
+            params["unread_only"] = "true"
         try:
             response = requests.get(url, headers=headers, params=params, timeout=30)
+            pages_fetched += 1
             if not response.ok:
                 print(f"[REVERB_SERVICE] convers_list_error status={response.status_code}")
                 break
@@ -783,8 +820,13 @@ def fetch_reverb_conversations(credentials: ReverbCredentials, limit: int = 50) 
             
             if not page_conversations:
                 break
+            
+            # Collect raw samples for debug (first 3 from first page only)
+            if debug and page == 1:
+                for i, conv in enumerate(page_conversations[:3]):
+                    raw_samples.append(conv)
                 
-            conversations.extend(page_conversations)
+            raw_conversations.extend(page_conversations)
             fetched_count += len(page_conversations)
             page += 1
             
@@ -794,17 +836,43 @@ def fetch_reverb_conversations(credentials: ReverbCredentials, limit: int = 50) 
         except Exception as e:
             print(f"[REVERB_SERVICE] convers_list_fail err={e}")
             break
+    
+    # Normalize conversations: ensure each has a usable id
+    normalized = []
+    missing_id_count = 0
+    for conv in raw_conversations[:limit]:
+        conv_id = _extract_conversation_id(conv)
+        # Add normalized_id to the conversation dict
+        normalized_conv = dict(conv)
+        normalized_conv["_normalized_id"] = conv_id
+        if conv_id is None:
+            missing_id_count += 1
+        normalized.append(normalized_conv)
+    
+    if missing_id_count > 0:
+        print(f"[REVERB_SERVICE] convers_list_warn missing_id_count={missing_id_count}")
             
-    return {"conversations": conversations[:limit], "fetched": fetched_count}
+    result: Dict[str, Any] = {
+        "conversations": normalized,
+        "raw_fetched": fetched_count,
+        "pages_fetched": pages_fetched,
+        "missing_id_count": missing_id_count
+    }
+    
+    if debug:
+        result["raw_samples"] = raw_samples
+        
+    return result
 
 
-def fetch_reverb_conversation_detail(credentials: ReverbCredentials, conversation_id: str) -> Dict[str, Any]:
+def fetch_reverb_conversation_detail(credentials: ReverbCredentials, conversation_id: str, timeout: int = 15) -> Dict[str, Any]:
     """
     Fetch details for a single conversation (includes messages).
     
     Args:
         credentials: Reverb credentials
         conversation_id: External conversation ID
+        timeout: Request timeout in seconds
         
     Returns:
         Dict with conversation detail or error
@@ -814,11 +882,13 @@ def fetch_reverb_conversation_detail(credentials: ReverbCredentials, conversatio
     url = f"{base_url}/api/my/conversations/{conversation_id}"
     
     try:
-        response = requests.get(url, headers=headers, timeout=15)
+        response = requests.get(url, headers=headers, timeout=timeout)
+        if response.status_code == 404:
+            return {"error": "Conversation not found", "status_code": 404}
         if not response.ok:
-             return {"error": f"HTTP {response.status_code}"}
+            return {"error": f"API returned {response.status_code}", "status_code": response.status_code}
         return response.json()
     except Exception as e:
-        return {"error": str(e)}
+        return {"error": str(e), "status_code": 0}
 
 
