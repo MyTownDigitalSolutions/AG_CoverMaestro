@@ -14,10 +14,10 @@ def normalize_for_url(name: str) -> str:
     result = re.sub(r'[^a-zA-Z0-9]', '', name)
     return result
 
-def substitute_placeholders(value: str, model: Model, series: Series, manufacturer: Manufacturer, equipment_type: EquipmentType) -> str:
+def substitute_placeholders(value: str, model: Model, series: Series, manufacturer: Manufacturer, equipment_type: EquipmentType, db: Session = None) -> str:
     """
     Replace [PLACEHOLDERS] in the value string with actual data.
-    Supported: [MANUFACTURER_NAME], [SERIES_NAME], [MODEL_NAME], [EQUIPMENT_TYPE]
+    Supported: [MANUFACTURER_NAME], [SERIES_NAME], [MODEL_NAME], [EQUIPMENT_TYPE], [REVERB_PRICE]
     (and CamelCase variants)
     """
     if not value:
@@ -28,6 +28,25 @@ def substitute_placeholders(value: str, model: Model, series: Series, manufactur
     series_name = series.name if series else ''
     model_name = model.name if model else ''
     equip_type = equipment_type.name if equipment_type else ''
+    
+    # Handle [REVERB_PRICE] placeholder - pulls Choice No Padding pricing
+    if '[REVERB_PRICE]' in result or '[Reverb_Price]' in result:
+        price_str = ""
+        if db:
+            from app.models.core import ModelPricingSnapshot
+            # Query for Reverb Choice - No Padding pricing
+            snapshot = db.query(ModelPricingSnapshot).filter(
+                ModelPricingSnapshot.model_id == model.id,
+                ModelPricingSnapshot.marketplace == "reverb",
+                ModelPricingSnapshot.variant_key == "choice_no_padding"
+            ).first()
+            
+            if snapshot:
+                # Format as decimal string (e.g., "249.95")
+                price_str = f"{snapshot.retail_price_cents / 100:.2f}"
+        
+        result = result.replace('[REVERB_PRICE]', price_str)
+        result = result.replace('[Reverb_Price]', price_str)
     
     # Text-based substitution (no special image handling needed for Reverb CSV usually)
     result = result.replace('[MANUFACTURER_NAME]', mfr_name)
@@ -124,11 +143,11 @@ def generate_reverb_export_csv(db: Session, model_ids: List[int]) -> tuple[io.By
             override_val = override_map.get((model.equipment_type_id, field.id))
             
             if override_val is not None:
-                value = substitute_placeholders(override_val, model, series, manufacturer, eq_type)
+                value = substitute_placeholders(override_val, model, series, manufacturer, eq_type, db)
             elif field.custom_value:
-                value = substitute_placeholders(field.custom_value, model, series, manufacturer, eq_type)
+                value = substitute_placeholders(field.custom_value, model, series, manufacturer, eq_type, db)
             elif field.selected_value:
-                value = substitute_placeholders(field.selected_value, model, series, manufacturer, eq_type)
+                value = substitute_placeholders(field.selected_value, model, series, manufacturer, eq_type, db)
             
             row.append(value)
             

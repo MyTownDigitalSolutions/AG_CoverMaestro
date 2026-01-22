@@ -254,7 +254,10 @@ def update_reverb_field(
 ):
     field = (
         db.query(ReverbField)
-        .options(selectinload(ReverbField.valid_values))
+        .options(
+            selectinload(ReverbField.valid_values),
+            selectinload(ReverbField.overrides)
+        )
         .filter(ReverbField.id == field_id)
         .first()
     )
@@ -297,7 +300,8 @@ def update_reverb_field(
         selected_value=field.selected_value,
         custom_value=field.custom_value,
         allowed_values=allowed_strs,
-        allowed_values_detailed=allowed_detailed
+        allowed_values_detailed=allowed_detailed,
+        overrides=field.overrides or []
     )
 
 

@@ -1,11 +1,11 @@
-import React, { useState, useEffect, useMemo } from 'react'
+import React, { useState, useEffect } from 'react'
 import {
     Box, Typography, Paper, Button, Alert,
     Divider, IconButton, Table, TableBody, TableCell,
     TableContainer, TableHead, TableRow, Chip, Stack, TextField,
     Dialog, DialogTitle, DialogContent, DialogActions,
     CircularProgress, Switch, FormControlLabel,
-    Autocomplete, MenuItem
+    Autocomplete
 } from '@mui/material'
 import CloudUploadIcon from '@mui/icons-material/CloudUpload'
 import AddIcon from '@mui/icons-material/Add'
@@ -18,7 +18,7 @@ import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined'
 import {
     reverbTemplatesApi, ReverbTemplateResponse, ReverbTemplateParseSummary,
     ReverbFieldResponse, ReverbValidValueDetailed, ReverbTemplatePreviewResponse,
-    equipmentTypesApi, settingsApi
+    equipmentTypesApi
 } from '../services/api'
 import type { EquipmentType } from '../types'
 
@@ -442,10 +442,8 @@ export default function ReverbTemplatesPage() {
     const [previewData, setPreviewData] = useState<ReverbTemplatePreviewResponse | null>(null)
     const [loadingPreview, setLoadingPreview] = useState(false)
 
-    // Linking State
+    // Equipment Types loaded for field value assignments
     const [equipmentTypes, setEquipmentTypes] = useState<EquipmentType[]>([])
-    const [linkEtId, setLinkEtId] = useState<number | ''>('')
-    const [linking, setLinking] = useState(false)
 
     // Load initial data
     useEffect(() => {
@@ -558,47 +556,7 @@ export default function ReverbTemplatesPage() {
         }
     }
 
-    const handleLinkEquipmentType = async () => {
-        if (!currentTemplate || !linkEtId) return
-        setLinking(true)
-        try {
-            await settingsApi.assignReverbTemplate(linkEtId as number, currentTemplate.id)
-            setLinkEtId('')
-            // Refresh ETs
-            const ets = await equipmentTypesApi.list()
-            setEquipmentTypes(ets)
-        } catch (err: any) {
-            console.error(err)
-            setError(err.response?.data?.detail || "Failed to link Equipment Type")
-        } finally {
-            setLinking(false)
-        }
-    }
 
-    const handleUnlinkEquipmentType = async (etId: number) => {
-        if (!window.confirm("Are you sure you want to unlink this Equipment Type?")) return
-        try {
-            await settingsApi.assignReverbTemplate(etId, null)
-            // Refresh ETs
-            const ets = await equipmentTypesApi.list()
-            setEquipmentTypes(ets)
-        } catch (err: any) {
-            console.error(err)
-            setError(err.response?.data?.detail || "Failed to unlink Equipment Type")
-        }
-    }
-
-    // Derived Linking Data
-    const linkedEquipmentTypes = useMemo(() => {
-        if (!currentTemplate) return []
-        return equipmentTypes.filter(et => et.reverb_template_id === currentTemplate.id)
-    }, [equipmentTypes, currentTemplate])
-
-    const availableEquipmentTypes = useMemo(() => {
-        if (!currentTemplate) return equipmentTypes
-        // Available are those NOT linked to THIS template (they might be linked to others, but we allow restamping)
-        return equipmentTypes.filter(et => et.reverb_template_id !== currentTemplate.id)
-    }, [equipmentTypes, currentTemplate])
 
     return (
         <Box sx={{ p: 4, maxWidth: 1600, mx: 'auto' }}>
@@ -694,60 +652,7 @@ export default function ReverbTemplatesPage() {
                 </Box>
             )}
 
-            {/* Linked Equipment Types */}
-            {currentTemplate && (
-                <Paper sx={{ p: 3, mb: 3 }}>
-                    <Typography variant="h6" gutterBottom>Linked Equipment Types</Typography>
-                    <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                        Models belonging to these Equipment Types will use this template for Reverb exports.
-                    </Typography>
 
-                    <Box sx={{ display: 'flex', gap: 2, alignItems: 'center', mb: 3, p: 2, bgcolor: 'grey.50', borderRadius: 1 }}>
-                        <TextField
-                            select
-                            label="Select Equipment Type"
-                            size="small"
-                            sx={{ minWidth: 250 }}
-                            value={linkEtId}
-                            onChange={(e) => setLinkEtId(Number(e.target.value))}
-                        >
-                            <MenuItem value="">
-                                <em>Select...</em>
-                            </MenuItem>
-                            {availableEquipmentTypes.map(et => (
-                                <MenuItem key={et.id} value={et.id}>
-                                    {et.name} {et.reverb_template_id ? "(Linked to other)" : ""}
-                                </MenuItem>
-                            ))}
-                        </TextField>
-                        <Button
-                            variant="contained"
-                            disabled={!linkEtId || linking}
-                            onClick={handleLinkEquipmentType}
-                        >
-                            Link to Template
-                        </Button>
-                    </Box>
-
-                    {linkedEquipmentTypes.length > 0 ? (
-                        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-                            {linkedEquipmentTypes.map(et => (
-                                <Chip
-                                    key={et.id}
-                                    label={et.name}
-                                    onDelete={() => handleUnlinkEquipmentType(et.id)}
-                                    color="secondary"
-                                    variant="outlined"
-                                />
-                            ))}
-                        </Box>
-                    ) : (
-                        <Alert severity="info" variant="outlined">
-                            No Equipment Types linked to this template yet.
-                        </Alert>
-                    )}
-                </Paper>
-            )}
 
             {/* Fields Table */}
             {fields.length > 0 && (

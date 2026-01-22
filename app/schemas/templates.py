@@ -341,5 +341,5 @@ class ReverbFieldOverrideResponse(BaseModel):
 
 class ReverbFieldOverrideCreateRequest(BaseModel):
     equipment_type_id: int
-    reverb_field_id: int
+    # reverb_field_id is passed via URL path
     default_value: Optional[str] = None
