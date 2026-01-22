@@ -24,6 +24,7 @@ class Marketplace(str, enum.Enum):
     AMAZON = "amazon"
     EBAY = "ebay"
     REVERB = "reverb"
+    ETSY = "etsy"
 
 class MaterialType(str, enum.Enum):
     FABRIC = "fabric"
@@ -36,3 +37,16 @@ class UnitOfMeasure(str, enum.Enum):
     PACKAGE = "package"
     BOX = "box"
     SET = "set"
+
+class OrderSource(str, enum.Enum):
+    API_IMPORT = "api_import"
+    MANUAL = "manual"
+
+class NormalizedOrderStatus(str, enum.Enum):
+    PENDING = "pending"
+    PROCESSING = "processing"
+    SHIPPED = "shipped"
+    DELIVERED = "delivered"
+    CANCELLED = "cancelled"
+    REFUNDED = "refunded"
+    UNKNOWN = "unknown"

@@ -22,6 +22,9 @@ import FileDownloadIcon from '@mui/icons-material/FileDownload'
 import SettingsIcon from '@mui/icons-material/Settings'
 import AttachMoneyIcon from '@mui/icons-material/AttachMoney'
 import MenuBookIcon from '@mui/icons-material/MenuBook'
+import StorefrontIcon from '@mui/icons-material/Storefront'
+import VpnKeyIcon from '@mui/icons-material/VpnKey'
+import ListAltIcon from '@mui/icons-material/ListAlt'
 import ExpandLess from '@mui/icons-material/ExpandLess'
 import ExpandMore from '@mui/icons-material/ExpandMore'
 
@@ -105,6 +108,15 @@ const menuItems = [
       { text: 'Etsy', icon: <FileDownloadIcon />, path: '/export/etsy' },
     ]
   },
+  {
+    text: 'Marketplaces',
+    icon: <StorefrontIcon />,
+    path: '/marketplaces/credentials', // Default to Credentials
+    children: [
+      { text: 'Marketplace Credentials', icon: <VpnKeyIcon />, path: '/marketplaces/credentials' },
+      { text: 'Marketplace Orders', icon: <ListAltIcon />, path: '/marketplaces/orders' },
+    ]
+  },
 ]
 
 interface LayoutProps {
@@ -144,6 +156,11 @@ export default function Layout({ children }: LayoutProps) {
     // Check Export
     if (location.pathname.startsWith('/export')) {
       newOpen['Export'] = true
+    }
+
+    // Check Marketplaces
+    if (location.pathname.startsWith('/marketplaces')) {
+      newOpen['Marketplaces'] = true
     }
 
     if (Object.keys(newOpen).length > 0) {

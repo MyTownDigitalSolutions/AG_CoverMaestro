@@ -1,0 +1,330 @@
+﻿.venv\Scripts\python 
+: Traceback (most 
+recent call last):
+At line:1 char:1
++ 
+.venv\Scripts\python 
+test_marketplace_db.p
+y 2>&1 | Out-File 
+-FilePath ...
++ ~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~
+    + CategoryInfo   
+           : NotSpe  
+  cified: (Traceba   
+ ck (most recent     
+call last)::Stri    
+ng) [], RemoteEx    
+ception
+    + FullyQualified 
+   ErrorId : Native  
+  CommandError
+ 
+  File "C:\Users\ksma
+r\Proton 
+Drive\ksmartz7072\My 
+files\Code Repositori
+es\GGC\Antigravity\AG
+_CoverMaestro\.venv\L
+ib\site-packages\sqla
+lchemy\orm\clsregistr
+y.py", line 516, in 
+_resolve_name
+    rval = d[token]
+           ~^^^^^^^
+  File "C:\Users\ksma
+r\Proton 
+Drive\ksmartz7072\My 
+files\Code Repositori
+es\GGC\Antigravity\AG
+_CoverMaestro\.venv\L
+ib\site-packages\sqla
+lchemy\util\_collecti
+ons.py", line 345, 
+in __missing__
+    self[key] = val 
+= self.creator(key)
+                     
+ ~~~~~~~~~~~~^^^^^
+  File "C:\Users\ksma
+r\Proton 
+Drive\ksmartz7072\My 
+files\Code Repositori
+es\GGC\Antigravity\AG
+_CoverMaestro\.venv\L
+ib\site-packages\sqla
+lchemy\orm\clsregistr
+y.py", line 484, in 
+_access_cls
+    return 
+self.fallback[key]
+           
+~~~~~~~~~~~~~^^^^^
+KeyError: 'AmazonCust
+omizationTemplate'
+
+The above exception 
+was the direct cause 
+of the following 
+exception:
+
+Traceback (most 
+recent call last):
+  File "C:\Users\ksma
+r\Proton 
+Drive\ksmartz7072\My 
+files\Code Repositori
+es\GGC\Antigravity\AG
+_CoverMaestro\test_ma
+rketplace_db.py", 
+line 15, in <module>
+    existing = db.que
+ry(MarketplaceOrder).
+count()
+               ~~~~~~
+~~^^^^^^^^^^^^^^^^^^
+  File "C:\Users\ksma
+r\Proton 
+Drive\ksmartz7072\My 
+files\Code Repositori
+es\GGC\Antigravity\AG
+_CoverMaestro\.venv\L
+ib\site-packages\sqla
+lchemy\orm\session.py
+", line 2941, in 
+query
+    return self._quer
+y_cls(entities, 
+self, **kwargs)
+           ~~~~~~~~~~
+~~~~~^^^^^^^^^^^^^^^^
+^^^^^^^^^^
+  File "C:\Users\ksma
+r\Proton 
+Drive\ksmartz7072\My 
+files\Code Repositori
+es\GGC\Antigravity\AG
+_CoverMaestro\.venv\L
+ib\site-packages\sqla
+lchemy\orm\query.py",
+ line 276, in 
+__init__
+    self._set_entitie
+s(entities)
+    ~~~~~~~~~~~~~~~~~
+~^^^^^^^^^^
+  File "C:\Users\ksma
+r\Proton 
+Drive\ksmartz7072\My 
+files\Code Repositori
+es\GGC\Antigravity\AG
+_CoverMaestro\.venv\L
+ib\site-packages\sqla
+lchemy\orm\query.py",
+ line 289, in 
+_set_entities
+    coercions.expect(
+    ~~~~~~~~~~~~~~~~^
+        roles.Columns
+ClauseRole,
+        ^^^^^^^^^^^^^
+^^^^^^^^^^^
+    ...<2 lines>...
+        
+post_inspect=True,
+        
+^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\Users\ksma
+r\Proton 
+Drive\ksmartz7072\My 
+files\Code Repositori
+es\GGC\Antigravity\AG
+_CoverMaestro\.venv\L
+ib\site-packages\sqla
+lchemy\sql\coercions.
+py", line 389, in 
+expect
+    
+insp._post_inspect
+  File "C:\Users\ksma
+r\Proton 
+Drive\ksmartz7072\My 
+files\Code Repositori
+es\GGC\Antigravity\AG
+_CoverMaestro\.venv\L
+ib\site-packages\sqla
+lchemy\util\langhelpe
+rs.py", line 1338, 
+in __get__
+    obj.__dict__[self
+.__name__] = result 
+= self.fget(obj)
+                     
+                     
+ ~~~~~~~~~^^^^^
+  File "C:\Users\ksma
+r\Proton 
+Drive\ksmartz7072\My 
+files\Code Repositori
+es\GGC\Antigravity\AG
+_CoverMaestro\.venv\L
+ib\site-packages\sqla
+lchemy\orm\mapper.py"
+, line 2733, in 
+_post_inspect
+    self._check_confi
+gure()
+    ~~~~~~~~~~~~~~~~~
+~~~~^^
+  File "C:\Users\ksma
+r\Proton 
+Drive\ksmartz7072\My 
+files\Code Repositori
+es\GGC\Antigravity\AG
+_CoverMaestro\.venv\L
+ib\site-packages\sqla
+lchemy\orm\mapper.py"
+, line 2410, in 
+_check_configure
+    _configure_regist
+ries({self.registry},
+ cascade=True)
+    ~~~~~~~~~~~~~~~~~
+~~~~^^^^^^^^^^^^^^^^^
+^^^^^^^^^^^^^^
+  File "C:\Users\ksma
+r\Proton 
+Drive\ksmartz7072\My 
+files\Code Repositori
+es\GGC\Antigravity\AG
+_CoverMaestro\.venv\L
+ib\site-packages\sqla
+lchemy\orm\mapper.py"
+, line 4227, in 
+_configure_registries
+    _do_configure_reg
+istries(registries, 
+cascade)
+    ~~~~~~~~~~~~~~~~~
+~~~~~~~^^^^^^^^^^^^^^
+^^^^^^^
+  File "C:\Users\ksma
+r\Proton 
+Drive\ksmartz7072\My 
+files\Code Repositori
+es\GGC\Antigravity\AG
+_CoverMaestro\.venv\L
+ib\site-packages\sqla
+lchemy\orm\mapper.py"
+, line 4268, in _do_c
+onfigure_registries
+    mapper._post_conf
+igure_properties()
+    ~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~^^
+  File "C:\Users\ksma
+r\Proton 
+Drive\ksmartz7072\My 
+files\Code Repositori
+es\GGC\Antigravity\AG
+_CoverMaestro\.venv\L
+ib\site-packages\sqla
+lchemy\orm\mapper.py"
+, line 2427, in _post
+_configure_properties
+    prop.init()
+    ~~~~~~~~~^^
+  File "C:\Users\ksma
+r\Proton 
+Drive\ksmartz7072\My 
+files\Code Repositori
+es\GGC\Antigravity\AG
+_CoverMaestro\.venv\L
+ib\site-packages\sqla
+lchemy\orm\interfaces
+.py", line 595, in 
+init
+    self.do_init()
+    ~~~~~~~~~~~~^^
+  File "C:\Users\ksma
+r\Proton 
+Drive\ksmartz7072\My 
+files\Code Repositori
+es\GGC\Antigravity\AG
+_CoverMaestro\.venv\L
+ib\site-packages\sqla
+lchemy\orm\relationsh
+ips.py", line 1655, 
+in do_init
+    
+self._setup_entity()
+    
+~~~~~~~~~~~~~~~~~~^^
+  File "C:\Users\ksma
+r\Proton 
+Drive\ksmartz7072\My 
+files\Code Repositori
+es\GGC\Antigravity\AG
+_CoverMaestro\.venv\L
+ib\site-packages\sqla
+lchemy\orm\relationsh
+ips.py", line 1865, 
+in _setup_entity
+    self._clsregistry
+_resolve_name(argumen
+t)(),
+    ~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~
+~~^^
+  File "C:\Users\ksma
+r\Proton 
+Drive\ksmartz7072\My 
+files\Code Repositori
+es\GGC\Antigravity\AG
+_CoverMaestro\.venv\L
+ib\site-packages\sqla
+lchemy\orm\clsregistr
+y.py", line 520, in 
+_resolve_name
+    self._raise_for_n
+ame(name, err)
+    ~~~~~~~~~~~~~~~~~
+~~~^^^^^^^^^^^
+  File "C:\Users\ksma
+r\Proton 
+Drive\ksmartz7072\My 
+files\Code Repositori
+es\GGC\Antigravity\AG
+_CoverMaestro\.venv\L
+ib\site-packages\sqla
+lchemy\orm\clsregistr
+y.py", line 501, in 
+_raise_for_name
+    raise exc.Invalid
+RequestError(
+    ...<5 lines>...
+    ) from err
+sqlalchemy.exc.Invali
+dRequestError: When 
+initializing mapper M
+apper[EquipmentType(e
+quipment_types)], 
+expression 'AmazonCus
+tomizationTemplate' 
+failed to locate a 
+name ('AmazonCustomiz
+ationTemplate'). If 
+this is a class 
+name, consider 
+adding this 
+relationship() to 
+the <class 'app.model
+s.core.EquipmentType'
+> class after both 
+dependent classes 
+have been defined.
+Querying existing orders...
+ERROR: When initializing mapper Mapper[EquipmentType(equipment_types)], expression 'AmazonCustomizationTemplate' failed to locate a name ('AmazonCustomizationTemplate'). If this is a class name, consider adding this relationship() to the <class 'app.models.core.EquipmentType'> class after both dependent classes have been defined.

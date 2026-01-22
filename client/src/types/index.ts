@@ -167,8 +167,33 @@ export interface SupplierMaterialWithMaterial extends SupplierMaterial {
 export interface Customer {
   id: number
   name: string
-  address?: string
+  first_name?: string
+  last_name?: string
+  buyer_email?: string
+  marketplace_buyer_email?: string
   phone?: string
+  mobile_phone?: string
+  work_phone?: string
+  other_phone?: string
+  address?: string  // Legacy field
+  // Billing
+  billing_address1?: string
+  billing_address2?: string
+  billing_city?: string
+  billing_state?: string
+  billing_postal_code?: string
+  billing_country?: string
+  // Shipping
+  shipping_name?: string
+  shipping_address1?: string
+  shipping_address2?: string
+  shipping_city?: string
+  shipping_state?: string
+  shipping_postal_code?: string
+  shipping_country?: string
+  // Marketplace identity
+  source_marketplace?: string
+  source_customer_id?: string
 }
 
 export interface OrderLine {
