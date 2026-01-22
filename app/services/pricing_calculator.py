@@ -101,7 +101,8 @@ class PricingCalculator:
         fee_rate = fee_rate_obj.fee_rate
 
         shipping_profile = self._get_shipping_profile(marketplace)
-        if not shipping_profile:
+        # Reverb uses template placeholders for shipping, so profile is optional
+        if not shipping_profile and marketplace.lower() != "reverb":
              raise ValueError(f"Shipping profile not configured for marketplace: {marketplace}")
 
         # 2. Resolve Materials (As of Now)
@@ -439,8 +440,14 @@ class PricingCalculator:
         defaults = self._get_shipping_defaults()
         
         # 0. Check for Fixed Cell Mode (Assumed Matrix Cell)
+        # Fixed Cell mode works without a profile - uses assumption settings
         if defaults.shipping_mode == "fixed_cell":
             return self._get_fixed_cell_rate()
+        
+        # For other modes, profile is required
+        if profile is None:
+            # This shouldn't happen if shipping_mode validation is correct
+            raise ValueError("Shipping profile required for non-fixed-cell shipping calculation")
 
         # 1. Check for Flat Mode Global Override
         if defaults.shipping_mode == "flat":

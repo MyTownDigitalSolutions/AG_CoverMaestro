@@ -141,8 +141,11 @@ def recalculate_targeted(data: PricingRecalculateRequest, db: Session = Depends(
         try:
              # Transaction per model
              with db.begin_nested():
-                 # We default to 'amazon' as the primary marketplace for baseline recalc
+                 # Calculate for all marketplaces
                  PricingCalculator(db).calculate_model_prices(mid, marketplace="amazon")
+                 PricingCalculator(db).calculate_model_prices(mid, marketplace="reverb")
+                 PricingCalculator(db).calculate_model_prices(mid, marketplace="ebay")
+                 PricingCalculator(db).calculate_model_prices(mid, marketplace="etsy")
                  
              # Commit per model success
              db.commit()
