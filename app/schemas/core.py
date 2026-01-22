@@ -897,6 +897,7 @@ class MarketplaceOrderUpdate(BaseModel):
 class MarketplaceOrderResponse(MarketplaceOrderBase):
     id: int
     import_run_id: Optional[int] = None
+    customer_id: Optional[int] = None
     created_at: datetime
     updated_at: datetime
 
@@ -908,6 +909,104 @@ class MarketplaceOrderDetailResponse(MarketplaceOrderResponse):
     addresses: List[MarketplaceOrderAddressResponse] = []
     lines: List[MarketplaceOrderLineResponse] = []
     shipments: List[MarketplaceOrderShipmentResponse] = []
+
+    class Config:
+        from_attributes = True
+
+
+# ============================================================
+# Customer Schemas
+# ============================================================
+
+class CustomerCreate(BaseModel):
+    """Schema for creating a new customer."""
+    name: str
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
+    buyer_email: Optional[str] = None
+    # Note: marketplace_buyer_email not in create - set during import only
+    phone: Optional[str] = None
+    mobile_phone: Optional[str] = None
+    work_phone: Optional[str] = None
+    other_phone: Optional[str] = None
+    address: Optional[str] = None  # Legacy field
+    # Billing
+    billing_address1: Optional[str] = None
+    billing_address2: Optional[str] = None
+    billing_city: Optional[str] = None
+    billing_state: Optional[str] = None
+    billing_postal_code: Optional[str] = None
+    billing_country: Optional[str] = None
+    # Shipping
+    shipping_name: Optional[str] = None
+    shipping_address1: Optional[str] = None
+    shipping_address2: Optional[str] = None
+    shipping_city: Optional[str] = None
+    shipping_state: Optional[str] = None
+    shipping_postal_code: Optional[str] = None
+    shipping_country: Optional[str] = None
+
+
+class CustomerUpdate(BaseModel):
+    """Schema for updating a customer. Only editable fields included."""
+    name: Optional[str] = None
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
+    buyer_email: Optional[str] = None
+    # marketplace_buyer_email: read-only, not editable
+    phone: Optional[str] = None
+    mobile_phone: Optional[str] = None
+    work_phone: Optional[str] = None
+    other_phone: Optional[str] = None
+    address: Optional[str] = None  # Legacy field
+    # Billing
+    billing_address1: Optional[str] = None
+    billing_address2: Optional[str] = None
+    billing_city: Optional[str] = None
+    billing_state: Optional[str] = None
+    billing_postal_code: Optional[str] = None
+    billing_country: Optional[str] = None
+    # Shipping
+    shipping_name: Optional[str] = None
+    shipping_address1: Optional[str] = None
+    shipping_address2: Optional[str] = None
+    shipping_city: Optional[str] = None
+    shipping_state: Optional[str] = None
+    shipping_postal_code: Optional[str] = None
+    shipping_country: Optional[str] = None
+
+
+class CustomerResponse(BaseModel):
+    """Response schema for customer data."""
+    id: int
+    name: str
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
+    buyer_email: Optional[str] = None
+    marketplace_buyer_email: Optional[str] = None
+    phone: Optional[str] = None
+    mobile_phone: Optional[str] = None
+    work_phone: Optional[str] = None
+    other_phone: Optional[str] = None
+    address: Optional[str] = None  # Legacy field
+    # Billing
+    billing_address1: Optional[str] = None
+    billing_address2: Optional[str] = None
+    billing_city: Optional[str] = None
+    billing_state: Optional[str] = None
+    billing_postal_code: Optional[str] = None
+    billing_country: Optional[str] = None
+    # Shipping
+    shipping_name: Optional[str] = None
+    shipping_address1: Optional[str] = None
+    shipping_address2: Optional[str] = None
+    shipping_city: Optional[str] = None
+    shipping_state: Optional[str] = None
+    shipping_postal_code: Optional[str] = None
+    shipping_country: Optional[str] = None
+    # Marketplace identity (read-only)
+    source_marketplace: Optional[str] = None
+    source_customer_id: Optional[str] = None
 
     class Config:
         from_attributes = True

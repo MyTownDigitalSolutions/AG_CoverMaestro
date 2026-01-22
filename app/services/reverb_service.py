@@ -348,6 +348,34 @@ def fetch_single_reverb_order(credentials: ReverbCredentials) -> Optional[Dict[s
     return result.orders[0] if result.orders else None
 
 
+"""
+FIELD INVENTORY & MAPPING FLAN
+------------------------------
+1. Order List (fetch_reverb_orders)
+   - order_number -> external_order_number / external_order_id
+   - created_at -> order_date
+   - status -> status_raw / status_normalized (mapped)
+   - buyer.email -> buyer_email / customer linkage
+   - buyer.first_name / last_name -> buyer_name
+   - shipping_address.* -> addresses (shipping)
+   - total.amount -> order_total_cents
+   - payment_method -> payment_method (NEW)
+   - shipping_provider -> shipping_provider (NEW)
+   - buyer_id -> reverb_buyer_id (NEW)
+
+2. Order Detail (get_order_detail)
+   - All above plus:
+   - items / line_items -> lines
+   - shipments -> shipments (tracking)
+   - buyer.id -> reverb_buyer_id (deterministic identity)
+   - uuid -> stable external id (alternative)
+
+3. Storage Strategy
+   - marketplace_orders.raw_marketplace_data: Stores the LIST payload.
+   - marketplace_orders.raw_marketplace_detail_data: Stores the DETAIL payload (if fetched).
+   - Normalized columns: payment_method, shipping_provider, reverb_buyer_id, etc.
+"""
+
 def map_reverb_order_to_schema(raw_order: Dict[str, Any]) -> Dict[str, Any]:
     """
     Map a Reverb order to our normalized MarketplaceOrderCreate schema.
@@ -363,6 +391,10 @@ def map_reverb_order_to_schema(raw_order: Dict[str, Any]) -> Dict[str, Any]:
     
     # Extract buyer info
     buyer = raw_order.get("buyer", {}) or {}
+    # Reverb often has 'buyer_id' at top level or inside buyer object
+    reverb_buyer_id = str(raw_order.get("buyer_id") or buyer.get("id") or "")
+    if not reverb_buyer_id:
+        reverb_buyer_id = None
     
     # Extract price info (Reverb uses amount_product, amount_shipping, etc.)
     # Amounts are usually in dollars, need to convert to cents
@@ -424,6 +456,11 @@ def map_reverb_order_to_schema(raw_order: Dict[str, Any]) -> Dict[str, Any]:
             "raw_marketplace_data": product
         })
     
+    # Expanded fields
+    payment_method = raw_order.get("payment_method")
+    shipping_provider = raw_order.get("shipping_provider")
+    shipping_code = raw_order.get("shipping_code")
+    
     return {
         "source": "api_import",
         "marketplace": "reverb",
@@ -434,7 +471,12 @@ def map_reverb_order_to_schema(raw_order: Dict[str, Any]) -> Dict[str, Any]:
         "status_raw": status_raw,
         "status_normalized": status_normalized,
         "buyer_name": buyer.get("full_name") or buyer.get("first_name"),
-        "buyer_email": buyer.get("email"),
+        "buyer_email": buyer.get("email") or raw_order.get("buyer_email"),
+        "reverb_buyer_id": reverb_buyer_id,  # New field
+        "payment_method": payment_method,    # New field
+        "shipping_provider": shipping_provider, # New field
+        "shipping_code": shipping_code,      # New field
+        "reverb_order_status": status_raw,   # New field
         "currency_code": currency,
         "items_subtotal_cents": dollars_to_cents(amount_product.get("amount")),
         "shipping_cents": dollars_to_cents(amount_shipping.get("amount")),
@@ -507,11 +549,12 @@ def parse_order_detail_for_enrichment(detail: Dict[str, Any], external_order_id:
     Parse Reverb order detail response for enrichment data.
     
     Extracts:
-    - Buyer info (name, email)
+    - Buyer info (name, email, buyer_id)
     - Totals (subtotal, shipping, tax, total in cents)
     - Full shipping address
     - Line items with product details
     - Shipment tracking info
+    - Extended fields (payment, etc)
     
     Args:
         detail: Raw Reverb order detail response
@@ -526,6 +569,7 @@ def parse_order_detail_for_enrichment(detail: Dict[str, Any], external_order_id:
         "shipping_address": None,
         "lines": [],
         "shipments": [],
+        "extended_fields": {} # New
     }
     
     # Skip if error response
@@ -543,15 +587,20 @@ def parse_order_detail_for_enrichment(detail: Dict[str, Any], external_order_id:
     
     # === Buyer Info ===
     buyer = detail.get("buyer", {}) or {}
+    reverb_buyer_id = str(detail.get("buyer_id") or buyer.get("id") or "")
+    
     if buyer:
         result["buyer"] = {
             "buyer_name": buyer.get("full_name") or buyer.get("first_name"),
             "buyer_email": buyer.get("email"),
+            "reverb_buyer_id": reverb_buyer_id if reverb_buyer_id else None
         }
     
     # Also check top-level buyer_email
     if detail.get("buyer_email"):
         result["buyer"]["buyer_email"] = detail.get("buyer_email")
+    if reverb_buyer_id:
+         result["buyer"]["reverb_buyer_id"] = reverb_buyer_id
     
     # === Totals ===
     amount_product = detail.get("amount_product", {}) or {}
@@ -565,6 +614,14 @@ def parse_order_detail_for_enrichment(detail: Dict[str, Any], external_order_id:
         "tax_cents": to_cents(amount_tax.get("amount")),
         "order_total_cents": to_cents(amount_total.get("amount")),
         "currency_code": amount_total.get("currency") or amount_product.get("currency") or "USD",
+    }
+    
+    # === Extended Fields ===
+    result["extended_fields"] = {
+        "payment_method": detail.get("payment_method"),
+        "shipping_provider": detail.get("shipping_provider"),
+        "shipping_code": detail.get("shipping_code") or detail.get("tracking_code"),
+        "reverb_order_status": detail.get("status")
     }
     
     # === Status ===
@@ -690,5 +747,78 @@ def parse_order_detail_for_enrichment(detail: Dict[str, Any], external_order_id:
                 result["shipments"].append(shipment)
     
     return result
+
+
+def fetch_reverb_conversations(credentials: ReverbCredentials, limit: int = 50) -> Dict[str, Any]:
+    """
+    Fetch list of conversations from Reverb.
+    
+    Args:
+        credentials: Reverb credentials
+        limit: Max items to fetch
+        
+    Returns:
+        Dict with 'conversations' list and metadata
+    """
+    headers = _build_reverb_headers(credentials.api_token)
+    base_url = credentials.base_url.rstrip('/')
+    url = f"{base_url}/api/my/conversations"
+    
+    conversations = []
+    page = 1
+    per_page = 50
+    fetched_count = 0
+    
+    # We'll just implement basic pagination for now
+    while len(conversations) < limit:
+        params = {"page": page, "per_page": per_page}
+        try:
+            response = requests.get(url, headers=headers, params=params, timeout=30)
+            if not response.ok:
+                print(f"[REVERB_SERVICE] convers_list_error status={response.status_code}")
+                break
+                
+            data = response.json()
+            page_conversations = data.get("conversations", [])
+            
+            if not page_conversations:
+                break
+                
+            conversations.extend(page_conversations)
+            fetched_count += len(page_conversations)
+            page += 1
+            
+            if len(page_conversations) < per_page:
+                break
+                
+        except Exception as e:
+            print(f"[REVERB_SERVICE] convers_list_fail err={e}")
+            break
+            
+    return {"conversations": conversations[:limit], "fetched": fetched_count}
+
+
+def fetch_reverb_conversation_detail(credentials: ReverbCredentials, conversation_id: str) -> Dict[str, Any]:
+    """
+    Fetch details for a single conversation (includes messages).
+    
+    Args:
+        credentials: Reverb credentials
+        conversation_id: External conversation ID
+        
+    Returns:
+        Dict with conversation detail or error
+    """
+    headers = _build_reverb_headers(credentials.api_token)
+    base_url = credentials.base_url.rstrip('/')
+    url = f"{base_url}/api/my/conversations/{conversation_id}"
+    
+    try:
+        response = requests.get(url, headers=headers, timeout=15)
+        if not response.ok:
+             return {"error": f"HTTP {response.status_code}"}
+        return response.json()
+    except Exception as e:
+        return {"error": str(e)}
 
 

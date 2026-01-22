@@ -6,8 +6,9 @@ Provides endpoints for:
 - GET /api/reverb/orders/sample - Fetch a sample order for debugging/validation
 """
 import traceback
+import time
 from datetime import datetime, timedelta, timezone
-from typing import Optional, List
+from typing import Optional, List, Dict
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
@@ -16,7 +17,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models.core import (
     MarketplaceImportRun, MarketplaceOrder, MarketplaceOrderAddress,
-    MarketplaceOrderLine, MarketplaceOrderShipment
+    MarketplaceOrderLine, MarketplaceOrderShipment, MarketplaceConversation, MarketplaceMessage
 )
 from app.models.enums import Marketplace, OrderSource, NormalizedOrderStatus
 from app.services.reverb_service import (
@@ -24,6 +25,7 @@ from app.services.reverb_service import (
     map_reverb_order_to_schema, FetchResult, get_order_detail, parse_order_detail_for_enrichment,
     CredentialsNotConfiguredError, CredentialsDisabledError, ReverbAPIError
 )
+from app.services.customer_service import upsert_customer_from_marketplace_order, extract_address_dict
 
 
 router = APIRouter(prefix="/reverb/orders", tags=["reverb-orders"])
@@ -62,6 +64,26 @@ class ImportOrdersResponse(BaseModel):
     pages_fetched: Optional[int] = None
     early_stop: Optional[bool] = None
     undated_count: Optional[int] = None
+    customers_matched: Optional[int] = 0
+    customers_created: Optional[int] = 0
+    orders_linked_to_customers: Optional[int] = 0
+    orders_missing_buyer_identity: Optional[int] = 0
+    orders_enriched_for_shipping: Optional[int] = 0
+    debug_samples: Optional[List[dict]] = None
+    customer_debug: Optional[dict] = None
+
+
+class ImportMessagesResponse(BaseModel):
+    """Response for message import operation."""
+    import_run_id: Optional[int] = None
+    dry_run: bool = False
+    conversations_fetched: int
+    conversations_created: int
+    conversations_updated: int
+    messages_fetched: int
+    messages_created: int
+    customers_linked: int
+    debug_samples: Optional[List[dict]] = None
 
 
 class SampleOrderResponse(BaseModel):
@@ -157,38 +179,38 @@ def _parse_since_iso(since_iso: str) -> datetime:
             return datetime.strptime(since_iso, fmt)
         except ValueError:
             continue
-    
+
     # Try fromisoformat as fallback
     try:
         return datetime.fromisoformat(since_iso.replace("Z", "+00:00"))
     except (ValueError, AttributeError):
         pass
-    
+
     raise ValueError(f"Invalid ISO datetime format: {since_iso}")
 
 
 def _upsert_order(db: Session, order_data: dict, import_run_id: int) -> tuple:
     """
     Upsert a single order into the database.
-    
+
     Uses (marketplace, external_order_id) as unique identity.
-    
+
     Returns:
-        Tuple of (success: bool, is_new: bool, error_message: str or None)
+        Tuple of (success: bool, is_new: bool, error_message: str or None, order_obj: MarketplaceOrder or None)
     """
     try:
         external_order_id = order_data.get("external_order_id")
         if not external_order_id:
-            return False, False, "Missing external_order_id"
-        
+            return False, False, "Missing external_order_id", None
+
         # Check for existing order using unique identity (marketplace, external_order_id)
         existing = db.query(MarketplaceOrder).filter(
             MarketplaceOrder.marketplace == Marketplace.REVERB,
             MarketplaceOrder.external_order_id == external_order_id
         ).first()
-        
+
         is_new = existing is None
-        
+
         if existing:
             order = existing
             # Update existing order fields
@@ -207,10 +229,24 @@ def _upsert_order(db: Session, order_data: dict, import_run_id: int) -> tuple:
             order.raw_marketplace_data = order_data.get("raw_marketplace_data")
             order.last_synced_at = datetime.utcnow()
             order.updated_at = datetime.utcnow()
+            
+            # Expanded fields updates
+            if order_data.get("raw_marketplace_detail_data"):
+                order.raw_marketplace_detail_data = order_data.get("raw_marketplace_detail_data")
+            if order_data.get("payment_method"):
+                order.payment_method = order_data.get("payment_method")
+            if order_data.get("shipping_provider"):
+                order.shipping_provider = order_data.get("shipping_provider")
+            if order_data.get("shipping_code"):
+                order.shipping_code = order_data.get("shipping_code")
+            if order_data.get("reverb_buyer_id"):
+                order.reverb_buyer_id = order_data.get("reverb_buyer_id")
+            if order_data.get("reverb_order_status"):
+                 order.reverb_order_status = order_data.get("reverb_order_status")
         else:
             status_str = order_data.get("status_normalized", "unknown")
             status_normalized = NormalizedOrderStatus(status_str) if status_str in [e.value for e in NormalizedOrderStatus] else NormalizedOrderStatus.UNKNOWN
-            
+
             order = MarketplaceOrder(
                 import_run_id=import_run_id,
                 source=OrderSource.API_IMPORT,
@@ -218,7 +254,6 @@ def _upsert_order(db: Session, order_data: dict, import_run_id: int) -> tuple:
                 external_order_id=external_order_id,
                 external_order_number=order_data.get("external_order_number"),
                 order_date=datetime.fromisoformat(order_data["order_date"]) if order_data.get("order_date") else datetime.utcnow(),
-                created_at_external=datetime.fromisoformat(order_data["created_at_external"].replace("Z", "+00:00")) if order_data.get("created_at_external") else None,
                 imported_at=datetime.utcnow(),
                 status_raw=order_data.get("status_raw"),
                 status_normalized=status_normalized,
@@ -233,17 +268,29 @@ def _upsert_order(db: Session, order_data: dict, import_run_id: int) -> tuple:
                 created_at=datetime.utcnow(),
                 updated_at=datetime.utcnow()
             )
+            
+            # Expanded fields
+            order.raw_marketplace_detail_data = order_data.get("raw_marketplace_detail_data")
+            order.payment_method = order_data.get("payment_method")
+            order.payment_status = order_data.get("payment_status")
+            order.shipping_provider = order_data.get("shipping_provider")
+            order.shipping_code = order_data.get("shipping_code")
+            order.shipping_method = order_data.get("shipping_method")
+            order.reverb_buyer_id = order_data.get("reverb_buyer_id")
+            if order_data.get("reverb_order_status"):
+                 order.reverb_order_status = order_data.get("reverb_order_status")
+            
             db.add(order)
-        
+
         db.flush()  # Get order ID
-        
+
         # Handle addresses - delete existing and insert new
         addresses = order_data.get("addresses", [])
         if addresses:
             db.query(MarketplaceOrderAddress).filter(
                 MarketplaceOrderAddress.order_id == order.id
             ).delete(synchronize_session=False)
-            
+
             for addr_data in addresses:
                 addr = MarketplaceOrderAddress(
                     order_id=order.id,
@@ -260,14 +307,14 @@ def _upsert_order(db: Session, order_data: dict, import_run_id: int) -> tuple:
                     raw_payload=addr_data.get("raw_payload")
                 )
                 db.add(addr)
-        
+
         # Handle lines - delete existing and insert new
         lines = order_data.get("lines", [])
         if lines:
             db.query(MarketplaceOrderLine).filter(
                 MarketplaceOrderLine.order_id == order.id
             ).delete(synchronize_session=False)
-            
+
             for line_data in lines:
                 line = MarketplaceOrderLine(
                     order_id=order.id,
@@ -281,11 +328,11 @@ def _upsert_order(db: Session, order_data: dict, import_run_id: int) -> tuple:
                     raw_marketplace_data=line_data.get("raw_marketplace_data")
                 )
                 db.add(line)
-        
-        return True, is_new, None
-        
+
+        return True, is_new, None, order
+
     except Exception as e:
-        return False, False, str(e)
+        return False, False, str(e), None
 
 
 # =============================================================================
@@ -299,12 +346,12 @@ def import_reverb_orders(
 ):
     """
     Import orders from Reverb into the normalized marketplace orders tables.
-    
+
     - Creates a MarketplaceImportRun record (unless dry_run=true)
     - Fetches orders from Reverb API
     - Maps and upserts each order
     - Returns import summary
-    
+
     Parameters:
     - days_back: Number of days back to fetch (default 30)
     - since_iso: ISO datetime string, overrides days_back if provided
@@ -317,7 +364,7 @@ def import_reverb_orders(
         date_from = None
         filter_mode = "days_back"
         since_str = "N/A"
-        
+
         if request.since_iso:
             try:
                 date_from = _parse_since_iso(request.since_iso)
@@ -329,10 +376,10 @@ def import_reverb_orders(
             date_from = datetime.now(timezone.utc) - timedelta(days=request.days_back)
             filter_mode = "days_back"
             since_str = f"{request.days_back} days back"
-        
+
         # Log start (no secrets)
         print(f"[REVERB_IMPORT] action=START days_back={request.days_back} since={since_str} limit={request.limit} dry_run={request.dry_run} debug={request.debug}")
-        
+
         # Get credentials
         try:
             credentials = get_reverb_credentials(db)
@@ -340,7 +387,7 @@ def import_reverb_orders(
             raise HTTPException(status_code=400, detail=str(e))
         except CredentialsDisabledError as e:
             raise HTTPException(status_code=400, detail=str(e))
-        
+
         # Create import run record (only if not dry_run)
         import_run = None
         import_run_id = None
@@ -356,7 +403,7 @@ def import_reverb_orders(
             db.add(import_run)
             db.flush()
             import_run_id = import_run.id
-        
+
         # Fetch orders from Reverb (returns FetchResult with metadata)
         try:
             fetch_result: FetchResult = fetch_reverb_orders(
@@ -374,9 +421,9 @@ def import_reverb_orders(
                 db.commit()
             # Return 502 for upstream API errors
             raise HTTPException(status_code=502, detail=f"Reverb API error: {str(e)}")
-        
+
         raw_orders = fetch_result.orders
-        
+
         # Handle no orders case
         if len(raw_orders) == 0:
             if import_run:
@@ -386,9 +433,9 @@ def import_reverb_orders(
                 import_run.status = "success"
                 import_run.finished_at = datetime.utcnow()
                 db.commit()
-            
+
             print(f"[REVERB_IMPORT] fetched=0 created=0 updated=0 failed=0 import_run_id={import_run_id}")
-            
+
             response = ImportOrdersResponse(
                 import_run_id=import_run_id,
                 dry_run=request.dry_run,
@@ -399,7 +446,7 @@ def import_reverb_orders(
                 failed_order_ids=[],
                 preview_orders=[] if request.dry_run else None
             )
-            
+
             # Add debug fields if requested
             if request.debug:
                 response.filter_since_utc = fetch_result.filter_since_utc
@@ -410,77 +457,254 @@ def import_reverb_orders(
                 response.pages_fetched = fetch_result.pages_fetched
                 response.early_stop = fetch_result.early_stop
                 response.undated_count = fetch_result.undated_count
-            
+
             return response
-        
+
         if import_run:
             import_run.orders_fetched = len(raw_orders)
-        
+
         # Process each order
         created_count = 0
         updated_count = 0
         failed_count = 0
         failed_ids = []
         preview_orders = []
+
+        # Diagnostics
+        customers_matched_count = 0
+        customers_created_count = 0
+        orders_linked_count = 0
+        orders_missing_identity_count = 0
+        orders_enriched_for_shipping_count = 0
+        orders_detail_fetched_count = 0
         
+        # New counters
+        customers_updated_shipping_name_count = 0
+        customers_updated_address1_count = 0
+        customers_updated_phone_count = 0
+        
+        debug_customer_attempted = 0
+        debug_customer_returned = 0
+        debug_customer_none = 0
+        debug_samples = []
+
         for raw_order in raw_orders:
             order_id = str(raw_order.get("order_number") or raw_order.get("id", "unknown"))
-            
+
             try:
                 mapped_order = map_reverb_order_to_schema(raw_order)
+                external_order_id = mapped_order.get("external_order_id")
+
+                # Check for missing shipping details and enrich if needed
+                shipping_addr_check = extract_address_dict(mapped_order.get("addresses", []), "shipping")
+                has_shipping_name = bool(shipping_addr_check and shipping_addr_check.get("name"))
+                has_shipping_line1 = bool(shipping_addr_check and shipping_addr_check.get("line1"))
+                has_shipping_phone = bool(shipping_addr_check and shipping_addr_check.get("phone"))
+                has_shipping_postal = bool(shipping_addr_check and shipping_addr_check.get("postal_code"))
                 
+                used_detail_fetch = False
+                
+                # Fetch logic: If missing ANY key valid field, try to get better data
+                # But ensure we don't spam if we know it's not likely to be there
+                if not (has_shipping_name and has_shipping_line1 and has_shipping_phone and has_shipping_postal):
+                    try:
+                         # Small delay to respect rate limits
+                         time.sleep(0.15)
+                         detail = get_order_detail(credentials, external_order_id)
+                         
+                         if not detail.get("error"):
+                             orders_detail_fetched_count += 1
+                             enrichment = parse_order_detail_for_enrichment(detail, external_order_id)
+                             enriched_addr = enrichment.get("shipping_address")
+                             
+                             if enriched_addr:
+                                 # Reverb detail often has "display_location" if address is sparse
+                                 # We want to use it ONLY if it provides better structured data (lines, etc)
+                                 # If detail payload ONLY has display_location (and no street_address), parse_order_detail usually returns partial dict
+                                 
+                                 used_detail_fetch = True
+                                 # Get or create shipping dict in mapped_order
+                                 addresses = mapped_order.setdefault("addresses", [])
+                                 target_addr = next((a for a in addresses if a.get("address_type") == "shipping"), None)
+                                 
+                                 if not target_addr:
+                                     target_addr = {"address_type": "shipping"}
+                                     addresses.append(target_addr)
+                                 
+                                 # Fill blanks
+                                 for k, v in enriched_addr.items():
+                                     if v and not target_addr.get(k):
+                                         target_addr[k] = v
+                                         
+                                 # Re-evaluate flags for debug
+                                 has_shipping_name = bool(target_addr.get("name"))
+                                 has_shipping_line1 = bool(target_addr.get("line1"))
+                                 has_shipping_phone = bool(target_addr.get("phone"))
+                                 
+                                 has_shipping_phone = bool(target_addr.get("phone"))
+                                 
+                                 orders_enriched_for_shipping_count += 1
+                             
+                             # Store FULL detail payload for "Store Everything" requirement
+                             mapped_order["raw_marketplace_detail_data"] = detail
+                             
+                             # Enrich mapped_order with extended fields from detail if present
+                             extended = enrichment.get("extended_fields", {})
+                             for k, v in extended.items():
+                                 if v and not mapped_order.get(k):
+                                     mapped_order[k] = v
+                                     
+                             # Also update buyer ID if found in enrichment
+                             if enrichment.get("buyer", {}).get("reverb_buyer_id") and not mapped_order.get("reverb_buyer_id"):
+                                 mapped_order["reverb_buyer_id"] = enrichment.get("buyer", {}).get("reverb_buyer_id")
+
+                    except Exception as enrich_err:
+                        print(f"[REVERB_IMPORT] enrichment_warning order={external_order_id} error={enrich_err}")
+
                 # Dry run: just collect preview, don't write
                 if request.dry_run:
                     if len(preview_orders) < 3:  # Cap preview at 3 orders
                         preview_orders.append(_sanitize_order_for_preview(mapped_order))
-                    
+
                     # Simulate what would happen
                     existing = db.query(MarketplaceOrder).filter(
                         MarketplaceOrder.marketplace == Marketplace.REVERB,
                         MarketplaceOrder.external_order_id == mapped_order.get("external_order_id")
                     ).first()
-                    
+
                     if existing:
                         updated_count += 1
                     else:
                         created_count += 1
                     continue
-                
+
                 # Real run: upsert to DB
-                success, is_new, error = _upsert_order(db, mapped_order, import_run_id)
-                
+                success, is_new, error, order = _upsert_order(db, mapped_order, import_run_id)
+
                 if success:
                     if is_new:
                         created_count += 1
                     else:
                         updated_count += 1
+
+                    # ---------------------------------------------------------
+                    # Customer Upsert Linkage
+                    # ---------------------------------------------------------
+                    if order:
+                        try:
+                            # 1. Extract source identity
+                            # Prefer reliable reverb_buyer_id if mapped, else valid email
+                            source_customer_id = mapped_order.get("reverb_buyer_id")
+        
+                            # 2. Extract addresses if available
+                            # Use mapped_order data to ensure we have the latest payload without needing DB refresh
+                            shipping_addr = extract_address_dict(mapped_order.get("addresses", []), "shipping")
+                            billing_addr = extract_address_dict(mapped_order.get("addresses", []), "billing")
+
+                            buyer_phone = shipping_addr.get("phone") if shipping_addr else None
+
+                            # 3. Call Service
+                            debug_customer_attempted += 1
+                            # UNPACK TUPLE NOW
+                            customer, cust_stats = upsert_customer_from_marketplace_order(
+                                db=db,
+                                marketplace=Marketplace.REVERB.value,
+                                source_customer_id=source_customer_id,
+                                marketplace_buyer_email=order.buyer_email,
+                                buyer_name=order.buyer_name,
+                                buyer_phone=buyer_phone,
+                                shipping_address=shipping_addr,
+                                billing_address=billing_addr
+                            )
+
+                            match_type = "none"
+
+                            # Ensure customer has ID (if newly created)
+                            if customer and customer.id is None:
+                                db.flush()
+
+                            if customer:
+                                debug_customer_returned += 1
+
+                                # Perform Linkage
+                                if order.customer_id != customer.id:
+                                    order.customer_id = customer.id
+                                    db.add(order)
+
+                                orders_linked_count += 1
+
+                                # Update counters from stats
+                                if cust_stats.get("created"):
+                                    customers_created_count += 1
+                                    match_type = "created"
+                                else:
+                                    customers_matched_count += 1
+                                    match_type = "matched"
+                                
+                                if cust_stats.get("updated_shipping_name"): customers_updated_shipping_name_count += 1
+                                if cust_stats.get("updated_address1"): customers_updated_address1_count += 1
+                                if cust_stats.get("updated_phone"): customers_updated_phone_count += 1
+                                    
+                            else:
+                                debug_customer_none += 1
+
+                                # Only count as "missing identity" if BOTH are missing
+                                if not source_customer_id and not (order.buyer_email and str(order.buyer_email).strip()):
+                                    orders_missing_identity_count += 1
+
+                            # Debug Sampling
+                            if request.debug and len(debug_samples) < 10:
+                                debug_samples.append({
+                                    "external_order_id": order.external_order_id,
+                                    "order_row_id": order.id,
+                                    "buyer_email_from_payload": order.buyer_email,
+                                    "source_customer_id_from_payload": source_customer_id,
+                                    "customer_id_linked": customer.id if customer else None,
+                                    "match_strategy": match_type,
+                                    "notes": "Missing buyer identity" if (not customer and not source_customer_id and not (order.buyer_email and str(order.buyer_email).strip())) else ("Linked" if customer else "No customer returned"),
+                                    "shipping_has_name": has_shipping_name,
+                                    "shipping_has_line1": has_shipping_line1,
+                                    "shipping_has_phone": has_shipping_phone,
+                                    "used_detail_fetch": used_detail_fetch,
+                                    "cust_updated_phone": cust_stats.get("updated_phone", False) if customer else False
+                                })
+
+                        except Exception as cust_err:
+                            print(f"[REVERB_IMPORT] customer_link_error order_id={order.id} err={cust_err}")
+                            if request.debug and len(debug_samples) < 10:
+                                debug_samples.append({
+                                    "external_order_id": order.external_order_id,
+                                    "error": str(cust_err),
+                                    "notes": "Exception during link"
+                                })
+
                 else:
                     failed_count += 1
                     if len(failed_ids) < 20:  # Cap failed IDs list
                         failed_ids.append(order_id)
                     print(f"[REVERB_IMPORT] upsert_failed order_id={order_id} error={error}")
-                    
+
             except Exception as e:
                 failed_count += 1
                 if len(failed_ids) < 20:
                     failed_ids.append(order_id)
                 print(f"[REVERB_IMPORT] mapping_error order_id={order_id} error={repr(e)}")
-        
+
         # Update import run (only if not dry_run)
         if import_run:
             import_run.orders_upserted = created_count + updated_count
             import_run.errors_count = failed_count
             import_run.status = "success" if failed_count == 0 else ("partial" if created_count + updated_count > 0 else "failed")
             import_run.finished_at = datetime.utcnow()
-            
+
             if failed_ids:
                 import_run.error_summary = {"failed_order_ids": failed_ids}
-            
+
             db.commit()
-        
+
         # Log completion (no secrets)
-        print(f"[REVERB_IMPORT] fetched={len(raw_orders)} created={created_count} updated={updated_count} failed={failed_count} import_run_id={import_run_id} dry_run={request.dry_run}")
-        
+        print(f"[REVERB_IMPORT] fetched={len(raw_orders)} created={created_count} updated={updated_count} failed={failed_count} linked={orders_linked_count} import_run_id={import_run_id} dry_run={request.dry_run}")
+
         response = ImportOrdersResponse(
             import_run_id=import_run_id,
             dry_run=request.dry_run,
@@ -491,7 +715,7 @@ def import_reverb_orders(
             failed_order_ids=failed_ids,
             preview_orders=preview_orders if request.dry_run else None
         )
-        
+
         # Add debug fields if requested
         if request.debug:
             response.filter_since_utc = fetch_result.filter_since_utc
@@ -502,9 +726,32 @@ def import_reverb_orders(
             response.pages_fetched = fetch_result.pages_fetched
             response.early_stop = fetch_result.early_stop
             response.undated_count = fetch_result.undated_count
-        
+            # Extended debug
+            response.customers_matched = customers_matched_count
+            response.customers_created = customers_created_count
+            response.orders_linked_to_customers = orders_linked_count
+            response.orders_missing_buyer_identity = orders_missing_identity_count
+            response.orders_enriched_for_shipping = orders_enriched_for_shipping_count
+            response.debug_samples = debug_samples
+            response.customer_debug = {
+                "attempted": debug_customer_attempted,
+                "returned": debug_customer_returned,
+                "none": debug_customer_none,
+                "enrichment_fetches": orders_detail_fetched_count
+            }
+            
+            # Using dict insertion for fields not in schema for quick debug if Pydantic allows, else might be skipped
+            # To be safer we could add them to schema in next chunk or just stick to allowed fields
+            # The user asked for "debug counters" but didn't explicitly demand Schema changes, 
+            # so I'll put them in a loose dict or reuse the debug_dict pattern if available
+            response.customer_debug.update({
+                "updated_shipping_name": customers_updated_shipping_name_count,
+                "updated_address1": customers_updated_address1_count,
+                "updated_phone": customers_updated_phone_count
+            })
+
         return response
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -519,7 +766,7 @@ def get_sample_reverb_order(
 ):
     """
     Fetch a single sample order from Reverb for mapping validation.
-    
+
     Returns raw order JSON and mapped version for admin debugging.
     """
     try:
@@ -530,35 +777,208 @@ def get_sample_reverb_order(
             raise HTTPException(status_code=400, detail=str(e))
         except CredentialsDisabledError as e:
             raise HTTPException(status_code=400, detail=str(e))
-        
+
         # Fetch single order
         try:
             raw_order = fetch_single_reverb_order(credentials)
         except ReverbAPIError as e:
             raise HTTPException(status_code=502, detail=f"Reverb API error: {str(e)}")
-        
+
         if not raw_order:
             return SampleOrderResponse(
                 order=None,
                 mapped=None,
                 message="No orders found in Reverb account"
             )
-        
+
         # Map the order
         mapped = map_reverb_order_to_schema(raw_order)
-        
+
         return SampleOrderResponse(
             order=raw_order,
             mapped=mapped,
             message="Sample order retrieved successfully"
         )
-        
+
     except HTTPException:
         raise
     except Exception as e:
         print(f"[REVERB_IMPORT] sample_error error={repr(e)}")
         print(traceback.format_exc())
         raise HTTPException(status_code=500, detail="Internal server error")
+
+
+@router.post("/messages/import", response_model=ImportMessagesResponse)
+def import_reverb_messages(
+    request: ImportOrdersRequest,  # Reuse same params (days_back, etc)
+    db: Session = Depends(get_db)
+):
+    """
+    Import messages/conversations from Reverb.
+    """
+    try:
+        # Get credentials
+        try:
+            credentials = get_reverb_credentials(db)
+        except (CredentialsNotConfiguredError, CredentialsDisabledError) as e:
+            raise HTTPException(status_code=400, detail=str(e))
+
+        # 1. Fetch Conversations List
+        print(f"[REVERB_MESSAGES] action=START limit={request.limit} dry_run={request.dry_run}")
+        
+        list_result = fetch_reverb_conversations(credentials, limit=request.limit)
+        conversations = list_result.get("conversations", [])
+        
+        conversations_fetched = len(conversations)
+        conversations_created = 0
+        conversations_updated = 0
+        messages_fetched = 0
+        messages_created = 0
+        customers_linked = 0
+        debug_samples = []
+        
+        # Create import run only if not dry run (optional, reusing MarketplaceImportRun could vary)
+        import_run_id = None 
+
+        for conv in conversations:
+            external_id = str(conv.get("id"))
+            
+            # 2. Fetch Detail (to get messages)
+            detail = fetch_reverb_conversation_detail(credentials, external_id)
+            if detail.get("error"):
+                 print(f"[REVERB_MESSAGES] error fetching detail id={external_id} err={detail.get('error')}")
+                 continue
+                 
+            # 3. Upsert Logic
+            if request.dry_run:
+                # Preview logic
+                pass
+            else:
+                 # Helper to process conversation
+                 res = _upsert_conversation(db, detail)
+                 if res["created"]: conversations_created += 1
+                 else: conversations_updated += 1
+                 
+                 messages_fetched += res["msg_count"]
+                 messages_created += res["msg_created"]
+                 
+                 if res["linked_customer"]:
+                     customers_linked += 1
+
+        db.commit()
+
+        return ImportMessagesResponse(
+            import_run_id=None,
+            dry_run=request.dry_run,
+            conversations_fetched=conversations_fetched,
+            conversations_created=conversations_created,
+            conversations_updated=conversations_updated,
+            messages_fetched=messages_fetched,
+            messages_created=messages_created,
+            customers_linked=customers_linked,
+            debug_samples=debug_samples
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"[REVERB_MESSAGES] unhandled_exception error={repr(e)}")
+        print(traceback.format_exc())
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
+def _upsert_conversation(db: Session, data: Dict[str, Any]) -> Dict[str, Any]:
+    """Upsert conversation and its messages."""
+    
+    external_id = str(data.get("id"))
+    marketplace = Marketplace.REVERB.value
+    
+    # Check exist
+    conv = db.query(MarketplaceConversation).filter(
+        MarketplaceConversation.marketplace == marketplace,
+        MarketplaceConversation.external_conversation_id == external_id
+    ).first()
+    
+    is_new = False
+    if not conv:
+        is_new = True
+        conv = MarketplaceConversation(
+            marketplace=marketplace,
+            external_conversation_id=external_id
+        )
+        db.add(conv)
+    
+    # Update fields
+    # Reverb structure: participants, messages, subject?
+    # Usually "subject" isn't explicit in API for Reverb, sometimes implied by listing
+    
+    # Try to find buyer info
+    # Participants array: find the one that is NOT me (the seller)
+    # This is heuristic, better to rely on order linkage if possible
+    
+    conv.raw_conversation_data = data
+    
+    # Process Messages (reverse chronological usually)
+    msgs = data.get("messages", []) or []
+    msg_created_count = 0
+    
+    # Sort messages by date to find last message time deterministically
+    def parse_msg_time(t):
+        if not t: return datetime.min
+        try: return datetime.fromisoformat(t.replace("Z", "+00:00"))
+        except: return datetime.min
+        
+    sorted_msgs = sorted(msgs, key=lambda x: parse_msg_time(x.get("created_at")))
+    if sorted_msgs:
+        last_msg = sorted_msgs[-1]
+        conv.last_message_at = parse_msg_time(last_msg.get("created_at"))
+    
+    # Try to link Order ID?
+    # Reverb detail may contain order_id or order_number?
+    # Often it's inside `context` or similar, but let's check top levels
+    # Based on research, `order_id` might be present
+    if data.get("order_id"):
+        conv.external_order_id = str(data.get("order_id"))
+    
+    db.flush() # Get ID
+    
+    existing_msg_ids = set()
+    if not is_new:
+        start_ids = db.query(MarketplaceMessage.external_message_id).filter(
+            MarketplaceMessage.conversation_id == conv.id
+        ).all()
+        existing_msg_ids = {m[0] for m in start_ids}
+        
+    for m in msgs:
+        m_id = str(m.get("id"))
+        if m_id in existing_msg_ids:
+            continue
+            
+        body = m.get("body")
+        sent_ts = parse_msg_time(m.get("created_at"))
+        
+        # Sender type
+        # account_id vs local user?
+        # We can heuristic this later, for now store raw
+        sender_type = "unknown"
+        
+        new_msg = MarketplaceMessage(
+            conversation_id=conv.id,
+            external_message_id=m_id,
+            body_text=body,
+            raw_message_data=m,
+            sender_type=sender_type,
+            sent_at=sent_ts
+        )
+        db.add(new_msg)
+        msg_created_count += 1
+        
+    return {
+        "created": is_new,
+        "msg_count": len(msgs),
+        "msg_created": msg_created_count,
+        "linked_customer": False
+    }
 
 
 # =============================================================================
@@ -576,37 +996,37 @@ def _extract_reverb_buyer_info(raw: dict) -> dict:
 def _extract_reverb_totals(raw: dict) -> dict:
     """Extract monetary totals from Reverb raw_marketplace_data."""
     totals = {}
-    
+
     # amount_product → items_subtotal_cents
     amount_product = raw.get("amount_product", {})
     if amount_product and amount_product.get("amount_cents") is not None:
         totals["items_subtotal_cents"] = amount_product.get("amount_cents")
-    
+
     # shipping → shipping_cents
     shipping = raw.get("shipping", {})
     if shipping and shipping.get("amount_cents") is not None:
         totals["shipping_cents"] = shipping.get("amount_cents")
-    
+
     # amount_tax → tax_cents
     amount_tax = raw.get("amount_tax", {})
     if amount_tax and amount_tax.get("amount_cents") is not None:
         totals["tax_cents"] = amount_tax.get("amount_cents")
-    
+
     # total → order_total_cents
     total = raw.get("total", {})
     if total and total.get("amount_cents") is not None:
         totals["order_total_cents"] = total.get("amount_cents")
-    
+
     # Currency code (prefer from total, fallback to amount_product)
     currency = None
     if total and total.get("currency"):
         currency = total.get("currency")
     elif amount_product and amount_product.get("currency"):
         currency = amount_product.get("currency")
-    
+
     if currency:
         totals["currency_code"] = currency
-    
+
     return totals
 
 
@@ -615,7 +1035,7 @@ def _extract_reverb_shipping_address(raw: dict, external_order_id: str) -> Optio
     shipping_addr = raw.get("shipping_address")
     if not shipping_addr:
         return None
-    
+
     return {
         "address_type": "shipping",
         "name": shipping_addr.get("name"),
@@ -634,15 +1054,15 @@ def _extract_reverb_line_item(raw: dict, external_order_id: str) -> dict:
     """Create a minimal line item from Reverb raw_marketplace_data."""
     product_id = raw.get("product_id") or raw.get("product", {}).get("id")
     quantity = raw.get("quantity", 1)
-    
+
     # Get price from amount_product
     amount_product = raw.get("amount_product", {})
     line_total_cents = amount_product.get("amount_cents") if amount_product else None
     unit_price_cents = line_total_cents // quantity if line_total_cents and quantity else None
-    
+
     # Generate deterministic external_line_item_id
     external_line_item_id = f"{external_order_id}-1"
-    
+
     # Try to get title from product
     title = None
     product = raw.get("product")
@@ -650,7 +1070,7 @@ def _extract_reverb_line_item(raw: dict, external_order_id: str) -> dict:
         title = product.get("title") or product.get("name")
     if not title and product_id:
         title = f"(Reverb product {product_id})"
-    
+
     return {
         "external_line_item_id": external_line_item_id,
         "product_id": str(product_id) if product_id else None,
@@ -670,7 +1090,7 @@ def normalize_reverb_orders(
     """
     Normalize existing Reverb orders by populating buyer, totals, addresses, and lines
     from raw_marketplace_data.
-    
+
     Parameters:
     - days_back: Number of days back to filter orders (default 30)
     - limit: Maximum orders to process (default 200)
@@ -681,16 +1101,16 @@ def normalize_reverb_orders(
     try:
         # Calculate date cutoff
         cutoff = datetime.utcnow() - timedelta(days=request.days_back)
-        
+
         print(f"[REVERB_NORMALIZE] action=START days_back={request.days_back} limit={request.limit} dry_run={request.dry_run} force_rebuild_lines={request.force_rebuild_lines}")
-        
+
         # Query Reverb orders with raw_marketplace_data
         orders = db.query(MarketplaceOrder).filter(
             MarketplaceOrder.marketplace == Marketplace.REVERB,
             MarketplaceOrder.order_date >= cutoff,
             MarketplaceOrder.raw_marketplace_data.isnot(None)
         ).order_by(MarketplaceOrder.order_date.desc()).limit(request.limit).all()
-        
+
         orders_scanned = len(orders)
         orders_updated = 0
         orders_skipped = 0
@@ -698,17 +1118,17 @@ def normalize_reverb_orders(
         lines_upserted = 0
         preview = []
         debug_info = {} if request.debug else None
-        
+
         for order in orders:
             raw = order.raw_marketplace_data
             if not isinstance(raw, dict):
                 orders_skipped += 1
                 continue
-            
+
             external_order_id = order.external_order_id or str(order.id)
             order_updated = False
             preview_item = {"order_id": order.id, "external_order_id": external_order_id}
-            
+
             # 1. Extract and apply buyer info
             buyer_info = _extract_reverb_buyer_info(raw)
             if buyer_info.get("buyer_email") and not order.buyer_email:
@@ -721,7 +1141,7 @@ def normalize_reverb_orders(
                     order.buyer_name = buyer_info["buyer_name"]
                 preview_item["buyer_name"] = buyer_info["buyer_name"]
                 order_updated = True
-            
+
             # 2. Extract and apply totals
             totals = _extract_reverb_totals(raw)
             for field, value in totals.items():
@@ -731,7 +1151,7 @@ def normalize_reverb_orders(
                         setattr(order, field, value)
                     preview_item[field] = value
                     order_updated = True
-            
+
             # 3. Extract and upsert shipping address
             addr_data = _extract_reverb_shipping_address(raw, external_order_id)
             if addr_data:
@@ -740,14 +1160,14 @@ def normalize_reverb_orders(
                     "state_or_region": addr_data.get("state_or_region"),
                     "country_code": addr_data.get("country_code"),
                 }
-                
+
                 if not request.dry_run:
                     # Check if shipping address already exists
                     existing_addr = db.query(MarketplaceOrderAddress).filter(
                         MarketplaceOrderAddress.order_id == order.id,
                         MarketplaceOrderAddress.address_type == "shipping"
                     ).first()
-                    
+
                     if existing_addr:
                         # Update existing
                         for key, val in addr_data.items():
@@ -769,20 +1189,20 @@ def normalize_reverb_orders(
                             raw_payload=addr_data.get("raw_payload")
                         )
                         db.add(new_addr)
-                    
+
                     addresses_upserted += 1
                 else:
                     addresses_upserted += 1  # Count for preview
-                
+
                 order_updated = True
-            
+
             # 4. Extract and upsert line item (only if no lines exist or force_rebuild)
             existing_lines_count = db.query(MarketplaceOrderLine).filter(
                 MarketplaceOrderLine.order_id == order.id
             ).count()
-            
+
             should_create_line = (existing_lines_count == 0) or request.force_rebuild_lines
-            
+
             if should_create_line:
                 line_data = _extract_reverb_line_item(raw, external_order_id)
                 preview_item["line"] = {
@@ -790,14 +1210,14 @@ def normalize_reverb_orders(
                     "quantity": line_data.get("quantity"),
                     "line_total_cents": line_data.get("line_total_cents"),
                 }
-                
+
                 if not request.dry_run:
                     if request.force_rebuild_lines and existing_lines_count > 0:
                         # Delete existing lines first
                         db.query(MarketplaceOrderLine).filter(
                             MarketplaceOrderLine.order_id == order.id
                         ).delete(synchronize_session=False)
-                    
+
                     new_line = MarketplaceOrderLine(
                         order_id=order.id,
                         external_line_item_id=line_data.get("external_line_item_id"),
@@ -812,23 +1232,23 @@ def normalize_reverb_orders(
                     lines_upserted += 1
                 else:
                     lines_upserted += 1  # Count for preview
-                
+
                 order_updated = True
             else:
                 preview_item["line_skipped"] = f"existing_lines={existing_lines_count}"
-            
+
             if order_updated:
                 orders_updated += 1
                 if len(preview) < 3:
                     preview.append(preview_item)
             else:
                 orders_skipped += 1
-        
+
         if not request.dry_run:
             db.commit()
-        
+
         print(f"[REVERB_NORMALIZE] scanned={orders_scanned} updated={orders_updated} skipped={orders_skipped} addresses={addresses_upserted} lines={lines_upserted} dry_run={request.dry_run}")
-        
+
         if request.debug:
             debug_info = {
                 "cutoff_utc": cutoff.isoformat(),
@@ -836,7 +1256,7 @@ def normalize_reverb_orders(
                 "limit": request.limit,
                 "force_rebuild_lines": request.force_rebuild_lines,
             }
-        
+
         return NormalizeOrdersResponse(
             dry_run=request.dry_run,
             orders_scanned=orders_scanned,
@@ -847,7 +1267,7 @@ def normalize_reverb_orders(
             preview=preview if preview else None,
             debug=debug_info
         )
-        
+
     except Exception as e:
         print(f"[REVERB_NORMALIZE] unhandled_exception error={repr(e)}")
         print(traceback.format_exc())
@@ -861,12 +1281,12 @@ def enrich_reverb_orders(
 ):
     """
     Enrich existing Reverb orders by fetching full details from Reverb API.
-    
+
     For each order, calls Reverb's order detail endpoint to get:
     - Full shipping address
     - Line items with product details
     - Shipment tracking info
-    
+
     Parameters:
     - days_back: Number of days back to filter orders (default 30)
     - since_iso: ISO datetime to filter from (overrides days_back)
@@ -876,7 +1296,7 @@ def enrich_reverb_orders(
     - force: If true, overwrite existing non-null fields
     """
     import time
-    
+
     try:
         # Get credentials
         try:
@@ -885,7 +1305,7 @@ def enrich_reverb_orders(
             raise HTTPException(status_code=400, detail=str(e))
         except CredentialsDisabledError as e:
             raise HTTPException(status_code=400, detail=str(e))
-        
+
         # Calculate date cutoff
         filter_mode = "days_back"
         if request.since_iso:
@@ -896,15 +1316,15 @@ def enrich_reverb_orders(
                 raise HTTPException(status_code=400, detail=str(e))
         else:
             cutoff = datetime.utcnow() - timedelta(days=request.days_back)
-        
+
         print(f"[REVERB_ENRICH] action=START days_back={request.days_back} limit={request.limit} dry_run={request.dry_run} force={request.force}")
-        
+
         # Query Reverb orders
         orders = db.query(MarketplaceOrder).filter(
             MarketplaceOrder.marketplace == Marketplace.REVERB,
             MarketplaceOrder.order_date >= cutoff
         ).order_by(MarketplaceOrder.order_date.desc()).limit(request.limit).all()
-        
+
         orders_scanned = len(orders)
         orders_enriched = 0
         orders_skipped = 0
@@ -913,38 +1333,38 @@ def enrich_reverb_orders(
         shipments_upserted = 0
         failed_order_ids = {}
         preview_orders = []
-        
+
         for order in orders:
             external_order_id = order.external_order_id
             if not external_order_id:
                 orders_skipped += 1
                 continue
-            
+
             # Fetch order detail from Reverb API
             detail = get_order_detail(credentials, external_order_id)
-            
+
             # Small delay between API calls to avoid rate limiting
             time.sleep(0.15)
-            
+
             # Check for API errors
             if detail.get("error"):
                 failed_order_ids[external_order_id] = detail.get("error")
                 orders_skipped += 1
                 continue
-            
+
             # Parse enrichment data
             enrichment = parse_order_detail_for_enrichment(detail, external_order_id)
-            
+
             preview_item = {
                 "external_order_id": external_order_id,
                 "order_id": order.id,
             }
             order_enriched = False
-            
+
             # === Update order scalar fields ===
             buyer_info = enrichment.get("buyer", {})
             totals = enrichment.get("totals", {})
-            
+
             # Buyer email
             if buyer_info.get("buyer_email"):
                 if order.buyer_email is None or request.force:
@@ -952,7 +1372,7 @@ def enrich_reverb_orders(
                         order.buyer_email = buyer_info["buyer_email"]
                     preview_item["buyer_email"] = buyer_info["buyer_email"]
                     order_enriched = True
-            
+
             # Buyer name
             if buyer_info.get("buyer_name"):
                 if order.buyer_name is None or request.force:
@@ -960,7 +1380,7 @@ def enrich_reverb_orders(
                         order.buyer_name = buyer_info["buyer_name"]
                     preview_item["buyer_name"] = buyer_info["buyer_name"]
                     order_enriched = True
-            
+
             # Totals
             for field in ["items_subtotal_cents", "shipping_cents", "tax_cents", "order_total_cents", "currency_code"]:
                 new_val = totals.get(field)
@@ -971,7 +1391,7 @@ def enrich_reverb_orders(
                             setattr(order, field, new_val)
                         preview_item[field] = new_val
                         order_enriched = True
-            
+
             # Status
             if enrichment.get("status_raw"):
                 if order.status_raw is None or request.force:
@@ -983,7 +1403,7 @@ def enrich_reverb_orders(
                             except ValueError:
                                 pass
                     order_enriched = True
-            
+
             # === Upsert shipping address ===
             addr_data = enrichment.get("shipping_address")
             if addr_data and any(addr_data.get(k) for k in ["line1", "city", "postal_code"]):
@@ -995,13 +1415,13 @@ def enrich_reverb_orders(
                     "postal_code": addr_data.get("postal_code"),
                     "country_code": addr_data.get("country_code"),
                 }
-                
+
                 if not request.dry_run:
                     existing_addr = db.query(MarketplaceOrderAddress).filter(
                         MarketplaceOrderAddress.order_id == order.id,
                         MarketplaceOrderAddress.address_type == "shipping"
                     ).first()
-                    
+
                     if existing_addr:
                         for key in ["name", "phone", "line1", "line2", "city", "state_or_region", "postal_code", "country_code", "raw_payload"]:
                             new_val = addr_data.get(key)
@@ -1022,13 +1442,13 @@ def enrich_reverb_orders(
                             raw_payload=addr_data.get("raw_payload")
                         )
                         db.add(new_addr)
-                    
+
                     addresses_upserted += 1
                 else:
                     addresses_upserted += 1
-                
+
                 order_enriched = True
-            
+
             # === Upsert line items ===
             lines = enrichment.get("lines", [])
             if lines:
@@ -1041,7 +1461,7 @@ def enrich_reverb_orders(
                         "quantity": line_data.get("quantity"),
                         "line_total_cents": line_data.get("line_total_cents"),
                     })
-                    
+
                     if not request.dry_run:
                         existing_line = None
                         if ext_line_id:
@@ -1049,7 +1469,7 @@ def enrich_reverb_orders(
                                 MarketplaceOrderLine.order_id == order.id,
                                 MarketplaceOrderLine.external_line_item_id == ext_line_id
                             ).first()
-                        
+
                         if existing_line:
                             for key in ["product_id", "listing_id", "sku", "title", "quantity", "unit_price_cents", "line_total_cents", "currency_code", "raw_marketplace_data"]:
                                 new_val = line_data.get(key)
@@ -1070,13 +1490,13 @@ def enrich_reverb_orders(
                                 raw_marketplace_data=line_data.get("raw_marketplace_data")
                             )
                             db.add(new_line)
-                        
+
                         lines_upserted += 1
                     else:
                         lines_upserted += 1
-                
+
                 order_enriched = True
-            
+
             # === Upsert shipments ===
             shipments = enrichment.get("shipments", [])
             if shipments:
@@ -1085,64 +1505,52 @@ def enrich_reverb_orders(
                     tracking = ship_data.get("tracking_number")
                     carrier = ship_data.get("carrier")
                     dedupe_key = ship_data.get("dedupe_key", "")
-                    
+
                     preview_item["shipments"].append({
                         "carrier": carrier,
                         "tracking_number": tracking,
                         "shipped_at": ship_data.get("shipped_at"),
                         "dedupe_key": dedupe_key,
                     })
-                    
+
                     if not request.dry_run:
-                        # Check for existing shipment using multiple strategies:
-                        # 1. By tracking number (if present)
-                        # 2. By carrier + shipped_at (if no tracking)
                         existing_ship = None
-                        
+
                         if tracking:
-                            # Find by order_id and tracking_number
                             existing_ship = db.query(MarketplaceOrderShipment).filter(
                                 MarketplaceOrderShipment.order_id == order.id,
                                 MarketplaceOrderShipment.tracking_number == tracking
                             ).first()
                         else:
-                            # No tracking - check by carrier + shipped_at
                             shipped_at_str = ship_data.get("shipped_at")
                             if shipped_at_str and carrier:
-                                # Parse to datetime for comparison
                                 try:
                                     if shipped_at_str.endswith("Z"):
                                         shipped_at_str_parsed = shipped_at_str[:-1] + "+00:00"
                                     else:
                                         shipped_at_str_parsed = shipped_at_str
                                     target_shipped_at = datetime.fromisoformat(shipped_at_str_parsed)
-                                    
-                                    # Query by carrier and check shipped_at manually
+
                                     candidates = db.query(MarketplaceOrderShipment).filter(
                                         MarketplaceOrderShipment.order_id == order.id,
                                         MarketplaceOrderShipment.carrier == carrier
                                     ).all()
-                                    
+
                                     for cand in candidates:
                                         if cand.shipped_at and abs((cand.shipped_at - target_shipped_at).total_seconds()) < 60:
                                             existing_ship = cand
                                             break
                                 except (ValueError, TypeError):
                                     pass
-                        
+
                         if existing_ship:
-                            # Update existing shipment if needed
-                            updated = False
                             for key in ["carrier", "tracking_number"]:
                                 new_val = ship_data.get(key if key != "tracking_number" else "tracking_number")
                                 if key == "tracking_number":
                                     new_val = tracking
                                 if new_val is not None and (getattr(existing_ship, key, None) is None or request.force):
                                     setattr(existing_ship, key, new_val)
-                                    updated = True
-                            # Don't count as upserted if just updating existing
                         else:
-                            # Parse shipped_at datetime
                             shipped_at = None
                             shipped_at_str = ship_data.get("shipped_at")
                             if shipped_at_str:
@@ -1152,7 +1560,7 @@ def enrich_reverb_orders(
                                     shipped_at = datetime.fromisoformat(shipped_at_str)
                                 except (ValueError, TypeError):
                                     pass
-                            
+
                             delivered_at = None
                             delivered_at_str = ship_data.get("delivered_at")
                             if delivered_at_str:
@@ -1162,7 +1570,7 @@ def enrich_reverb_orders(
                                     delivered_at = datetime.fromisoformat(delivered_at_str)
                                 except (ValueError, TypeError):
                                     pass
-                            
+
                             new_ship = MarketplaceOrderShipment(
                                 order_id=order.id,
                                 carrier=carrier,
@@ -1174,23 +1582,22 @@ def enrich_reverb_orders(
                             db.add(new_ship)
                             shipments_upserted += 1
                     else:
-                        # Dry run - count as would be inserted (first run only matters)
                         shipments_upserted += 1
-                
+
                 order_enriched = True
-            
+
             if order_enriched:
                 orders_enriched += 1
                 if len(preview_orders) < 3:
                     preview_orders.append(preview_item)
             else:
                 orders_skipped += 1
-        
+
         if not request.dry_run:
             db.commit()
-        
+
         print(f"[REVERB_ENRICH] scanned={orders_scanned} enriched={orders_enriched} skipped={orders_skipped} addresses={addresses_upserted} lines={lines_upserted} shipments={shipments_upserted} dry_run={request.dry_run}")
-        
+
         debug_info = None
         if request.debug:
             debug_info = {
@@ -1199,7 +1606,7 @@ def enrich_reverb_orders(
                 "limit": request.limit,
                 "force": request.force,
             }
-        
+
         return EnrichOrdersResponse(
             dry_run=request.dry_run,
             orders_scanned=orders_scanned,
@@ -1212,11 +1619,10 @@ def enrich_reverb_orders(
             preview_orders=preview_orders if preview_orders else None,
             debug=debug_info
         )
-        
+
     except HTTPException:
         raise
     except Exception as e:
         print(f"[REVERB_ENRICH] unhandled_exception error={repr(e)}")
         print(traceback.format_exc())
         raise HTTPException(status_code=500, detail="Internal server error")
-

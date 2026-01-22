@@ -29,6 +29,7 @@ from app.schemas.core import (
     MarketplaceOrderLineCreate, MarketplaceOrderShipmentCreate,
     MarketplaceOrderLineResponse
 )
+from app.services.customer_service import upsert_customer_from_marketplace_order, extract_address_dict
 
 router = APIRouter(prefix="/marketplace-orders", tags=["marketplace-orders"])
 
@@ -377,6 +378,41 @@ def upsert_marketplace_order(data: MarketplaceOrderCreate, db: Session = Depends
             # Replace children only if provided in payload
             _replace_children_if_provided(db, existing_order, data, raw_data)
             
+            # Upsert customer and link to order (if marketplace order)
+            if data.marketplace:
+                # Extract source_customer_id from raw_marketplace_data if available
+                source_customer_id = None
+                if data.raw_marketplace_data:
+                    # Try common buyer ID field names from various marketplaces
+                    source_customer_id = (
+                        data.raw_marketplace_data.get('buyer_id') or
+                        data.raw_marketplace_data.get('buyer', {}).get('id') or
+                        data.raw_marketplace_data.get('BuyerInfo', {}).get('BuyerEmail')  # Amazon uses email as ID
+                    )
+                
+                # Get addresses from existing order or data
+                shipping_addr = extract_address_dict(
+                    [a.model_dump() for a in data.addresses] if data.addresses else [], 
+                    'shipping'
+                )
+                billing_addr = extract_address_dict(
+                    [a.model_dump() for a in data.addresses] if data.addresses else [], 
+                    'billing'
+                )
+                
+                customer, _ = upsert_customer_from_marketplace_order(
+                    db=db,
+                    marketplace=data.marketplace.value if hasattr(data.marketplace, 'value') else str(data.marketplace),
+                    source_customer_id=source_customer_id,
+                    marketplace_buyer_email=data.buyer_email,
+                    buyer_name=data.buyer_name,
+                    buyer_phone=data.buyer_phone,
+                    shipping_address=shipping_addr,
+                    billing_address=billing_addr
+                )
+                if customer and not existing_order.customer_id:
+                    existing_order.customer_id = customer.id
+            
             db.commit()
             db.refresh(existing_order)
             return existing_order
@@ -423,6 +459,41 @@ def upsert_marketplace_order(data: MarketplaceOrderCreate, db: Session = Depends
             
             # Insert children for new order
             _insert_children(db, order, data)
+            
+            # Upsert customer and link to order (if marketplace order)
+            if data.marketplace:
+                # Extract source_customer_id from raw_marketplace_data if available
+                source_customer_id = None
+                if data.raw_marketplace_data:
+                    source_customer_id = (
+                        data.raw_marketplace_data.get('buyer_id') or
+                        data.raw_marketplace_data.get('buyer', {}).get('id') or
+                        data.raw_marketplace_data.get('BuyerInfo', {}).get('BuyerEmail')
+                    )
+                
+                # Get addresses from data
+                shipping_addr = extract_address_dict(
+                    [a.model_dump() for a in data.addresses] if data.addresses else [], 
+                    'shipping'
+                )
+                billing_addr = extract_address_dict(
+                    [a.model_dump() for a in data.addresses] if data.addresses else [], 
+                    'billing'
+                )
+                
+                customer, _ = upsert_customer_from_marketplace_order(
+                    db=db,
+                    marketplace=data.marketplace.value if hasattr(data.marketplace, 'value') else str(data.marketplace),
+                    source_customer_id=source_customer_id,
+                    marketplace_buyer_email=data.buyer_email,
+                    buyer_name=data.buyer_name,
+                    buyer_phone=data.buyer_phone,
+                    shipping_address=shipping_addr,
+                    billing_address=billing_addr
+                )
+                if customer:
+                    order.customer_id = customer.id
+            
             db.commit()
             db.refresh(order)
             

@@ -68,6 +68,11 @@ interface ImportResult {
     pages_fetched?: number
     early_stop?: boolean
     undated_count?: number
+    customers_matched?: number
+    customers_created?: number
+    orders_linked_to_customers?: number
+    orders_missing_buyer_identity?: number
+    debug_samples?: any[]
 }
 
 type StatusType = 'idle' | 'loading' | 'success' | 'error' | 'not_configured'
@@ -826,6 +831,37 @@ export default function MarketplaceCredentialsPage() {
 
                                             <Typography variant="body2" fontWeight="bold">Undated Count:</Typography>
                                             <Typography variant="body2">{importResult.undated_count}</Typography>
+
+                                            {importResult.orders_linked_to_customers !== undefined && (
+                                                <>
+                                                    <Box sx={{ gridColumn: '1 / -1', mt: 1, mb: 0.5, borderBottom: '1px dashed #ccc' }} />
+                                                    <Typography variant="body2" fontWeight="bold" sx={{ color: 'primary.main', gridColumn: '1 / -1' }}>
+                                                        Customer Linkage Stats
+                                                    </Typography>
+
+                                                    <Typography variant="body2" fontWeight="bold">Created:</Typography>
+                                                    <Typography variant="body2">{importResult.customers_created}</Typography>
+
+                                                    <Typography variant="body2" fontWeight="bold">Matched:</Typography>
+                                                    <Typography variant="body2">{importResult.customers_matched}</Typography>
+
+                                                    <Typography variant="body2" fontWeight="bold">Linked Orders:</Typography>
+                                                    <Typography variant="body2">{importResult.orders_linked_to_customers}</Typography>
+
+                                                    <Typography variant="body2" fontWeight="bold">Missing Identity:</Typography>
+                                                    <Typography variant="body2" color={importResult.orders_missing_buyer_identity ? 'error.main' : 'inherit'}>
+                                                        {importResult.orders_missing_buyer_identity}
+                                                    </Typography>
+
+                                                    {(importResult.orders_linked_to_customers === 0 && (importResult.total_updated + importResult.total_created > 0)) && (
+                                                        <Box sx={{ gridColumn: '1 / -1', mt: 1 }}>
+                                                            <Alert severity="warning">
+                                                                No customers linked — check buyer identity mapping.
+                                                            </Alert>
+                                                        </Box>
+                                                    )}
+                                                </>
+                                            )}
                                         </Box>
                                     </Box>
                                 )}

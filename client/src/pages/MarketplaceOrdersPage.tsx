@@ -12,6 +12,9 @@ import CheckIcon from '@mui/icons-material/Check'
 import CloseIcon from '@mui/icons-material/Close'
 import ReceiptIcon from '@mui/icons-material/Receipt'
 
+import { customersApi } from '../services/api'
+import type { Customer } from '../types'
+
 interface MarketplaceOrder {
     id: number
     marketplace: string
@@ -26,6 +29,7 @@ interface MarketplaceOrder {
     order_total_cents?: number
     currency_code?: string
     created_at: string
+    customer_id?: number
 }
 
 interface OrderAddress {
@@ -114,6 +118,7 @@ export default function MarketplaceOrdersPage() {
     // Detail dialog state
     const [selectedOrderId, setSelectedOrderId] = useState<number | null>(null)
     const [orderDetail, setOrderDetail] = useState<OrderDetail | null>(null)
+    const [linkedCustomer, setLinkedCustomer] = useState<Customer | null>(null)
     const [isLoadingDetail, setIsLoadingDetail] = useState(false)
     const [detailError, setDetailError] = useState<string | null>(null)
 
@@ -181,6 +186,7 @@ export default function MarketplaceOrdersPage() {
         setIsLoadingDetail(true)
         setDetailError(null)
         setOrderDetail(null)
+        setLinkedCustomer(null)
 
         try {
             const response = await fetch(`/api/marketplace-orders/${orderId}`)
@@ -192,6 +198,17 @@ export default function MarketplaceOrdersPage() {
 
             const data: OrderDetail = await response.json()
             setOrderDetail(data)
+
+            // Fetch linked customer if present
+            if (data.customer_id) {
+                try {
+                    const customer = await customersApi.get(data.customer_id)
+                    setLinkedCustomer(customer)
+                } catch (customerErr) {
+                    console.error("Failed to load customer details", customerErr)
+                    // Don't fail the whole view if customer fetch fails
+                }
+            }
         } catch (err) {
             setDetailError(err instanceof Error ? err.message : 'Failed to load order details')
         } finally {
@@ -202,6 +219,7 @@ export default function MarketplaceOrdersPage() {
     const handleCloseDetail = () => {
         setSelectedOrderId(null)
         setOrderDetail(null)
+        setLinkedCustomer(null)
         setDetailError(null)
         // Reset cleanup state when closing
         setCleanupPreviewResult(null)
@@ -736,6 +754,36 @@ export default function MarketplaceOrdersPage() {
                             </Box>
 
                             <Divider sx={{ my: 2 }} />
+
+                            {/* Customer Link */}
+                            {linkedCustomer && (
+                                <>
+                                    <Box sx={{ mb: 2 }}>
+                                        <Typography variant="subtitle1" fontWeight="bold" gutterBottom>
+                                            Customer
+                                        </Typography>
+                                        <Box sx={{ pl: 2, display: 'flex', alignItems: 'center', gap: 1 }}>
+                                            <Typography variant="body1" fontWeight="medium">
+                                                {linkedCustomer.name}
+                                            </Typography>
+                                            <Chip size="small" label="Linked" color="success" variant="outlined" />
+                                        </Box>
+                                        {(linkedCustomer.buyer_email || linkedCustomer.marketplace_buyer_email) && (
+                                            <Box sx={{ pl: 2, mt: 0.5 }}>
+                                                {linkedCustomer.buyer_email && (
+                                                    <Typography variant="body2">{linkedCustomer.buyer_email}</Typography>
+                                                )}
+                                                {linkedCustomer.marketplace_buyer_email && (
+                                                    <Typography variant="body2" color="text.secondary">
+                                                        Proxy: {linkedCustomer.marketplace_buyer_email}
+                                                    </Typography>
+                                                )}
+                                            </Box>
+                                        )}
+                                    </Box>
+                                    <Divider sx={{ my: 2 }} />
+                                </>
+                            )}
 
                             {/* Addresses */}
                             {orderDetail.addresses && orderDetail.addresses.length > 0 && (

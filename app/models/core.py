@@ -175,10 +175,46 @@ class Customer(Base):
     
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, nullable=False)
-    address = Column(String, nullable=True)
-    phone = Column(String, nullable=True)
+    address = Column(String, nullable=True)  # Legacy field, kept for backwards compat
+    phone = Column(String, nullable=True)    # Legacy field, kept for backwards compat
     
+    # Names
+    first_name = Column(String(100), nullable=True)
+    last_name = Column(String(100), nullable=True)
+    
+    # Emails (TWO DISTINCT EMAILS)
+    buyer_email = Column(String(255), nullable=True, index=True)           # Real customer email, editable
+    marketplace_buyer_email = Column(String(255), nullable=True, index=True)  # Relay/proxy from marketplaces, read-only
+    
+    # Phones
+    mobile_phone = Column(String(40), nullable=True)
+    work_phone = Column(String(40), nullable=True)
+    other_phone = Column(String(40), nullable=True)
+    
+    # Billing Address
+    billing_address1 = Column(String(255), nullable=True)
+    billing_address2 = Column(String(255), nullable=True)
+    billing_city = Column(String(120), nullable=True)
+    billing_state = Column(String(120), nullable=True)
+    billing_postal_code = Column(String(40), nullable=True)
+    billing_country = Column(String(80), nullable=True)
+    
+    # Shipping Name + Address
+    shipping_name = Column(String(255), nullable=True)
+    shipping_address1 = Column(String(255), nullable=True)
+    shipping_address2 = Column(String(255), nullable=True)
+    shipping_city = Column(String(120), nullable=True)
+    shipping_state = Column(String(120), nullable=True)
+    shipping_postal_code = Column(String(40), nullable=True)
+    shipping_country = Column(String(80), nullable=True)
+    
+    # Marketplace identity (for deterministic matching)
+    source_marketplace = Column(String(40), nullable=True)
+    source_customer_id = Column(String(80), nullable=True)
+    
+    # Relationships
     orders = relationship("Order", back_populates="customer", cascade="all, delete-orphan")
+    marketplace_orders = relationship("MarketplaceOrder", back_populates="customer")
 
 class Order(Base):
     __tablename__ = "orders"
@@ -654,16 +690,30 @@ class MarketplaceOrder(Base):
     notes = Column(Text, nullable=True)
     import_error = Column(Text, nullable=True)
     raw_marketplace_data = Column(JSON, nullable=True)
+    raw_marketplace_detail_data = Column(JSON, nullable=True)
+    
+    # Expanded fields (Reverb & others)
+    payment_method = Column(String(64), nullable=True)
+    payment_status = Column(String(64), nullable=True)
+    shipping_provider = Column(String(64), nullable=True)
+    shipping_code = Column(String(64), nullable=True)
+    shipping_method = Column(String(128), nullable=True)
+    reverb_buyer_id = Column(String(128), nullable=True)
+    reverb_order_status = Column(String(64), nullable=True)
     
     # Timestamps
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    
+    # Customer linkage
+    customer_id = Column(Integer, ForeignKey("customers.id", ondelete="SET NULL"), nullable=True)
     
     # Relationships
     import_run = relationship("MarketplaceImportRun", back_populates="orders")
     addresses = relationship("MarketplaceOrderAddress", back_populates="order", cascade="all, delete-orphan")
     lines = relationship("MarketplaceOrderLine", back_populates="order", cascade="all, delete-orphan")
     shipments = relationship("MarketplaceOrderShipment", back_populates="order", cascade="all, delete-orphan")
+    customer = relationship("Customer", back_populates="marketplace_orders")
     
     __table_args__ = (
         UniqueConstraint('marketplace', 'external_order_id', name='uq_marketplace_external_order_id'),
@@ -786,3 +836,47 @@ class MarketplaceCredential(Base):
 # Post-class relationship definitions to handle forward references
 EquipmentType.pricing_options = relationship("EquipmentTypePricingOption", back_populates="equipment_type", cascade="all, delete-orphan")
 EquipmentType.design_options = relationship("EquipmentTypeDesignOption", back_populates="equipment_type", cascade="all, delete-orphan")
+
+
+# =============================================================================
+# MARKETPLACE MESSAGING
+# =============================================================================
+
+class MarketplaceConversation(Base):
+    """Conversations from marketplaces (e.g. Reverb)."""
+    __tablename__ = "marketplace_conversations"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    marketplace = Column(String(20), nullable=True)
+    external_conversation_id = Column(String(128), nullable=True)
+    external_buyer_id = Column(String(128), nullable=True)
+    external_order_id = Column(String(128), nullable=True)
+    subject = Column(String(500), nullable=True)
+    last_message_at = Column(DateTime, nullable=True)
+    raw_conversation_data = Column(JSON, nullable=True)
+    
+    messages = relationship("MarketplaceMessage", back_populates="conversation", cascade="all, delete-orphan")
+    
+    __table_args__ = (
+        UniqueConstraint('marketplace', 'external_conversation_id', name='uq_conversation_mp_ext_id'),
+    )
+
+
+class MarketplaceMessage(Base):
+    """Individual messages within a conversation."""
+    __tablename__ = "marketplace_messages"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    conversation_id = Column(Integer, ForeignKey("marketplace_conversations.id", ondelete="CASCADE"), nullable=False)
+    external_message_id = Column(String(128), nullable=True)
+    sender_type = Column(String(20), nullable=True)  # buyer | seller | system
+    sent_at = Column(DateTime, nullable=True)
+    body_text = Column(Text, nullable=True)
+    raw_message_data = Column(JSON, nullable=True)
+    
+    conversation = relationship("MarketplaceConversation", back_populates="messages")
+    
+    __table_args__ = (
+        UniqueConstraint('conversation_id', 'external_message_id', name='uq_message_conv_ext_id'),
+    )
+
