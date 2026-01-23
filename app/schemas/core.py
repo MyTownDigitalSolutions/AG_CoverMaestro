@@ -412,6 +412,7 @@ class DesignOptionBase(BaseModel):
     sku_abbreviation: Optional[str] = None
     ebay_variation_enabled: bool = False
     price_cents: int = 0
+    placeholder_token: Optional[str] = None
 
 class DesignOptionCreate(DesignOptionBase):
     pass

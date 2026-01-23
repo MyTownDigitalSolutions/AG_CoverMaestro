@@ -54,6 +54,8 @@ export interface DesignOption {
   equipment_type_ids?: number[]
   sku_abbreviation?: string
   ebay_variation_enabled?: boolean
+  price_cents: number
+  placeholder_token?: string
 }
 
 export interface MarketplaceListing {

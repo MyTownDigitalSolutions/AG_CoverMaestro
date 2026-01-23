@@ -28,7 +28,9 @@ def create_design_option(data: DesignOptionCreate, db: Session = Depends(get_db)
             option_type=data.option_type,
             is_pricing_relevant=data.is_pricing_relevant,
             sku_abbreviation=data.sku_abbreviation,
-            ebay_variation_enabled=data.ebay_variation_enabled
+            ebay_variation_enabled=data.ebay_variation_enabled,
+            price_cents=data.price_cents,
+            placeholder_token=data.placeholder_token if data.placeholder_token and data.placeholder_token.strip() else None
         )
         db.add(option)
         db.flush()
@@ -56,6 +58,8 @@ def update_design_option(id: int, data: DesignOptionCreate, db: Session = Depend
         option.is_pricing_relevant = data.is_pricing_relevant
         option.sku_abbreviation = data.sku_abbreviation
         option.ebay_variation_enabled = data.ebay_variation_enabled
+        option.price_cents = data.price_cents
+        option.placeholder_token = data.placeholder_token if data.placeholder_token and data.placeholder_token.strip() else None
         
         # Update associations
         db.query(EquipmentTypeDesignOption).filter(EquipmentTypeDesignOption.design_option_id == id).delete()

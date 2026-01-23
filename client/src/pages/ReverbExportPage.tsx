@@ -40,7 +40,7 @@ export default function ReverbExportPage() {
                 seriesApi.list(),
                 modelsApi.list()
             ])
-            setManufacturers(mfrs)
+            setManufacturers(mfrs.sort((a, b) => a.name.localeCompare(b.name)))
             setAllSeries(series)
             setAllModels(models)
         } catch (err: any) {
@@ -64,7 +64,9 @@ export default function ReverbExportPage() {
     // Filtered series based on manufacturer
     const filteredSeries = useMemo(() => {
         if (!selectedManufacturer) return []
-        return allSeries.filter(s => s.manufacturer_id === selectedManufacturer)
+        return allSeries
+            .filter(s => s.manufacturer_id === selectedManufacturer)
+            .sort((a, b) => a.name.localeCompare(b.name))
     }, [selectedManufacturer, allSeries])
 
     // Filtered models based on manufacturer and series

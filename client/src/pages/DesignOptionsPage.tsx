@@ -23,7 +23,9 @@ export default function DesignOptionsPage() {
   const [equipmentTypeIds, setEquipmentTypeIds] = useState<number[]>([])
   const [skuAbbreviation, setSkuAbbreviation] = useState('')
   const [ebayVariationEnabled, setEbayVariationEnabled] = useState(false)
+
   const [price, setPrice] = useState<string>('0')
+  const [placeholderToken, setPlaceholderToken] = useState('')
 
   const loadData = async () => {
     const [doData, etData] = await Promise.all([
@@ -58,6 +60,7 @@ export default function DesignOptionsPage() {
       setSkuAbbreviation(option.sku_abbreviation || '')
       setEbayVariationEnabled(option.ebay_variation_enabled || false)
       setPrice(((option.price_cents || 0) / 100).toFixed(2))
+      setPlaceholderToken(option.placeholder_token || '')
     } else {
       setEditing(null)
       setName('')
@@ -69,6 +72,7 @@ export default function DesignOptionsPage() {
       setSkuAbbreviation('')
       setEbayVariationEnabled(false)
       setPrice('0')
+      setPlaceholderToken('')
     }
     setDialogOpen(true)
   }
@@ -101,7 +105,8 @@ export default function DesignOptionsPage() {
       equipment_type_ids: equipmentTypeIds,
       sku_abbreviation: skuAbbreviation || undefined,
       ebay_variation_enabled: ebayVariationEnabled,
-      price_cents: priceCents
+      price_cents: priceCents,
+      placeholder_token: placeholderToken || undefined
     }
 
     if (editing) {
@@ -261,6 +266,16 @@ export default function DesignOptionsPage() {
             InputProps={{
               startAdornment: <Typography sx={{ mr: 1 }}>$</Typography>
             }}
+          />
+
+          <TextField
+            margin="dense"
+            label="Placeholder Token"
+            fullWidth
+            value={placeholderToken}
+            onChange={(e) => setPlaceholderToken(e.target.value)}
+            placeholder="[SIDE_POCKET]"
+            helperText="Used in Reverb template descriptions to inject the price"
           />
 
           <TextField
