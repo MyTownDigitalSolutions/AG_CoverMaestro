@@ -14,7 +14,7 @@ def normalize_for_url(name: str) -> str:
     result = re.sub(r'[^a-zA-Z0-9]', '', name)
     return result
 
-def substitute_placeholders(value: str, model: Model, series: Series, manufacturer: Manufacturer, equipment_type: EquipmentType, db: Session = None, context: Dict[str, Any] = None, numeric_zero_default: bool = False) -> str:
+def substitute_placeholders(value: str, model: Model, series: Series, manufacturer: Manufacturer, equipment_type: EquipmentType, db: Session = None, context: Dict[str, Any] = None, numeric_zero_default: bool = False, is_image_url: bool = False) -> str:
     """
     Replace [PLACEHOLDERS] in the value string with actual data.
     Supported: [MANUFACTURER_NAME], [SERIES_NAME], [MODEL_NAME], [EQUIPMENT_TYPE], [REVERB_PRICE]
@@ -80,6 +80,18 @@ def substitute_placeholders(value: str, model: Model, series: Series, manufactur
     series_name = series.name if series else ''
     model_name = model.name if model else ''
     equip_type = equipment_type.name if equipment_type else ''
+    
+    # Apply URL normalization if requested (matches Amazon export logic)
+    if is_image_url:
+        def img_norm(s):
+            if not s: return ''
+            # Replace whitespace sequences with underscore, keep other chars including punctuation
+            return re.sub(r'\s+', '_', s.strip())
+
+        mfr_name = img_norm(mfr_name)
+        series_name = img_norm(series_name)
+        model_name = img_norm(model_name)
+        equip_type = img_norm(equip_type)
     
     # 1. Handle Dynamic Design Option Placeholders
     # Context must contain 'design_option_map' (Token->Obj) and 'et_assignments' (Set[DO_ID])
@@ -269,8 +281,16 @@ def generate_reverb_export_csv(db: Session, model_ids: List[int]) -> tuple[io.By
             # Check for Override first (Always Priority)
             override_val = override_map.get((model.equipment_type_id, field.id))
             
+            # Determine if this is likely an image URL field/value for underscore normalization
+            is_potential_image = (
+                'photo' in field.field_name.lower() or 
+                'image' in field.field_name.lower() or 
+                'url' in field.field_name.lower()
+            )
+            
             if override_val is not None:
-                value = substitute_placeholders(override_val, model, series, manufacturer, eq_type, db, context)
+                is_url_val = is_potential_image or (override_val and override_val.strip().lower().startswith(('http', 'www', 'ftp')))
+                value = substitute_placeholders(override_val, model, series, manufacturer, eq_type, db, context, is_image_url=is_url_val)
             else:
                 # No override found. Should we use Global Default?
                 # Check Strict Mode
@@ -279,9 +299,11 @@ def generate_reverb_export_csv(db: Session, model_ids: List[int]) -> tuple[io.By
                 if not is_strict:
                     # Safe to use defaults
                     if field.custom_value:
-                        value = substitute_placeholders(field.custom_value, model, series, manufacturer, eq_type, db, context)
+                        is_url_val = is_potential_image or (field.custom_value and field.custom_value.strip().lower().startswith(('http', 'www', 'ftp')))
+                        value = substitute_placeholders(field.custom_value, model, series, manufacturer, eq_type, db, context, is_image_url=is_url_val)
                     elif field.selected_value:
-                        value = substitute_placeholders(field.selected_value, model, series, manufacturer, eq_type, db, context)
+                        is_url_val = is_potential_image or (field.selected_value and field.selected_value.strip().lower().startswith(('http', 'www', 'ftp')))
+                        value = substitute_placeholders(field.selected_value, model, series, manufacturer, eq_type, db, context, is_image_url=is_url_val)
                 else:
                     # Strict Mode: Do not use defaults unless... is there an exception?
                     pass

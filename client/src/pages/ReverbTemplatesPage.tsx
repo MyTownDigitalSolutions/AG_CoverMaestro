@@ -5,7 +5,7 @@ import {
     TableContainer, TableHead, TableRow, Chip, Stack, TextField,
     Dialog, DialogTitle, DialogContent, DialogActions,
     CircularProgress, Switch, FormControlLabel,
-    Autocomplete
+    Autocomplete, List, ListItem, ListItemText, ListItemButton, ListItemSecondaryAction
 } from '@mui/material'
 import CloudUploadIcon from '@mui/icons-material/CloudUpload'
 import AddIcon from '@mui/icons-material/Add'
@@ -13,6 +13,9 @@ import DownloadIcon from '@mui/icons-material/Download'
 import EditIcon from '@mui/icons-material/Edit'
 import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline'
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined'
+import DeleteIcon from '@mui/icons-material/Delete'
+import ContentCopyIcon from '@mui/icons-material/ContentCopy'
+import SettingsIcon from '@mui/icons-material/Settings'
 
 
 import {
@@ -53,7 +56,7 @@ function ValidValuesSection({
 }) {
     const isAssignable = ASSIGNABLE_FIELDS.includes(fieldName.toLowerCase())
 
-    const handleChipClick = (val: string) => {
+    const handleItemClick = (val: string) => {
         const detail = valuesDetailed?.find(v => v.value === val)
         if (isAssignable && detail && onValueEdit) {
             // Open edit dialog for assignable fields
@@ -64,52 +67,92 @@ function ValidValuesSection({
         }
     }
 
+    const handleCopy = (e: React.MouseEvent, val: string) => {
+        e.stopPropagation();
+        onNewValueChange(val);
+    }
+
     return (
         <Box sx={{ mt: 3 }}>
             <Typography variant="subtitle2" gutterBottom>
                 Allowed Values ({values.length})
                 {isAssignable && (
                     <Typography component="span" variant="caption" color="text.secondary" sx={{ ml: 1 }}>
-                        (Click a value to assign Equipment Types)
+                        (Click row to assign Equipment Types)
                     </Typography>
                 )}
             </Typography>
-            <Paper variant="outlined" sx={{ p: 2, minHeight: 100, maxHeight: 300, overflowY: 'auto' }}>
-                <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-                    {values.length === 0 && (
+            <Paper variant="outlined" sx={{ p: 0, minHeight: 100, maxHeight: 400, overflowY: 'auto', bgcolor: 'background.paper' }}>
+                {values.length === 0 && (
+                    <Box sx={{ p: 2 }}>
                         <Typography variant="body2" color="text.secondary">
                             No restricted values defined. Any value is allowed unless configured otherwise.
                         </Typography>
-                    )}
-                    {values.map((val) => {
-                        const isSelected = val === selectedValue
-                        const detail = valuesDetailed?.find(v => v.value === val)
-                        const valueId = detail?.id
+                    </Box>
+                )}
+                {values.length > 0 && (
+                    <List dense disablePadding>
+                        {values.map((val) => {
+                            const isSelected = val === selectedValue
+                            const detail = valuesDetailed?.find(v => v.value === val)
+                            const valueId = detail?.id
 
-                        return (
-                            <Chip
-                                key={val}
-                                label={val}
-                                onClick={() => handleChipClick(val)}
-                                onDelete={valueId ? () => onDeleteValue(valueId, val) : undefined}
-                                color={isSelected ? "primary" : "default"}
-                                variant={isSelected ? "filled" : "outlined"}
-                                sx={{ cursor: 'pointer' }}
-                            />
-                        )
-                    })}
-                </Box>
+                            return (
+                                <ListItem
+                                    key={val}
+                                    divider
+                                    disablePadding
+                                    secondaryAction={
+                                        <Stack direction="row" spacing={0.5} sx={{ bgcolor: 'background.paper', pl: 1 }}>
+                                            <IconButton size="small" onClick={(e) => handleCopy(e, val)} title="Copy to input">
+                                                <ContentCopyIcon fontSize="small" />
+                                            </IconButton>
+
+                                            {isAssignable && detail && valueId && onValueEdit && (
+                                                <IconButton size="small" onClick={(e) => { e.stopPropagation(); onValueEdit(valueId, val); }} title="Assign Equipment Types">
+                                                    <SettingsIcon fontSize="small" />
+                                                </IconButton>
+                                            )}
+
+                                            {valueId && (
+                                                <IconButton size="small" onClick={(e) => { e.stopPropagation(); onDeleteValue(valueId, val); }} color="error" title="Delete">
+                                                    <DeleteIcon fontSize="small" />
+                                                </IconButton>
+                                            )}
+                                        </Stack>
+                                    }
+                                >
+                                    <ListItemButton
+                                        selected={isSelected}
+                                        onClick={() => handleItemClick(val)}
+                                        sx={{ pr: 14 }}
+                                    >
+                                        <ListItemText
+                                            primary={val}
+                                            primaryTypographyProps={{
+                                                variant: "body2",
+                                                style: { wordBreak: 'break-all', whiteSpace: 'pre-wrap' }
+                                            }}
+                                        />
+                                    </ListItemButton>
+                                </ListItem>
+                            )
+                        })}
+                    </List>
+                )}
             </Paper>
 
-            <Box sx={{ mt: 2, display: 'flex', gap: 1 }}>
+            <Box sx={{ mt: 2, display: 'flex', gap: 1, alignItems: 'flex-start' }}>
                 <TextField
                     size="small"
                     placeholder="Add allowed value..."
                     value={newValue}
                     onChange={(e) => onNewValueChange(e.target.value)}
                     fullWidth
+                    multiline
+                    maxRows={4}
                     onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
+                        if (e.key === 'Enter' && !e.shiftKey) {
                             e.preventDefault()
                             onAddValue()
                         }
@@ -120,7 +163,7 @@ function ValidValuesSection({
                     onClick={onAddValue}
                     disabled={!newValue.trim() || savingAdd}
                     startIcon={savingAdd ? <CircularProgress size={20} /> : <AddIcon />}
-                    sx={{ whiteSpace: 'nowrap' }}
+                    sx={{ whiteSpace: 'nowrap', mt: 0.5 }}
                 >
                     Add
                 </Button>
