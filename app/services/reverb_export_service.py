@@ -329,6 +329,8 @@ def generate_reverb_export_csv(db: Session, model_ids: List[int]) -> tuple[io.By
     mfr_token = normalize_for_url(first_mfr.name) if first_mfr else "Unknown"
     series_token = normalize_for_url(first_series.name) if first_series else "Unknown"
     
-    filename = f"Reverb_{mfr_token}_{series_token}_{template.original_filename}.csv"
+    from datetime import datetime
+    date_str = datetime.now().strftime('%Y-%m-%d')
+    filename = f"Reverb_{mfr_token}_{series_token}_{date_str}.csv"
     
     return bytes_buffer, filename
