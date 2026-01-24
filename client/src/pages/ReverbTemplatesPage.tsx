@@ -26,8 +26,6 @@ import {
 import type { EquipmentType } from '../types'
 
 // --- Component: Valid Values Section in Modal ---
-// Fields that support Equipment Type assignment on values
-const ASSIGNABLE_FIELDS = ['description', 'product_type', 'subcategory_1']
 
 function ValidValuesSection({
     fieldName,
@@ -54,7 +52,8 @@ function ValidValuesSection({
     onAddValue: () => void,
     savingAdd: boolean
 }) {
-    const isAssignable = ASSIGNABLE_FIELDS.includes(fieldName.toLowerCase())
+    // Enable assignment/overrides for all fields
+    const isAssignable = true
 
     const handleItemClick = (val: string) => {
         const detail = valuesDetailed?.find(v => v.value === val)
@@ -269,6 +268,7 @@ function EditValueDialog({
 
                     <Autocomplete
                         multiple
+                        disableCloseOnSelect
                         options={equipmentTypes}
                         getOptionLabel={(option) => option.name}
                         value={equipmentTypes.filter(et => selectedEtIds.includes(et.id))}
