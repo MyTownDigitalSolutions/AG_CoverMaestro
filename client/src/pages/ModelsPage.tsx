@@ -517,7 +517,7 @@ function PricingDialog({ model, open, onClose }: { model: Model | null, open: bo
                     <WarningAmberIcon color="warning" />
                     <Box sx={{ flex: 1 }}>
                       <Typography variant="subtitle2" sx={{ fontWeight: 'bold', mb: 0.5 }}>
-                        Setup needed for {marketplace.charAt(0).toUpperCase() + marketplace.slice(1)}
+                        {marketplace === 'reverb' ? 'Pricing Missing for Reverb' : `Setup needed for ${marketplace.charAt(0).toUpperCase() + marketplace.slice(1)}`}
                       </Typography>
 
                       {setupErrorMessage ? (
@@ -538,7 +538,9 @@ function PricingDialog({ model, open, onClose }: { model: Model | null, open: bo
                         </>
                       ) : (
                         <Typography variant="body2" sx={{ mb: 1 }}>
-                          No pricing snapshots found for this marketplace yet.
+                          {marketplace === 'reverb'
+                            ? "No pricing snapshots found. Please click 'Recalculate Baseline' to generate pricing for Reverb."
+                            : "No pricing snapshots found for this marketplace yet."}
                         </Typography>
                       )}
 
@@ -555,14 +557,16 @@ function PricingDialog({ model, open, onClose }: { model: Model | null, open: bo
                             Recalculate again
                           </Button>
                         )}
-                        <Button
-                          size="small"
-                          variant="outlined"
-                          color="warning"
-                          onClick={() => navigate('/settings/shipping-rates')}
-                        >
-                          Go to Shipping Settings
-                        </Button>
+                        {marketplace !== 'reverb' && (
+                          <Button
+                            size="small"
+                            variant="outlined"
+                            color="warning"
+                            onClick={() => navigate('/settings/shipping-rates')}
+                          >
+                            Go to Shipping Settings
+                          </Button>
+                        )}
                       </Box>
                     </Box>
                   </Stack>

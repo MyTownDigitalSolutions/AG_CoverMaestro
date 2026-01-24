@@ -137,28 +137,31 @@ def recalculate_targeted(data: PricingRecalculateRequest, db: Session = Depends(
     # 4. Calculate
     recalculated_count = 0
     
+    marketplaces = ["amazon", "reverb", "ebay", "etsy"] # Explicit list of supported marketplaces
+
     for mid in ids_to_process:
-        try:
-             # Transaction per model
-             with db.begin_nested():
-                 # Calculate for all marketplaces
-                 PricingCalculator(db).calculate_model_prices(mid, marketplace="amazon")
-                 PricingCalculator(db).calculate_model_prices(mid, marketplace="reverb")
-                 PricingCalculator(db).calculate_model_prices(mid, marketplace="ebay")
-                 PricingCalculator(db).calculate_model_prices(mid, marketplace="etsy")
-                 
-             # Commit per model success
-             db.commit()
-             recalculated_count += 1
-        except PricingConfigError as e:
-            # Fatal config error (e.g. fixed cell missing), fail the model explicitly
-            print(f"Failed to recalc model {mid} (Config Error): {e}")
-            pass
-        except Exception as e:
-            print(f"Failed to recalc model {mid}: {e}")
-            # db.rollback() automatically handled if commit fails above?
-            # We catch exception, so loop continues.
-            pass
+        model_success = False
+        # Calculate each marketplace independently so one failure doesn't block others
+        for mp in marketplaces:
+            try:
+                with db.begin_nested():
+                    PricingCalculator(db).calculate_model_prices(mid, marketplace=mp)
+                model_success = True
+            except PricingConfigError:
+                # Log usage assumption: Config might be missing for some marketplaces, just skip
+                pass 
+            except Exception as e:
+                print(f"Failed to recalc model {mid} for {mp}: {e}")
+                pass
+        
+        if model_success:
+            # If at least one marketplace succeeded, we consider the model processed/committed
+            try:
+                db.commit()
+                recalculated_count += 1
+            except Exception as e:
+                print(f"Failed to commit model {mid}: {e}")
+                db.rollback()
 
     return PricingRecalculateResponse(
         evaluated_models=len(target_ids),

@@ -101,8 +101,10 @@ class PricingCalculator:
         fee_rate = fee_rate_obj.fee_rate
 
         shipping_profile = self._get_shipping_profile(marketplace)
-        # Reverb uses template placeholders for shipping, so profile is optional
-        if not shipping_profile and marketplace.lower() != "reverb":
+        # Reverb uses global defaults, so we explicitly ignore any profile
+        if marketplace.lower() == "reverb":
+            shipping_profile = None
+        elif not shipping_profile:
              raise ValueError(f"Shipping profile not configured for marketplace: {marketplace}")
 
         # 2. Resolve Materials (As of Now)
@@ -439,25 +441,28 @@ class PricingCalculator:
     def _get_shipping_cost_cents(self, profile: MarketplaceShippingProfile, weight_oz: float) -> int:
         defaults = self._get_shipping_defaults()
         
-        # 0. Check for Fixed Cell Mode (Assumed Matrix Cell)
-        # Fixed Cell mode works without a profile - uses assumption settings
-        if defaults.shipping_mode == "fixed_cell":
-            return self._get_fixed_cell_rate()
-        
-        # For other modes, profile is required
-        if profile is None:
-            # This shouldn't happen if shipping_mode validation is correct
-            raise ValueError("Shipping profile required for non-fixed-cell shipping calculation")
-
-        # 1. Check for Flat Mode Global Override
+        # 1. Global Flat Rate Override (Highest Priority)
         if defaults.shipping_mode == "flat":
-            return defaults.flat_shipping_cents
-            
-        # 2. Calculated Mode
-        # Determine effective zone
+             return defaults.flat_shipping_cents
+        
+        # 2. Fixed Cell Mode (Assumed Matrix Cell)
+        if defaults.shipping_mode == "fixed_cell":
+             return self._get_fixed_cell_rate()
+             
+        # 3. Calculated Mode (Profile Required)
+        # However, for Reverb (where profile is forced to None), we MUST fallback to Fixed Cell Assumption per user request.
+        # This acts as a safety default for marketplaces that don't support weight-based calculation.
+        if profile is None:
+             # Safety Fallback -> Use Global Default
+             return self._get_fixed_cell_rate()
+             
+        # 4. Standard Calculated Profile Logic
         zone = profile.pricing_zone
         if not zone and defaults.default_zone_code:
-            zone = int(defaults.default_zone_code) # Assuming profile.pricing_zone is int, and default_zone_code stored as "1" but needing int conversion if column is int
+            try:
+                zone = int(defaults.default_zone_code)
+            except ValueError:
+                pass # zone likely string code that needs mapping, dealt with below
             
         # If still no zone, we can't calculate. Existing logic implies profile.pricing_zone is required or errors.
         # But if profile was missing defaults, we fallback. 

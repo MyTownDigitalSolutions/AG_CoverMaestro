@@ -368,9 +368,15 @@ def create_model(data: ModelCreate, db: Session = Depends(get_db)):
             # Auto-recalculate pricing (Optional - only if dimensions exist)
             try:
                 print(f"[DEBUG] Calculating pricing for model ID: {model.id}")
-                # Use 'amazon' marketplace to match what "Recalculate Baseline (Amazon)" button uses
-                PricingCalculator(db).calculate_model_prices(model.id, marketplace="amazon")
-                print("[DEBUG] Pricing calculated successfully")
+                marketplaces = ["amazon", "reverb", "ebay", "etsy"]
+                for mp in marketplaces:
+                    try:
+                        with db.begin_nested():
+                            PricingCalculator(db).calculate_model_prices(model.id, marketplace=mp)
+                    except Exception as e:
+                        print(f"[PRICING] Snapshot calc failed for {mp}: {e}")
+
+                print("[DEBUG] Pricing calculated successfully for configured marketplaces")
             except Exception as e:
                 # Log but DO NOT block model creation
                 print(f"[PRICING] Warning: Pricing calculation failed: {str(e)}")
@@ -579,8 +585,13 @@ def update_model(id: int, data: ModelCreate, db: Session = Depends(get_db)):
                 print(f"[PRICING] Running baseline recalculation for model ID: {model.id}")
                 
                 try:
-                    # Use 'amazon' marketplace to match what "Recalculate Baseline (Amazon)" button uses
-                    PricingCalculator(db).calculate_model_prices(model.id, marketplace="amazon")
+                    marketplaces = ["amazon", "reverb", "ebay", "etsy"]
+                    for mp in marketplaces:
+                        try:
+                            with db.begin_nested():
+                                PricingCalculator(db).calculate_model_prices(model.id, marketplace=mp)
+                        except Exception as e:
+                            print(f"[PRICING] Snapshot calc failed for {mp}: {e}")
                     
                     # CRITICAL: Commit pricing snapshots to make them visible
                     db.commit()
