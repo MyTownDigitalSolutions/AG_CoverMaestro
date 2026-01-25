@@ -840,13 +840,21 @@ export default function EbayExportPage() {
                             const material = materials.find(m => m.id === activeAssignment?.material_id)
                             const roleConfig = roleConfigs.find(rc => rc.role === roleKey)
                             const skuPair = formatRoleSkuPair(roleConfig?.sku_abbrev_no_padding, roleConfig?.sku_abbrev_with_padding)
+                            const materialAbbrev = material?.sku_abbreviation ? material.sku_abbreviation.trim() : null
                             const selectedColors = selectedColourSurchargeIdsByRole[roleKey] || []
                             const roleColors = surchargesByRole[roleKey] || []
 
                             return (
                                 <Box key={roleKey} sx={{ mb: 1 }}>
                                     <Typography variant="body2" color="text.secondary" sx={{ pl: 2 }}>
-                                        • {roleKey} → {material?.name || 'Unknown Material'} {activeAssignment ? `(effective ${new Date(activeAssignment.effective_date).toLocaleDateString()})` : ''} — Role SKU: {skuPair}
+                                        • Role: {roleConfig?.display_name || roleKey} ({roleKey})
+                                    </Typography>
+                                    <Typography variant="body2" color="text.secondary" sx={{ pl: 4 }}>
+                                        Material: {material?.name || 'Unknown Material'}
+                                        {activeAssignment ? ` (effective ${new Date(activeAssignment.effective_date).toLocaleDateString()})` : ''}
+                                    </Typography>
+                                    <Typography variant="body2" color="text.secondary" sx={{ pl: 4 }}>
+                                        Role assignment SKU: {skuPair}
                                     </Typography>
                                     {selectedColors.length > 0 && (
                                         <Typography variant="body2" color="text.secondary" sx={{ pl: 4 }}>
@@ -854,8 +862,8 @@ export default function EbayExportPage() {
                                                 const color = roleColors.find(c => c.id === colorId)
                                                 if (!color) return `ID ${colorId}`
                                                 const name = color.color_friendly_name || color.colour
-                                                const abbrev = color.sku_abbreviation || '-'
-                                                return `${name} (${abbrev}, $${color.surcharge.toFixed(2)})`
+                                                const abbrev = color.sku_abbreviation ? color.sku_abbreviation.trim() : null
+                                                return `${name} (abbrev: ${formatAbbrev(abbrev)}, $${color.surcharge.toFixed(2)})`
                                             }).join(', ')}
                                         </Typography>
                                     )}
@@ -867,7 +875,7 @@ export default function EbayExportPage() {
                     {selectedDesignOptionIds.length > 0 && (
                         <Box>
                             <Typography variant="body2" fontWeight="bold">
-                                Design Option SKU Abbreviations:
+                                Design Option Abbreviations:
                             </Typography>
                             {selectedDesignOptionIds
                                 .map(id => designOptions.find(opt => opt.id === id))
@@ -875,7 +883,7 @@ export default function EbayExportPage() {
                                 .sort((a, b) => (a?.id || 0) - (b?.id || 0))
                                 .map(opt => (
                                     <Typography key={opt?.id} variant="body2" color="text.secondary" sx={{ pl: 2 }}>
-                                        • {opt?.name}: {formatAbbrev(opt?.sku_abbreviation)}
+                                        • {opt?.name} — Abbrev: {formatAbbrev(opt?.sku_abbreviation)}
                                     </Typography>
                                 ))}
                         </Box>
