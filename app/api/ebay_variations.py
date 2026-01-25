@@ -1,4 +1,6 @@
 from typing import List, Optional
+import re
+
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
@@ -6,7 +8,7 @@ from sqlalchemy import and_
 
 from app.database import get_db
 from app.models.core import (
-    Model, Material, MaterialColourSurcharge, DesignOption, 
+    Model, Material, MaterialColourSurcharge, DesignOption,
     PricingOption, ModelVariationSKU, MaterialRoleAssignment, MaterialRoleConfig
 )
 
@@ -31,6 +33,7 @@ class VariationRow(BaseModel):
     pricing_option_ids: List[int]
 
 
+
 class GenerateVariationsResponse(BaseModel):
     created: int
     updated: int
@@ -52,10 +55,10 @@ def get_existing_variations(
         parsed_ids = [int(id.strip()) for id in model_ids.split(',') if id.strip()]
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid model_ids format. Expected comma-separated integers.")
-    
+
     if not parsed_ids:
         return []
-    
+
     # Fetch existing variations, ordered deterministically
     variations = db.query(ModelVariationSKU).filter(
         ModelVariationSKU.model_id.in_(parsed_ids)
@@ -63,7 +66,7 @@ def get_existing_variations(
         ModelVariationSKU.model_id.asc(),
         ModelVariationSKU.sku.asc()
     ).all()
-    
+
     # Convert to response format
     rows = []
     for var in variations:
@@ -75,7 +78,7 @@ def get_existing_variations(
             design_option_ids=var.design_option_ids or [],
             pricing_option_ids=var.pricing_option_ids or []
         ))
-    
+
     return rows
 
 
@@ -86,22 +89,36 @@ def generate_variations(
 ):
     """
     Generate and persist variation SKUs for selected models and options.
-    
+
     Returns a preview of the generated SKUs and persists them to the database.
     """
-    
+
     # Normalize option IDs for determinism (sorted + deduplicated)
     design_ids = sorted(set(data.design_option_ids or []))
     pricing_ids = sorted(set(data.pricing_option_ids or []))
-    
+
     # Helper for abbreviation validation (1-3 chars)
     def _is_valid_abbrev(s):
         return bool(s and s.strip()) and 1 <= len(s.strip()) <= 3
-    
+
+    # Helper: return the base prefix up to the END of the last V# marker (e.g., "...V1")
+    # We intentionally DROP any template trailing zeros after V# for child SKU generation.
+    def _slice_to_version_prefix(base_sku: str) -> Optional[str]:
+        if not base_sku:
+            return None
+
+        # Find last occurrence of V<number> (case-insensitive), keep exact original slice
+        matches = list(re.finditer(r"V\d+", base_sku, flags=re.IGNORECASE))
+        if not matches:
+            return None
+
+        last = matches[-1]
+        return base_sku[:last.end()]
+
     # Resolve material_id from role_key if provided
     resolved_material_id = data.material_id
     role_config = None
-    
+
     if data.role_key:
         # Find active assignment for this role
         active_assignment = db.query(MaterialRoleAssignment).filter(
@@ -110,45 +127,45 @@ def generate_variations(
                 MaterialRoleAssignment.end_date.is_(None)
             )
         ).first()
-        
+
         if not active_assignment:
             raise HTTPException(
-                status_code=400, 
+                status_code=400,
                 detail=f"No active assignment found for role '{data.role_key}'"
             )
-        
+
         resolved_material_id = active_assignment.material_id
-        
+
         # Load role config for abbreviations
         role_config = db.query(MaterialRoleConfig).filter(
             MaterialRoleConfig.role == data.role_key
         ).first()
-        
+
         if not role_config:
             raise HTTPException(
                 status_code=400,
                 detail=f"No role config found for role '{data.role_key}'"
             )
-    
+
     # Ensure we have a material_id (either from role resolution or direct input)
     if not resolved_material_id:
         raise HTTPException(
             status_code=400,
             detail="Either 'material_id' or 'role_key' must be provided"
         )
-    
+
     # Validation: Track invalid IDs
     error_detail = {"message": "Invalid/missing abbreviations"}
     has_errors = False
-    
+
     # Validate material
     material = db.query(Material).filter(Material.id == resolved_material_id).first()
     if not material:
         raise HTTPException(status_code=400, detail=f"Material {resolved_material_id} not found")
-    
-    # Decide which abbreviation source to use
+
+    # Decide which abbreviation source to use (role config is authoritative when present)
     if role_config:
-        # Use role config abbreviations (no-padding for now, with-padding if needed)
+        # Use role config abbreviations (no-padding for now, with-padding if needed later)
         material_abbrev = role_config.sku_abbrev_no_padding
         if not _is_valid_abbrev(material_abbrev):
             error_detail["missing_role_config_abbrev_no_padding"] = data.role_key
@@ -159,7 +176,7 @@ def generate_variations(
         if not _is_valid_abbrev(material_abbrev):
             error_detail["invalid_material_id"] = resolved_material_id
             has_errors = True
-    
+
     # Validate color if provided
     material_surcharge = None
     if data.material_colour_surcharge_id:
@@ -168,11 +185,11 @@ def generate_variations(
         ).first()
         if not material_surcharge:
             raise HTTPException(status_code=400, detail=f"Material colour surcharge {data.material_colour_surcharge_id} not found")
-        
+
         if not _is_valid_abbrev(material_surcharge.sku_abbreviation):
             error_detail["invalid_color_id"] = data.material_colour_surcharge_id
             has_errors = True
-    
+
     # Validate design options (using normalized IDs)
     design_options = []
     invalid_design_ids = []
@@ -180,20 +197,20 @@ def generate_variations(
         design_options = db.query(DesignOption).filter(
             DesignOption.id.in_(design_ids)
         ).all()
-        
+
         if len(design_options) != len(design_ids):
             found_ids = {opt.id for opt in design_options}
             missing_ids = set(design_ids) - found_ids
             raise HTTPException(status_code=400, detail=f"Design options not found: {list(missing_ids)}")
-        
+
         for opt in design_options:
             if not _is_valid_abbrev(opt.sku_abbreviation):
                 invalid_design_ids.append(opt.id)
-        
+
         if invalid_design_ids:
             error_detail["invalid_design_option_ids"] = invalid_design_ids
             has_errors = True
-    
+
     # Validate pricing options (using normalized IDs)
     pricing_options = []
     invalid_pricing_ids = []
@@ -201,60 +218,71 @@ def generate_variations(
         pricing_options = db.query(PricingOption).filter(
             PricingOption.id.in_(pricing_ids)
         ).all()
-        
+
         if len(pricing_options) != len(pricing_ids):
             found_ids = {opt.id for opt in pricing_options}
             missing_ids = set(pricing_ids) - found_ids
             raise HTTPException(status_code=400, detail=f"Pricing options not found: {list(missing_ids)}")
-        
+
         for opt in pricing_options:
             if not _is_valid_abbrev(opt.sku_abbreviation):
                 invalid_pricing_ids.append(opt.id)
-        
+
         if invalid_pricing_ids:
             error_detail["invalid_pricing_option_ids"] = invalid_pricing_ids
             has_errors = True
-    
+
     # If validation errors found, return structured 400
     if has_errors:
         raise HTTPException(status_code=400, detail=error_detail)
-    
+
     # Fetch models
     models = db.query(Model).filter(Model.id.in_(data.model_ids)).all()
     if len(models) != len(data.model_ids):
         found_ids = {m.id for m in models}
         missing_ids = set(data.model_ids) - found_ids
         raise HTTPException(status_code=400, detail=f"Models not found: {list(missing_ids)}")
-    
+
     # Generate SKUs and upsert
     created_count = 0
     updated_count = 0
     rows = []
-    
-    # Sort design and pricing options by ID for deterministic order (already sorted from normalized IDs)
-    sorted_design_opts = sorted(design_options, key=lambda x: x.id)
-    sorted_pricing_opts = sorted(pricing_options, key=lambda x: x.id)
-    
+
+    # Deterministic ordering:
+    # - Design options: alpha by name (case-insensitive), then by ID
+    # - Pricing options: alpha by name (case-insensitive), then by ID
+    sorted_design_opts = sorted(design_options, key=lambda x: ((x.name or "").lower(), x.id))
+    sorted_pricing_opts = sorted(pricing_options, key=lambda x: ((x.name or "").lower(), x.id))
+
     for model in models:
-        # Build deterministic SKU
-        # Base: use model's base_sku if it exists, otherwise MODEL-{id}
-        base_sku = getattr(model, 'base_sku', None) or getattr(model, 'sku', None) or f"MODEL-{model.id}"
-        
-        # Build SKU tokens in order
-        sku_parts = [base_sku]
-        sku_parts.append(f"M{material_abbrev}")
-        
-        if material_surcharge and material_surcharge.sku_abbreviation:
-            sku_parts.append(f"C{material_surcharge.sku_abbreviation}")
-        
-        for opt in sorted_design_opts:
-            sku_parts.append(f"D{opt.sku_abbreviation}")
-        
-        for opt in sorted_pricing_opts:
-            sku_parts.append(f"P{opt.sku_abbreviation}")
-        
-        final_sku = "-".join(sku_parts)
-        
+        # Base: use SKU override if present, else generated parent SKU, else fallback
+        base_sku = (model.sku_override or model.parent_sku or f"MODEL-{model.id}")
+
+        # Slice base SKU to the end of the last V# marker (drops template trailing zeros)
+        version_prefix = _slice_to_version_prefix(base_sku)
+
+        # Compose suffix (NO separators, NO trailing zeros)
+        color_abbrev = material_surcharge.sku_abbreviation if (material_surcharge and material_surcharge.sku_abbreviation) else ""
+        design_suffix = "".join([opt.sku_abbreviation.strip() for opt in sorted_design_opts]) if sorted_design_opts else ""
+        pricing_suffix = "".join([opt.sku_abbreviation.strip() for opt in sorted_pricing_opts]) if sorted_pricing_opts else ""
+
+        composed_suffix = f"{material_abbrev.strip()}{color_abbrev.strip()}{design_suffix}{pricing_suffix}"
+
+        if version_prefix:
+            # Slot/suffix-based SKU: prefix includes V#, then abbreviations directly
+            final_sku = f"{version_prefix}{composed_suffix}"
+        else:
+            # Fallback for unexpected base SKUs without V# marker:
+            # Preserve the previous tokenized behavior to avoid breaking exports.
+            sku_parts = [base_sku, f"M{material_abbrev}"]
+            if color_abbrev:
+                sku_parts.append(f"C{color_abbrev}")
+            for opt in sorted_design_opts:
+                sku_parts.append(f"D{opt.sku_abbreviation}")
+            for opt in sorted_pricing_opts:
+                sku_parts.append(f"P{opt.sku_abbreviation}")
+            final_sku = "-".join(sku_parts)
+
         # Check if variation already exists (using normalized IDs)
         existing = db.query(ModelVariationSKU).filter(
             and_(
@@ -265,13 +293,11 @@ def generate_variations(
                 ModelVariationSKU.pricing_option_ids == pricing_ids
             )
         ).first()
-        
+
         if existing:
-            # Update
             existing.sku = final_sku
             updated_count += 1
         else:
-            # Insert (using normalized IDs)
             new_variation = ModelVariationSKU(
                 model_id=model.id,
                 sku=final_sku,
@@ -284,8 +310,7 @@ def generate_variations(
             )
             db.add(new_variation)
             created_count += 1
-        
-        # Add to response rows (using normalized IDs)
+
         rows.append(VariationRow(
             model_id=model.id,
             sku=final_sku,
@@ -294,10 +319,9 @@ def generate_variations(
             design_option_ids=design_ids,
             pricing_option_ids=pricing_ids
         ))
-    
-    # Commit changes
+
     db.commit()
-    
+
     return GenerateVariationsResponse(
         created=created_count,
         updated=updated_count,
