@@ -20,7 +20,7 @@ import AmazonTemplatesPage from './pages/AmazonTemplatesPage'
 import EbayTemplatesPage from './pages/EbayTemplatesPage'
 import ReverbTemplatesPage from './pages/ReverbTemplatesPage'
 import EtsyTemplatesPage from './pages/EtsyTemplatesPage'
-import AmazonExportPage from './pages/ExportPage' // Amazon Export (keeping existing file)
+import AmazonExportPage from './pages/AmazonExportPage' // Amazon Export (keeping existing file)
 import EbayExportPage from './pages/EbayExportPage'
 import ReverbExportPage from './pages/ReverbExportPage'
 import EtsyExportPage from './pages/EtsyExportPage'

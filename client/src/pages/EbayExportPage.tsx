@@ -1,22 +1,34 @@
 import { useEffect, useState, useMemo } from 'react'
 import {
-    Box, Typography, Paper, Button, Grid, FormControl, InputLabel, Select, MenuItem, CircularProgress, Alert, Chip
+    Box, Typography, Paper, Button, Grid, FormControl, InputLabel, Select, MenuItem, CircularProgress, Alert, Chip,
+    Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Checkbox, CheckboxProps
 } from '@mui/material'
 import RefreshIcon from '@mui/icons-material/Refresh'
-import { manufacturersApi, seriesApi, modelsApi, pricingApi, materialsApi, designOptionsApi, settingsApi, ebayVariationsApi, type GenerateVariationsResponse, type VariationRow } from '../services/api'
-import type { Manufacturer, Series, Model, Material, MaterialColourSurcharge, DesignOption, MaterialRoleAssignment, MaterialRoleConfig } from '../types'
+import {
+    manufacturersApi, seriesApi, modelsApi, pricingApi, materialsApi, designOptionsApi,
+    settingsApi, ebayVariationsApi, equipmentTypesApi,
+    type GenerateVariationsResponse, type VariationRow
+} from '../services/api'
+import type {
+    Manufacturer, Series, Model, Material, MaterialColourSurcharge, DesignOption,
+    MaterialRoleAssignment, MaterialRoleConfig, EquipmentType
+} from '../types'
 
 // Sentinel value for "All Series"
 const ALL_SERIES_VALUE = '__ALL_SERIES__'
+// Sentinel value for "Multi Series" mode (internal state usage)
+const MULTI_SERIES_VALUE = '__MULTI__'
 
 export default function EbayExportPage() {
     const [manufacturers, setManufacturers] = useState<Manufacturer[]>([])
     const [allSeries, setAllSeries] = useState<Series[]>([])
     const [allModels, setAllModels] = useState<Model[]>([])
+    const [equipmentTypes, setEquipmentTypes] = useState<EquipmentType[]>([])
 
     const [selectedManufacturer, setSelectedManufacturer] = useState<number | ''>('')
-    const [selectedSeries, setSelectedSeries] = useState<number | ''>('')
+    // selectedSeries (single) is deprecated for filtering, using multi-select ids instead
     const [selectedSeriesValue, setSelectedSeriesValue] = useState<string>(ALL_SERIES_VALUE)
+    const [selectedSeriesIds, setSelectedSeriesIds] = useState<number[]>([])
     const [selectedModels, setSelectedModels] = useState<Set<number>>(new Set())
 
     const [loading, setLoading] = useState(true)
@@ -56,31 +68,29 @@ export default function EbayExportPage() {
                 materialsApi.list(),
                 designOptionsApi.list(),
                 settingsApi.listMaterialRoles(false), // Get active roles only
-                settingsApi.listMaterialRoleConfigs()
+                settingsApi.listMaterialRoleConfigs(),
+                equipmentTypesApi.list()
             ])
 
-            // Extract successful results
-            const [mfrs, series, models, mats, opts, roles, configs] = results.map((result, idx) => {
-                if (result.status === 'fulfilled') {
-                    return result.value
-                } else {
-                    console.error(`Failed to load data at index ${idx}:`, result.reason)
-                    return idx === 6 ? [] : (idx === 5 ? [] : []) // Return empty arrays for role configs and roles if they fail
+            // Helper to safely extract results
+            const getResult = <T>(index: number, defaultValue: T): T => {
+                const res = results[index]
+                if (res.status === 'fulfilled') {
+                    return res.value as T
                 }
-            })
-
-            setManufacturers(mfrs)
-            setAllSeries(series)
-            setAllModels(models)
-            setMaterials(mats)
-            setDesignOptions(opts)
-            setMaterialRoles(roles)
-            setRoleConfigs(configs)
-
-            // Show warning if role configs failed to load
-            if (results[6].status === 'rejected') {
-                console.warn('Role configs failed to load. Role-based material selection may not work.')
+                console.error(`Failed to load data at index ${index}:`, res.reason)
+                return defaultValue
             }
+
+            setManufacturers(getResult<Manufacturer[]>(0, []))
+            setAllSeries(getResult<Series[]>(1, []))
+            setAllModels(getResult<Model[]>(2, []))
+            setMaterials(getResult<Material[]>(3, []))
+            setDesignOptions(getResult<DesignOption[]>(4, []))
+            setMaterialRoles(getResult<MaterialRoleAssignment[]>(5, []))
+            setRoleConfigs(getResult<MaterialRoleConfig[]>(6, []))
+            setEquipmentTypes(getResult<EquipmentType[]>(7, []))
+
         } catch (err: any) {
             setError(err.message || 'Failed to load data')
         } finally {
@@ -88,40 +98,54 @@ export default function EbayExportPage() {
         }
     }
 
-    // Auto-select all models when "All Series" is selected
-    useEffect(() => {
-        if (selectedSeriesValue === ALL_SERIES_VALUE && selectedManufacturer && allModels.length > 0) {
-            const manufacturerModels = allModels.filter(m => {
-                const series = allSeries.find(s => s.id === m.series_id)
-                return series?.manufacturer_id === selectedManufacturer
-            })
-            setSelectedModels(new Set(manufacturerModels.map(m => m.id)))
-        }
-    }, [selectedSeriesValue, selectedManufacturer, allModels, allSeries])
+    // Sorted Manufacturers
+    const sortedManufacturers = useMemo(() => {
+        return [...manufacturers].sort((a, b) => 
+            a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' })
+        )
+    }, [manufacturers])
 
-    // Filtered series based on manufacturer
-    const filteredSeries = useMemo(() => {
+    // Filtered and Sorted Series based on manufacturer
+    const sortedFilteredSeries = useMemo(() => {
         if (!selectedManufacturer) return []
-        return allSeries.filter(s => s.manufacturer_id === selectedManufacturer)
+        return allSeries
+            .filter(s => s.manufacturer_id === selectedManufacturer)
+            .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }))
     }, [selectedManufacturer, allSeries])
 
-    // Filtered models based on manufacturer and series
+    // Filtered models based on manufacturer and series selection
     const filteredModels = useMemo(() => {
+        if (!selectedManufacturer) return []
+
         let models = allModels
 
-        if (selectedManufacturer) {
-            const manufacturerSeriesIds = allSeries
-                .filter(s => s.manufacturer_id === selectedManufacturer)
-                .map(s => s.id)
-            models = models.filter(m => manufacturerSeriesIds.includes(m.series_id))
-        }
+        // Filter by manufacturer objects first
+        const manufacturerSeriesIds = allSeries
+            .filter(s => s.manufacturer_id === selectedManufacturer)
+            .map(s => s.id)
+        models = models.filter(m => manufacturerSeriesIds.includes(m.series_id))
 
-        if (selectedSeries) {
-            models = models.filter(m => m.series_id === selectedSeries)
+        // Filter by series selection
+        if (selectedSeriesValue !== ALL_SERIES_VALUE && selectedSeriesIds.length > 0) {
+            models = models.filter(m => selectedSeriesIds.includes(m.series_id))
         }
 
         return models
-    }, [selectedManufacturer, selectedSeries, allModels, allSeries])
+    }, [selectedManufacturer, selectedSeriesValue, selectedSeriesIds, allModels, allSeries])
+
+    // Auto-select all models when filtered list changes
+    useEffect(() => {
+        if (!selectedManufacturer) {
+            setSelectedModels(new Set())
+            return
+        }
+
+        if (filteredModels.length > 0) {
+            setSelectedModels(new Set(filteredModels.map(m => m.id)))
+        } else {
+            setSelectedModels(new Set())
+        }
+    }, [filteredModels, selectedManufacturer])
 
     // Selectable roles (ebay_variation_enabled = true)
     const selectableRoles = useMemo(() => {
@@ -134,16 +158,6 @@ export default function EbayExportPage() {
             mr.role === roleKey &&
             (mr.end_date === null || mr.end_date === undefined || new Date(mr.end_date) > new Date())
         )
-    }
-
-    // Helper to get colors for a specific role
-    const getColorsForRole = (roleKey: string): MaterialColourSurcharge[] => {
-        const assignment = resolveActiveAssignmentForRole(roleKey)
-        if (!assignment?.material_id) return []
-
-        // For this role, we need to fetch surcharges for its material
-        // Since we can't call hooks conditionally, we'll store all surcharges in a map
-        return []  // Will be populated via useEffect below
     }
 
     // Load surcharges for all selected roles
@@ -266,7 +280,7 @@ export default function EbayExportPage() {
     // Handle load existing variations
     const handleLoadExisting = async () => {
         if (selectedModels.size === 0) return
-
+        
         setLoadingExisting(true)
         setExistingVariations([])
 
@@ -330,7 +344,7 @@ export default function EbayExportPage() {
         } catch (err: any) {
             // Handle structured error detail from backend
             const detail = err.response?.data?.detail
-
+            
             if (typeof detail === 'object' && detail !== null) {
                 // Structured error with invalid IDs
                 let errorMsg = detail.message || 'Validation failed'
@@ -406,13 +420,14 @@ export default function EbayExportPage() {
                                 label="Manufacturer"
                                 onChange={(e) => {
                                     setSelectedManufacturer(e.target.value as number | '')
-                                    setSelectedSeries('')
+                                    // Reset series state
                                     setSelectedSeriesValue(ALL_SERIES_VALUE)
+                                    setSelectedSeriesIds([])
                                     setSelectedModels(new Set())
                                 }}
                             >
                                 <MenuItem value="">All Manufacturers</MenuItem>
-                                {manufacturers.map(m => (
+                                {sortedManufacturers.map(m => (
                                     <MenuItem key={m.id} value={m.id}>{m.name}</MenuItem>
                                 ))}
                             </Select>
@@ -423,30 +438,58 @@ export default function EbayExportPage() {
                         <FormControl fullWidth size="small">
                             <InputLabel>Series</InputLabel>
                             <Select
-                                value={selectedSeriesValue}
+                                multiple
+                                value={selectedSeriesValue === ALL_SERIES_VALUE ? [ALL_SERIES_VALUE] : selectedSeriesIds.map(String)}
                                 label="Series"
                                 onChange={(e) => {
-                                    const newValue = e.target.value
-                                    setSelectedSeriesValue(newValue)
+                                    const valuev = e.target.value
+                                    // Handle array return from multiple select
+                                    const values = typeof valuev === 'string' ? valuev.split(',') : valuev as string[]
+                                    
+                                    // Check if "All Series" was just selected (it will be the last element if recently clicked while others were selected)
+                                    const lastSelected = values[values.length - 1]
+                                    
+                                    if (lastSelected === ALL_SERIES_VALUE) {
+                                        setSelectedSeriesValue(ALL_SERIES_VALUE)
+                                        setSelectedSeriesIds([])
+                                        return
+                                    }
 
-                                    if (newValue === ALL_SERIES_VALUE) {
-                                        setSelectedSeries('')
-                                        const manufacturerModels = allModels.filter(m => {
-                                            const series = allSeries.find(s => s.id === m.series_id)
-                                            return series?.manufacturer_id === selectedManufacturer
-                                        })
-                                        setSelectedModels(new Set(manufacturerModels.map(m => m.id)))
+                                    // Filter out ALL_SERIES_VALUE if mixed with others
+                                    const validIds = values
+                                        .filter(v => v !== ALL_SERIES_VALUE)
+                                        .map(v => Number(v))
+                                    
+                                    if (validIds.length === 0) {
+                                        // Revert to All Series if empty
+                                        setSelectedSeriesValue(ALL_SERIES_VALUE)
+                                        setSelectedSeriesIds([])
                                     } else {
-                                        const newSeriesId = Number(newValue)
-                                        setSelectedSeries(newSeriesId)
-                                        const modelsInSeries = allModels.filter(m => m.series_id === newSeriesId)
-                                        setSelectedModels(new Set(modelsInSeries.map(m => m.id)))
+                                        setSelectedSeriesValue(MULTI_SERIES_VALUE)
+                                        setSelectedSeriesIds(validIds)
                                     }
                                 }}
                                 disabled={!selectedManufacturer}
+                                renderValue={(selected) => {
+                                    if (selected.includes(ALL_SERIES_VALUE)) {
+                                        return (
+                                            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                                                <Chip label="All Series" size="small" />
+                                            </Box>
+                                        )
+                                    }
+                                    return (
+                                        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                                            {selected.map((idStr) => {
+                                                const s = allSeries.find(ser => ser.id === Number(idStr))
+                                                return <Chip key={idStr} label={s?.name || idStr} size="small" />
+                                            })}
+                                        </Box>
+                                    )
+                                }}
                             >
                                 <MenuItem value={ALL_SERIES_VALUE}>All Series</MenuItem>
-                                {filteredSeries.map(s => (
+                                {sortedFilteredSeries.map(s => (
                                     <MenuItem key={s.id} value={String(s.id)}>{s.name}</MenuItem>
                                 ))}
                             </Select>
@@ -455,7 +498,7 @@ export default function EbayExportPage() {
 
                     <Grid item xs={12} md={4}>
                         <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-                            {selectedModels.size} models selected
+                            {selectedManufacturer ? `${selectedModels.size} models selected` : '0 models selected'}
                         </Typography>
                     </Grid>
                 </Grid>
@@ -468,6 +511,106 @@ export default function EbayExportPage() {
                 >
                     {recalculating ? 'Recalculating...' : 'Recalc Prices'}
                 </Button>
+            </Paper>
+
+            {/* Models to Export Section */}
+            <Paper sx={{ p: 3, mt: 3 }}>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+                    <Typography variant="h6">Models to Export</Typography>
+                    {selectedManufacturer && (
+                        <Typography variant="body2" color="text.secondary">
+                            Showing {filteredModels.length} models • {selectedModels.size} selected
+                        </Typography>
+                    )}
+                </Box>
+                
+                {!selectedManufacturer ? (
+                    <Alert severity="info">Select a manufacturer to view models.</Alert>
+                ) : (
+                    <TableContainer sx={{ maxHeight: 400 }}>
+                        <Table stickyHeader size="small">
+                            <TableHead>
+                                <TableRow>
+                                    <TableCell padding="checkbox">
+                                        <Checkbox
+                                            indeterminate={selectedModels.size > 0 && selectedModels.size < filteredModels.length}
+                                            checked={filteredModels.length > 0 && selectedModels.size === filteredModels.length}
+                                            onChange={() => {
+                                                if (selectedModels.size === filteredModels.length && filteredModels.length > 0) {
+                                                    setSelectedModels(new Set())
+                                                } else {
+                                                    setSelectedModels(new Set(filteredModels.map(m => m.id)))
+                                                }
+                                            }}
+                                            disabled={filteredModels.length === 0}
+                                        />
+                                    </TableCell>
+                                    <TableCell>Model Name</TableCell>
+                                    <TableCell>Series</TableCell>
+                                    <TableCell>Dimensions (W x D x H)</TableCell>
+                                    <TableCell>Equipment Type</TableCell>
+                                </TableRow>
+                            </TableHead>
+                            <TableBody>
+                                {filteredModels.length === 0 ? (
+                                    <TableRow>
+                                        <TableCell colSpan={5} align="center" sx={{ py: 3 }}>
+                                            <Typography variant="body2" color="text.secondary">
+                                                No models found matching the filters.
+                                            </Typography>
+                                        </TableCell>
+                                    </TableRow>
+                                ) : (
+                                    filteredModels.map((model) => {
+                                        const isSelected = selectedModels.has(model.id)
+                                        const series = allSeries.find(s => s.id === model.series_id)
+                                        const eqType = equipmentTypes.find(et => et.id === model.equipment_type_id)
+
+                                        return (
+                                            <TableRow 
+                                                key={model.id} 
+                                                hover
+                                                selected={isSelected}
+                                                onClick={(e) => {
+                                                    // Allow row click to toggle selection, unless clicking checkbox directly (handled by its own onChange)
+                                                    // Just purely logical toggle for simplicity here
+                                                    const newSelected = new Set(selectedModels)
+                                                    if (newSelected.has(model.id)) {
+                                                        newSelected.delete(model.id)
+                                                    } else {
+                                                        newSelected.add(model.id)
+                                                    }
+                                                    setSelectedModels(newSelected)
+                                                }}
+                                                sx={{ cursor: 'pointer' }}
+                                            >
+                                                <TableCell padding="checkbox">
+                                                    <Checkbox
+                                                        checked={isSelected}
+                                                        onChange={(e) => {
+                                                            e.stopPropagation() // Prevent row click double-toggle
+                                                            const newSelected = new Set(selectedModels)
+                                                            if (newSelected.has(model.id)) {
+                                                                newSelected.delete(model.id)
+                                                            } else {
+                                                                newSelected.add(model.id)
+                                                            }
+                                                            setSelectedModels(newSelected)
+                                                        }}
+                                                    />
+                                                </TableCell>
+                                                <TableCell>{model.name}</TableCell>
+                                                <TableCell>{series?.name || '-'}</TableCell>
+                                                <TableCell>{`${model.width || '-'} " x ${model.depth || '-'} " x ${model.height || '-'} "`}</TableCell>
+                                                <TableCell>{eqType?.name || '-'}</TableCell>
+                                            </TableRow>
+                                        )
+                                    })
+                                )}
+                            </TableBody>
+                        </Table>
+                    </TableContainer>
+                )}
             </Paper>
 
             {/* Variation Inputs Section */}
