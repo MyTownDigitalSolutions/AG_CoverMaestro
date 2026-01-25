@@ -2025,7 +2025,21 @@ export default function ModelsPage() {
                     />
                   </TableCell>
                 )}
-                <TableCell>{model.name}</TableCell>
+                <TableCell>
+                  <Stack spacing={0.25}>
+                    {model.name}
+                    {/* Amazon ASIN */}
+                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block', lineHeight: 1.2 }}>
+                      Amazon: {model.marketplace_listings?.find(l => l.marketplace === 'amazon')?.external_id || '-'}
+                    </Typography>
+                    {/* A+ Content Status */}
+                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block', lineHeight: 1.2 }}>
+                      Brand Story: {model.amazon_a_plus_content?.find(c => c.content_type === 'BRAND_STORY')?.is_uploaded ? 'Yes' : 'No'}
+                      {' • '}
+                      EBC: {model.amazon_a_plus_content?.find(c => c.content_type === 'EBC')?.is_uploaded ? 'Yes' : 'No'}
+                    </Typography>
+                  </Stack>
+                </TableCell>
                 {isBulkEditMode && <TableCell>{series.find(s => s.id === model.series_id)?.name || 'Unknown'}</TableCell>}
 
                 {isBulkEditMode && selectedBulkColumns.has('amazon_asin') && (
@@ -2276,9 +2290,50 @@ export default function ModelsPage() {
 
                 {!isBulkEditMode && (
                   <>
-                    <TableCell>{series.find(s => s.id === model.series_id)?.name || 'Unknown'}</TableCell>
-                    <TableCell>{manufacturers.find(m => m.id === series.find(s => s.id === model.series_id)?.manufacturer_id)?.name || 'Unknown'}</TableCell>
-                    <TableCell>{`${model.width}" x ${model.depth}" x ${model.height}"`}</TableCell>
+                    <TableCell>
+                      <Stack spacing={0.25}>
+                        {series.find(s => s.id === model.series_id)?.name || 'Unknown'}
+                        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', lineHeight: 1.2 }}>
+                          eBay: {model.marketplace_listings?.find(l => l.marketplace === 'ebay')?.external_id || '—'}
+                        </Typography>
+                        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', lineHeight: 1.2 }}>
+                          Reverb: {model.marketplace_listings?.find(l => l.marketplace === 'reverb')?.external_id || '—'}
+                        </Typography>
+                      </Stack>
+                    </TableCell>
+                    <TableCell>
+                      <Stack spacing={0.25}>
+                        {manufacturers.find(m => m.id === series.find(s => s.id === model.series_id)?.manufacturer_id)?.name || 'Unknown'}
+                        {(() => {
+                          const etName = equipmentTypes.find(et => et.id === model.equipment_type_id)?.name;
+                          return etName ? (
+                            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', lineHeight: 1.2 }}>
+                              {etName}
+                            </Typography>
+                          ) : null;
+                        })()}
+                      </Stack>
+                    </TableCell>
+                    <TableCell>
+                      <Stack spacing={0.25}>
+                        {`${model.width}" x ${model.depth}" x ${model.height}"`}
+                        {(() => {
+                          const excluded: string[] = []
+                          if (model.exclude_from_amazon_export) excluded.push('Amazon')
+                          if (model.exclude_from_ebay_export) excluded.push('eBay')
+                          if (model.exclude_from_reverb_export) excluded.push('Reverb')
+                          if (model.exclude_from_etsy_export) excluded.push('Etsy')
+                          if (excluded.length > 0) {
+                            return (
+                              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', lineHeight: 1.2 }}>
+                                Excluded: {excluded.join(', ')}
+                              </Typography>
+                            )
+                          }
+                          return null
+                        })()}
+                      </Stack>
+                    </TableCell>
                   </>
                 )}
 
