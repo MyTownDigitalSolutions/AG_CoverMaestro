@@ -120,7 +120,17 @@ export default function ExportPage() {
     sku: false,
     manufacturer: false,
     series: false,
-    model: false
+    model: false,
+    equipment_type: false
+  })
+  const [includeHeaders, setIncludeHeaders] = useState(false)
+  const [quickCsvHeaders, setQuickCsvHeaders] = useState({
+    asin: 'ASIN',
+    sku: 'SKU',
+    manufacturer: 'Manufacturer Name',
+    series: 'Series Name',
+    model: 'Model Name',
+    equipment_type: 'Equipment Type'
   })
 
   // Computed Status Logic (Phase 4 - Chunk 3)
@@ -1032,11 +1042,30 @@ export default function ExportPage() {
     if (quickCsvFields.manufacturer) fields.push('Manufacturer')
     if (quickCsvFields.series) fields.push('Series')
     if (quickCsvFields.model) fields.push('Model')
+    if (quickCsvFields.equipment_type) fields.push('Equipment Type')
 
     if (fields.length === 0 || selectedModels.size === 0) return
 
     const lines: string[] = []
-    // NO Header Row
+    // Header Row
+    if (includeHeaders) {
+      const headerRow: string[] = []
+      if (quickCsvFields.asin) headerRow.push(quickCsvHeaders.asin)
+      if (quickCsvFields.sku) headerRow.push(quickCsvHeaders.sku)
+      if (quickCsvFields.manufacturer) headerRow.push(quickCsvHeaders.manufacturer)
+      if (quickCsvFields.series) headerRow.push(quickCsvHeaders.series)
+      if (quickCsvFields.model) headerRow.push(quickCsvHeaders.model)
+      if (quickCsvFields.equipment_type) headerRow.push(quickCsvHeaders.equipment_type)
+
+      const escapedHeader = headerRow.map(val => {
+        const s = String(val || '')
+        if (s.includes('"') || s.includes(',') || s.includes('\n') || s.includes('\r')) {
+          return `"${s.replace(/"/g, '""')}"`
+        }
+        return s
+      })
+      lines.push(escapedHeader.join(','))
+    }
 
     const modelsToExport = filteredModels.filter(m => selectedModels.has(m.id))
 
@@ -1061,6 +1090,10 @@ export default function ExportPage() {
       }
       if (quickCsvFields.model) {
         row.push(m.name)
+      }
+      if (quickCsvFields.equipment_type) {
+        const et = allEquipmentTypes.find(e => e.id === m.equipment_type_id)
+        row.push(et?.name || '')
       }
 
       const escapedRow = row.map(val => {
@@ -1655,14 +1688,83 @@ export default function ExportPage() {
 
         {/* Quick CSV Export */}
         <Box sx={{ mt: 4, pt: 2, borderTop: '1px solid #eee' }}>
-          <Typography variant="subtitle2" gutterBottom>Quick CSV Export (No Header)</Typography>
-          <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap', alignItems: 'center' }}>
-            <FormControlLabel control={<Checkbox checked={quickCsvFields.asin} onChange={(e) => setQuickCsvFields({ ...quickCsvFields, asin: e.target.checked })} />} label="ASIN" />
-            <FormControlLabel control={<Checkbox checked={quickCsvFields.sku} onChange={(e) => setQuickCsvFields({ ...quickCsvFields, sku: e.target.checked })} />} label="SKU" />
-            <FormControlLabel control={<Checkbox checked={quickCsvFields.manufacturer} onChange={(e) => setQuickCsvFields({ ...quickCsvFields, manufacturer: e.target.checked })} />} label="Manufacturer" />
-            <FormControlLabel control={<Checkbox checked={quickCsvFields.series} onChange={(e) => setQuickCsvFields({ ...quickCsvFields, series: e.target.checked })} />} label="Series" />
-            <FormControlLabel control={<Checkbox checked={quickCsvFields.model} onChange={(e) => setQuickCsvFields({ ...quickCsvFields, model: e.target.checked })} />} label="Model" />
+          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
+            <Typography variant="subtitle2">Quick CSV Export</Typography>
+            <FormControlLabel
+              control={<Switch checked={includeHeaders} onChange={(e) => setIncludeHeaders(e.target.checked)} size="small" />}
+              label="Include Headers"
+            />
+          </Box>
+          <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 2, alignItems: 'start' }}>
+            {/* ASIN */}
+            <Box sx={{ display: 'flex', flexDirection: 'column' }}>
+              <FormControlLabel control={<Checkbox checked={quickCsvFields.asin} onChange={(e) => setQuickCsvFields({ ...quickCsvFields, asin: e.target.checked })} />} label="ASIN" />
+              <TextField
+                size="small"
+                value={quickCsvHeaders.asin}
+                onChange={(e) => setQuickCsvHeaders({ ...quickCsvHeaders, asin: e.target.value })}
+                disabled={!includeHeaders}
+                sx={{ mt: 0.5 }}
+              />
+            </Box>
+            {/* SKU */}
+            <Box sx={{ display: 'flex', flexDirection: 'column' }}>
+              <FormControlLabel control={<Checkbox checked={quickCsvFields.sku} onChange={(e) => setQuickCsvFields({ ...quickCsvFields, sku: e.target.checked })} />} label="SKU" />
+              <TextField
+                size="small"
+                value={quickCsvHeaders.sku}
+                onChange={(e) => setQuickCsvHeaders({ ...quickCsvHeaders, sku: e.target.value })}
+                disabled={!includeHeaders}
+                sx={{ mt: 0.5 }}
+              />
+            </Box>
+            {/* Manufacturer */}
+            <Box sx={{ display: 'flex', flexDirection: 'column' }}>
+              <FormControlLabel control={<Checkbox checked={quickCsvFields.manufacturer} onChange={(e) => setQuickCsvFields({ ...quickCsvFields, manufacturer: e.target.checked })} />} label="Manufacturer" />
+              <TextField
+                size="small"
+                value={quickCsvHeaders.manufacturer}
+                onChange={(e) => setQuickCsvHeaders({ ...quickCsvHeaders, manufacturer: e.target.value })}
+                disabled={!includeHeaders}
+                sx={{ mt: 0.5 }}
+              />
+            </Box>
+            {/* Series */}
+            <Box sx={{ display: 'flex', flexDirection: 'column' }}>
+              <FormControlLabel control={<Checkbox checked={quickCsvFields.series} onChange={(e) => setQuickCsvFields({ ...quickCsvFields, series: e.target.checked })} />} label="Series" />
+              <TextField
+                size="small"
+                value={quickCsvHeaders.series}
+                onChange={(e) => setQuickCsvHeaders({ ...quickCsvHeaders, series: e.target.value })}
+                disabled={!includeHeaders}
+                sx={{ mt: 0.5 }}
+              />
+            </Box>
+            {/* Model */}
+            <Box sx={{ display: 'flex', flexDirection: 'column' }}>
+              <FormControlLabel control={<Checkbox checked={quickCsvFields.model} onChange={(e) => setQuickCsvFields({ ...quickCsvFields, model: e.target.checked })} />} label="Model" />
+              <TextField
+                size="small"
+                value={quickCsvHeaders.model}
+                onChange={(e) => setQuickCsvHeaders({ ...quickCsvHeaders, model: e.target.value })}
+                disabled={!includeHeaders}
+                sx={{ mt: 0.5 }}
+              />
+            </Box>
+            {/* Equipment Type */}
+            <Box sx={{ display: 'flex', flexDirection: 'column' }}>
+              <FormControlLabel control={<Checkbox checked={quickCsvFields.equipment_type} onChange={(e) => setQuickCsvFields({ ...quickCsvFields, equipment_type: e.target.checked })} />} label="Equipment Type" />
+              <TextField
+                size="small"
+                value={quickCsvHeaders.equipment_type}
+                onChange={(e) => setQuickCsvHeaders({ ...quickCsvHeaders, equipment_type: e.target.value })}
+                disabled={!includeHeaders}
+                sx={{ mt: 0.5 }}
+              />
+            </Box>
+          </Box>
 
+          <Box sx={{ mt: 2, display: 'flex', justifyContent: 'flex-end' }}>
             <Button
               variant="contained"
               onClick={handleQuickCsvExport}
