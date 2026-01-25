@@ -1545,7 +1545,7 @@ def normalize_for_url(name: str) -> str:
     result = re.sub(r'[^a-zA-Z0-9]', '', name)
     return result
 
-def substitute_placeholders(value: str, model: Model, series, manufacturer, equipment_type, is_image_url: bool = False) -> str:
+def substitute_placeholders(value: str, model: Model, series, manufacturer, equipment_type, is_image_url: bool = False, max_length: int = None) -> str:
     result = value
     mfr_name = manufacturer.name if manufacturer else ''
     series_name = series.name if series else ''
@@ -1573,16 +1573,54 @@ def substitute_placeholders(value: str, model: Model, series, manufacturer, equi
         result = result.replace('[EQUIPMENT_TYPE]', equip_type_norm)
         result = result.replace('[Equipment_Type]', equip_type_norm)
     else:
+        # Standard substitutions (except Series Name if max_length is active)
         result = result.replace('[MANUFACTURER_NAME]', mfr_name)
-        result = result.replace('[SERIES_NAME]', series_name)
         result = result.replace('[MODEL_NAME]', model_name)
         result = result.replace('[Manufacturer_Name]', mfr_name)
-        result = result.replace('[Series_Name]', series_name)
         result = result.replace('[Model_Name]', model_name)
-    
         result = result.replace('[EQUIPMENT_TYPE]', equip_type)
         result = result.replace('[Equipment_Type]', equip_type)
-    
+        
+        # Series Name Handling with Smart Truncation
+        # We need to detect if [SERIES_NAME] (or variants) is present to apply logic
+        series_placeholders = ['[SERIES_NAME]', '[Series_Name]']
+        
+        # Check if any series placeholder is in the string
+        found_series_ph = None
+        for ph in series_placeholders:
+            if ph in result:
+                found_series_ph = ph
+                break
+        
+        if found_series_ph:
+            val_to_insert = series_name
+            
+            if max_length is not None:
+                # Calculate current length without the series placeholder
+                current_len_without_series = len(result) - len(found_series_ph)
+                
+                # Available budget for series name
+                available_for_series = max_length - current_len_without_series
+                
+                if available_for_series < len(series_name):
+                    # Need to truncate series name
+                    # If available < 0, it means we are already over limit just with other fields -> empty series
+                    if available_for_series > 0:
+                        val_to_insert = series_name[:available_for_series]
+                    else:
+                        val_to_insert = ""
+            
+            result = result.replace(found_series_ph, val_to_insert)
+            
+            # Catch-all: check other series placeholders just in case
+            for ph in series_placeholders:
+                result = result.replace(ph, val_to_insert)
+        
+        # Finally, if strict max_length is enforced and we are somehow still over (e.g. Model Name itself is huge),
+        # we must truncate the final result to satisfy the hard requirement.
+        if max_length is not None and len(result) > max_length:
+            result = result[:max_length]
+            
     return result
 
 def get_image_field_key(field_name: str) -> str | None:
@@ -1663,11 +1701,17 @@ def get_field_value(field: ProductTypeField, model: Model, series, manufacturer,
     
     # Only include custom_value or selected_value if field is marked as required
     if field.required:
+        # Determine max length for specific Amazon fields
+        max_len = None
+        # Strict 40 char limit for model_name and model_number
+        if 'model_name' in field_name_lower or 'model_number' in field_name_lower:
+             max_len = 40
+
         if field.selected_value:
-            return substitute_placeholders(field.selected_value, model, series, manufacturer, equipment_type, is_image_url=is_image_field)
+            return substitute_placeholders(field.selected_value, model, series, manufacturer, equipment_type, is_image_url=is_image_field, max_length=max_len)
             
         if field.custom_value:
-            return substitute_placeholders(field.custom_value, model, series, manufacturer, equipment_type, is_image_url=is_image_field)
+            return substitute_placeholders(field.custom_value, model, series, manufacturer, equipment_type, is_image_url=is_image_field, max_length=max_len)
         
         # Auto-generate values for common fields only if required
         if 'item_name' in field_name_lower or 'product_name' in field_name_lower or 'title' in field_name_lower:

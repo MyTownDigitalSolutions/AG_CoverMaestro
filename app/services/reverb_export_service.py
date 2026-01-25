@@ -308,6 +308,19 @@ def generate_reverb_export_csv(db: Session, model_ids: List[int]) -> tuple[io.By
                     # Strict Mode: Do not use defaults unless... is there an exception?
                     pass
             
+            # Special Logic: new_listing
+            # If the model has an existing Reverb listing (MarketplaceListing), new_listing must be FALSE
+            if field.field_name == 'new_listing':
+                 has_reverb_listing = False
+                 if model.marketplace_listings:
+                     for listing in model.marketplace_listings:
+                         if listing.marketplace and listing.marketplace.lower() == 'reverb' and listing.external_id:
+                             has_reverb_listing = True
+                             break
+                 
+                 if has_reverb_listing:
+                     value = "FALSE"
+
             row.append(value)
             
 
