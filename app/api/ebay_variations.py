@@ -22,6 +22,7 @@ class GenerateVariationsRequest(BaseModel):
     material_colour_surcharge_id: Optional[int] = None
     design_option_ids: List[int] = []
     pricing_option_ids: List[int] = []
+    with_padding: bool = False  # New: select padded vs non-padded abbreviation
 
 
 class VariationRow(BaseModel):
@@ -31,7 +32,6 @@ class VariationRow(BaseModel):
     material_colour_surcharge_id: Optional[int]
     design_option_ids: List[int]
     pricing_option_ids: List[int]
-
 
 
 class GenerateVariationsResponse(BaseModel):
@@ -165,11 +165,17 @@ def generate_variations(
 
     # Decide which abbreviation source to use (role config is authoritative when present)
     if role_config:
-        # Use role config abbreviations (no-padding for now, with-padding if needed later)
-        material_abbrev = role_config.sku_abbrev_no_padding
-        if not _is_valid_abbrev(material_abbrev):
-            error_detail["missing_role_config_abbrev_no_padding"] = data.role_key
-            has_errors = True
+        # Use role config abbreviations based on padding flag
+        if data.with_padding:
+            material_abbrev = role_config.sku_abbrev_with_padding
+            if not _is_valid_abbrev(material_abbrev):
+                error_detail["missing_role_config_abbrev_with_padding"] = data.role_key
+                has_errors = True
+        else:
+            material_abbrev = role_config.sku_abbrev_no_padding
+            if not _is_valid_abbrev(material_abbrev):
+                error_detail["missing_role_config_abbrev_no_padding"] = data.role_key
+                has_errors = True
     else:
         # Fallback to material abbreviation for backward compatibility
         material_abbrev = material.sku_abbreviation
@@ -290,7 +296,8 @@ def generate_variations(
                 ModelVariationSKU.material_id == resolved_material_id,
                 ModelVariationSKU.material_colour_surcharge_id == data.material_colour_surcharge_id,
                 ModelVariationSKU.design_option_ids == design_ids,
-                ModelVariationSKU.pricing_option_ids == pricing_ids
+                ModelVariationSKU.pricing_option_ids == pricing_ids,
+                ModelVariationSKU.with_padding == data.with_padding
             )
         ).first()
 
@@ -306,6 +313,7 @@ def generate_variations(
                 design_option_ids=design_ids,
                 pricing_option_ids=pricing_ids,
                 is_parent=False,
+                with_padding=data.with_padding,
                 retail_price_cents=None
             )
             db.add(new_variation)

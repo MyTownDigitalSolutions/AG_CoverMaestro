@@ -611,6 +611,7 @@ class ModelVariationSKU(Base):
     
     # Legacy/additional fields
     is_parent = Column(Boolean, default=False, nullable=False)
+    with_padding = Column(Boolean, nullable=False, default=False)
     retail_price_cents = Column(Integer, nullable=True)
     
     # Timestamps

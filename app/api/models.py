@@ -786,14 +786,37 @@ def get_model_baseline_snapshots(
 
 @router.post("/{id}/pricing/recalculate", response_model=List[ModelPricingSnapshotResponse])
 def recalculate_model_pricing(id: int, marketplace: str = Query("amazon"), db: Session = Depends(get_db)):
-    """Manually trigger pricing recalculation for a model."""
-    try:
-        PricingCalculator(db).calculate_model_prices(id, marketplace=marketplace)
-        db.commit()
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    
-    # Return updated snapshots
+    """
+    Manually trigger pricing recalculation for a model.
+
+    IMPORTANT BEHAVIOR:
+    - Recalculates ALL supported marketplaces every time (amazon, reverb, ebay, etsy).
+    - Returns snapshots ONLY for the requested marketplace so the UI stays stable.
+    """
+    marketplaces = ["amazon", "reverb", "ebay", "etsy"]  # keep aligned with app/api/pricing.py
+
+    any_success = False
+    errors = []
+
+    for mp in marketplaces:
+        try:
+            # Nested transaction so one marketplace failure doesn't block others
+            with db.begin_nested():
+                PricingCalculator(db).calculate_model_prices(id, marketplace=mp)
+            any_success = True
+        except Exception as e:
+            # Collect errors but continue other marketplaces
+            errors.append(f"{mp}: {str(e)}")
+            continue
+
+    if not any_success:
+        # If nothing succeeded, return a clean 400 with combined errors
+        raise HTTPException(status_code=400, detail="Recalculation failed for all marketplaces. " + " | ".join(errors))
+
+    # Commit all successful marketplace recalcs
+    db.commit()
+
+    # Return updated snapshots for the currently selected marketplace (UI expects this)
     return db.query(ModelPricingSnapshot).filter(
         ModelPricingSnapshot.model_id == id,
         ModelPricingSnapshot.marketplace == marketplace
