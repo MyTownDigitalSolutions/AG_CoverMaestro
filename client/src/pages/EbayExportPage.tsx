@@ -1,7 +1,7 @@
 import { useEffect, useState, useMemo } from 'react'
 import {
     Box, Typography, Paper, Button, Grid, FormControl, InputLabel, Select, MenuItem, CircularProgress, Alert, Chip,
-    Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Checkbox, CheckboxProps
+    Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Checkbox
 } from '@mui/material'
 import RefreshIcon from '@mui/icons-material/Refresh'
 import {
@@ -72,8 +72,8 @@ export default function EbayExportPage() {
                 equipmentTypesApi.list()
             ])
 
-            // Helper to safely extract results
-            const getResult = <T>(index: number, defaultValue: T): T => {
+            // Helper to safely extract results (TSX needs <T,> to avoid JSX parse confusion)
+            const getResult = <T,>(index: number, defaultValue: T): T => {
                 const res = results[index]
                 if (res.status === 'fulfilled') {
                     return res.value as T
@@ -100,7 +100,7 @@ export default function EbayExportPage() {
 
     // Sorted Manufacturers
     const sortedManufacturers = useMemo(() => {
-        return [...manufacturers].sort((a, b) => 
+        return [...manufacturers].sort((a, b) =>
             a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' })
         )
     }, [manufacturers])
@@ -280,7 +280,7 @@ export default function EbayExportPage() {
     // Handle load existing variations
     const handleLoadExisting = async () => {
         if (selectedModels.size === 0) return
-        
+
         setLoadingExisting(true)
         setExistingVariations([])
 
@@ -344,7 +344,7 @@ export default function EbayExportPage() {
         } catch (err: any) {
             // Handle structured error detail from backend
             const detail = err.response?.data?.detail
-            
+
             if (typeof detail === 'object' && detail !== null) {
                 // Structured error with invalid IDs
                 let errorMsg = detail.message || 'Validation failed'
@@ -377,7 +377,135 @@ export default function EbayExportPage() {
         }
     }
 
-    // Check if all selected roles have at least one color
+    // Generate Base Variants (C, CG, L, LG) with specific ordering
+    const handleGenerateBaseVariants = async () => {
+        setVariationError(null)
+        setVariationResult(null)
+        setGeneratingVariations(true)
+
+        try {
+            const modelIds = Array.from(selectedModels)
+            let totalCreated = 0
+            let totalUpdated = 0
+            const allRows: VariationRow[] = []
+
+            // Sort selected roles for deterministic order
+            const sortedSelectedRoles = [...selectedRoleKeys].sort()
+
+            // Validate that we have color selections for these roles
+            const missingColors = sortedSelectedRoles.filter(roleKey => {
+                const selectedColors = selectedColourSurchargeIdsByRole[roleKey] || []
+                return selectedColors.length === 0
+            })
+            if (missingColors.length > 0) {
+                const missingRoleNames = missingColors.map(k => {
+                    const rc = roleConfigs.find(r => r.role === k)
+                    return rc?.display_name || k
+                }).join(', ')
+                throw new Error(`No colors selected for: ${missingRoleNames}. Please select at least one color per role.`)
+            }
+
+            // Filter relevant design options (Pricing Relevant => eBay Enabled)
+            // Sort by Name Ascending (this is the authoritative order for option generation)
+            const sortedDesignOptionIds = designOptions
+                .filter(opt =>
+                    selectedDesignOptionIds.includes(opt.id) &&
+                    opt.is_pricing_relevant &&
+                    opt.ebay_variation_enabled
+                )
+                .sort((a, b) => a.name.localeCompare(b.name))
+                .map(opt => opt.id)
+
+            // Build option sets in required order:
+            // 1) baseline []
+            // 2) each option individually [id] (alpha order already)
+            // 3) combined [id,id,...] (only if more than 1 option)
+            const optionIdSets: number[][] = []
+            optionIdSets.push([]) // Always baseline
+            for (const optId of sortedDesignOptionIds) {
+                optionIdSets.push([optId])
+            }
+            if (sortedDesignOptionIds.length > 1) {
+                optionIdSets.push(sortedDesignOptionIds)
+            }
+
+            for (const roleKey of sortedSelectedRoles) {
+                // Determine padding configurations: No Padding (False), then With Padding (True)
+                const paddingConfigs = [false, true]
+
+                // Get SELECTED colors for this role
+                const selectedColorIds = selectedColourSurchargeIdsByRole[roleKey] || []
+
+                // We need the full color objects for sorting by abbreviation
+                const allRoleColors = surchargesByRole[roleKey] || []
+                const selectedColorsObjects = allRoleColors.filter(c => selectedColorIds.includes(c.id))
+
+                if (selectedColorsObjects.length === 0) continue
+
+                // Color Sorting:
+                // 1. PBK (abbrev case-insensitive 'pbk')
+                // 2. Others alphabetical by abbrev (or name)
+                const pbkRegex = /^pbk$/i
+                const pbkColors = selectedColorsObjects.filter(c => c.sku_abbreviation && pbkRegex.test(c.sku_abbreviation))
+                const otherColors = selectedColorsObjects.filter(c => !c.sku_abbreviation || !pbkRegex.test(c.sku_abbreviation))
+
+                otherColors.sort((a, b) => {
+                    const abbrevA = (a.sku_abbreviation || a.color_friendly_name || a.colour).toLowerCase()
+                    const abbrevB = (b.sku_abbreviation || b.color_friendly_name || b.colour).toLowerCase()
+                    return abbrevA.localeCompare(abbrevB)
+                })
+
+                const sortedColors = [...pbkColors, ...otherColors]
+
+                for (const withPadding of paddingConfigs) {
+                    for (const color of sortedColors) {
+                        // Required behavior: always baseline first, then each option individually, then combined
+                        for (const optionIds of optionIdSets) {
+                            const payload = {
+                                model_ids: modelIds,
+                                role_key: roleKey,
+                                material_colour_surcharge_id: color.id,
+                                design_option_ids: optionIds,
+                                pricing_option_ids: [],
+                                with_padding: withPadding
+                            }
+
+                            const result = await ebayVariationsApi.generate(payload)
+                            totalCreated += result.created
+                            totalUpdated += result.updated
+                            allRows.push(...result.rows)
+                        }
+                    }
+                }
+            }
+
+            // Deduplicate by SKU
+            const uniqueRows = Array.from(
+                new Map(allRows.map(row => [row.sku, row])).values()
+            )
+
+            setVariationResult({
+                created: totalCreated,
+                updated: totalUpdated,
+                rows: uniqueRows,
+                errors: []
+            })
+
+        } catch (err: any) {
+            // Handle structured error detail from backend
+            const detail = err.response?.data?.detail
+            let errorMessage = ''
+            if (typeof detail === 'object' && detail !== null) {
+                errorMessage = detail.message || 'Validation failed'
+            } else {
+                errorMessage = detail || err.message || 'Failed to generate base variations'
+            }
+            setVariationError(errorMessage)
+        } finally {
+            setGeneratingVariations(false)
+        }
+    }
+
     const isGenerateEnabled = useMemo(() => {
         if (selectedModels.size === 0) return false
         if (selectedRoleKeys.length === 0) return false
@@ -445,10 +573,10 @@ export default function EbayExportPage() {
                                     const valuev = e.target.value
                                     // Handle array return from multiple select
                                     const values = typeof valuev === 'string' ? valuev.split(',') : valuev as string[]
-                                    
+
                                     // Check if "All Series" was just selected (it will be the last element if recently clicked while others were selected)
                                     const lastSelected = values[values.length - 1]
-                                    
+
                                     if (lastSelected === ALL_SERIES_VALUE) {
                                         setSelectedSeriesValue(ALL_SERIES_VALUE)
                                         setSelectedSeriesIds([])
@@ -459,7 +587,7 @@ export default function EbayExportPage() {
                                     const validIds = values
                                         .filter(v => v !== ALL_SERIES_VALUE)
                                         .map(v => Number(v))
-                                    
+
                                     if (validIds.length === 0) {
                                         // Revert to All Series if empty
                                         setSelectedSeriesValue(ALL_SERIES_VALUE)
@@ -523,7 +651,7 @@ export default function EbayExportPage() {
                         </Typography>
                     )}
                 </Box>
-                
+
                 {!selectedManufacturer ? (
                     <Alert severity="info">Select a manufacturer to view models.</Alert>
                 ) : (
@@ -567,13 +695,11 @@ export default function EbayExportPage() {
                                         const eqType = equipmentTypes.find(et => et.id === model.equipment_type_id)
 
                                         return (
-                                            <TableRow 
-                                                key={model.id} 
+                                            <TableRow
+                                                key={model.id}
                                                 hover
                                                 selected={isSelected}
-                                                onClick={(e) => {
-                                                    // Allow row click to toggle selection, unless clicking checkbox directly (handled by its own onChange)
-                                                    // Just purely logical toggle for simplicity here
+                                                onClick={() => {
                                                     const newSelected = new Set(selectedModels)
                                                     if (newSelected.has(model.id)) {
                                                         newSelected.delete(model.id)
@@ -588,7 +714,7 @@ export default function EbayExportPage() {
                                                     <Checkbox
                                                         checked={isSelected}
                                                         onChange={(e) => {
-                                                            e.stopPropagation() // Prevent row click double-toggle
+                                                            e.stopPropagation()
                                                             const newSelected = new Set(selectedModels)
                                                             if (newSelected.has(model.id)) {
                                                                 newSelected.delete(model.id)
@@ -657,7 +783,6 @@ export default function EbayExportPage() {
                     {selectedRoleKeys.map((roleKey) => {
                         const roleConfig = roleConfigs.find(rc => rc.role === roleKey)
                         const assignment = resolveActiveAssignmentForRole(roleKey)
-                        const material = materials.find(m => m.id === assignment?.material_id)
                         const colors = surchargesByRole[roleKey] || []
 
                         return (
@@ -740,6 +865,15 @@ export default function EbayExportPage() {
                     sx={{ mr: 2 }}
                 >
                     {generatingVariations ? 'Generating...' : 'Generate Variations'}
+                </Button>
+                <Button
+                    variant="contained"
+                    color="secondary"
+                    onClick={handleGenerateBaseVariants}
+                    disabled={selectedModels.size === 0 || generatingVariations}
+                    sx={{ mr: 2 }}
+                >
+                    {generatingVariations ? 'Generating...' : 'Generate Base Variants (C/CG/L/LG)'}
                 </Button>
                 <Button
                     variant="outlined"
@@ -840,7 +974,6 @@ export default function EbayExportPage() {
                             const material = materials.find(m => m.id === activeAssignment?.material_id)
                             const roleConfig = roleConfigs.find(rc => rc.role === roleKey)
                             const skuPair = formatRoleSkuPair(roleConfig?.sku_abbrev_no_padding, roleConfig?.sku_abbrev_with_padding)
-                            const materialAbbrev = material?.sku_abbreviation ? material.sku_abbreviation.trim() : null
                             const selectedColors = selectedColourSurchargeIdsByRole[roleKey] || []
                             const roleColors = surchargesByRole[roleKey] || []
 

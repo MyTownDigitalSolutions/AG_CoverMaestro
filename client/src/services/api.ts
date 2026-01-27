@@ -524,10 +524,12 @@ export const ebayTemplatesApi = {
 // eBay Variations API
 export interface GenerateVariationsRequest {
   model_ids: number[]
-  material_id: number
+  material_id?: number
+  role_key?: string
   material_colour_surcharge_id?: number | null
   design_option_ids: number[]
   pricing_option_ids: number[]
+  with_padding?: boolean
 }
 
 export interface VariationRow {
