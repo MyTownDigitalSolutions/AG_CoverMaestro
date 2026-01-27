@@ -50,15 +50,6 @@ class PricingCalculator:
             raise PricingConfigError("Shipping mode is 'fixed_cell' but Assumed Shipping Settings are incomplete.")
             
         # Fetch rate
-        # We need to map zone code (str) to zone (int/str) in the ShippingZoneRate table
-        # We assumed ShippingZoneRate.zone stores zone ID (int) based on earlier context? 
-        # Or does it store the code?
-        # Re-checking api/settings.py: list_zone_rates uses "db.query(ShippingZoneRate).filter(...)"
-        # And normalized response assumes zone is code?
-        # Let's check `ShippingZoneRate` model in `models/core.py`... 
-        # It has `zone = Column(Integer)`.
-        # And `ShippingDefaultSetting.assumed_zone_code` is String (e.g. "8").
-        # We need to find the Zone ID for code "8".
         
         from app.models.core import ShippingZone
         
@@ -92,7 +83,6 @@ class PricingCalculator:
         # ----------------------------------------------------
         labor_settings = self.db.query(LaborSetting).first()
         if not labor_settings:
-            # Fallback or error? Spec says Strict.
             raise ValueError("Labor Settings not configured.")
 
         fee_rate_obj = self.db.query(MarketplaceFeeRate).filter(MarketplaceFeeRate.marketplace == marketplace).first()
@@ -100,12 +90,16 @@ class PricingCalculator:
             raise ValueError(f"Fee rate not configured for marketplace: {marketplace}")
         fee_rate = fee_rate_obj.fee_rate
 
+        # Shipping Profile Rules:
+        # - Reverb uses global Shipping Defaults (no marketplace profile required)
+        # - eBay should behave EXACTLY like Reverb for now (use Shipping Defaults; no profile required)
+        # - Other marketplaces (Amazon/Etsy/etc.) require a marketplace shipping profile for calculated mode
         shipping_profile = self._get_shipping_profile(marketplace)
-        # Reverb uses global defaults, so we explicitly ignore any profile
-        if marketplace.lower() == "reverb":
+
+        if marketplace.lower() in ("reverb", "ebay"):
             shipping_profile = None
         elif not shipping_profile:
-             raise ValueError(f"Shipping profile not configured for marketplace: {marketplace}")
+            raise ValueError(f"Shipping profile not configured for marketplace: {marketplace}")
 
         # 2. Resolve Materials (As of Now)
         # ----------------------------------------------------
@@ -113,8 +107,6 @@ class PricingCalculator:
         
         # 3. Calculate Area
         # ----------------------------------------------------
-        # Strict Rule: Pricing logic must NOT recompute surface area.
-        # It must exist on the model.
         if not model.surface_area_sq_in or model.surface_area_sq_in <= 0:
              raise ValueError("Pricing cannot be calculated: model.surface_area_sq_in is missing or invalid.")
              
@@ -166,11 +158,6 @@ class PricingCalculator:
 
         # B. Calculate Material Cost & Weight
         # ------------------------------------------------
-        # Cost = Area * Weight_per_sq_in * Cost_per_oz (Not quite, we usually have linear yards or per unit)
-        # Wait, we need cost conversion. 
-        # For this phase, let's assume we derive cost per sq inch from supplier info or use a simplified approach?
-        # The prompt says: "MaterialCost (preferred supplier only -> cost per sq_in conversion)"
-        
         material_cost_cents = self._get_material_cost_cents(main_material, area_sq_in)
         weight_oz = self._get_material_weight_oz(main_material, area_sq_in)
         
@@ -196,9 +183,6 @@ class PricingCalculator:
             raise ValueError(f"Profit config missing for variant: {variant_key}")
         profit_cents = profit_setting.profit_cents
 
-        # RetailPrice = (RawCost + Profit) / (1 - Rate)
-        # We work in cents, so math is same.
-        # Avoid div by zero
         if fee_rate >= 1.0:
             raise ValueError("Fee rate cannot be 100% or more")
             
@@ -225,7 +209,6 @@ class PricingCalculator:
         labor_rate = labor_settings.hourly_rate_cents
         mp_fee_rate = fee_rate
         
-        # material_cost_per_sq_in_cents = round(material_cost_cents / area_sq_in) if area > 0
         material_rate = 0
         if area_sq_in > 0:
             material_rate = int(round(material_cost_cents / area_sq_in))
@@ -250,7 +233,6 @@ class PricingCalculator:
         surface_area_sq_in: float, material_cost_per_sq_in_cents: int,
         labor_minutes: int, labor_rate_cents_per_hour: int, marketplace_fee_rate: float
     ):
-        # Upsert
         existing = self.db.query(ModelPricingSnapshot).filter(
             ModelPricingSnapshot.model_id == model_id,
             ModelPricingSnapshot.marketplace == marketplace,
@@ -260,8 +242,6 @@ class PricingCalculator:
         should_insert_history = False
         
         if existing:
-            # Check for changes
-            # We compare all pricing fields
             has_changed = (
                 existing.raw_cost_cents != raw or
                 existing.base_cost_cents != base or
@@ -273,7 +253,6 @@ class PricingCalculator:
                 existing.labor_cost_cents != labor or
                 abs(existing.weight_oz - weight) > 0.0001 or
                 existing.shipping_settings_version_used != shipping_version or
-                # Metadata fields check
                 (existing.surface_area_sq_in is None or abs(existing.surface_area_sq_in - surface_area_sq_in) > 0.0001) or
                 existing.material_cost_per_sq_in_cents != material_cost_per_sq_in_cents or
                 existing.labor_minutes != labor_minutes or
@@ -282,7 +261,6 @@ class PricingCalculator:
             )
             
             if has_changed:
-                # Update Snapshot
                 existing.raw_cost_cents = raw
                 existing.base_cost_cents = base
                 existing.retail_price_cents = retail
@@ -294,7 +272,6 @@ class PricingCalculator:
                 existing.weight_oz = weight
                 existing.shipping_settings_version_used = shipping_version
                 
-                # Metadata
                 existing.surface_area_sq_in = surface_area_sq_in
                 existing.material_cost_per_sq_in_cents = material_cost_per_sq_in_cents
                 existing.labor_minutes = labor_minutes
@@ -303,7 +280,6 @@ class PricingCalculator:
                 
                 existing.calculated_at = datetime.utcnow()
                 should_insert_history = True
-            # Else: No changes
         else:
             new_snap = ModelPricingSnapshot(
                 model_id=model_id,
@@ -320,7 +296,6 @@ class PricingCalculator:
                 weight_oz=weight,
                 shipping_settings_version_used=shipping_version,
                 calculated_at=datetime.utcnow(),
-                # Metadata
                 surface_area_sq_in=surface_area_sq_in,
                 material_cost_per_sq_in_cents=material_cost_per_sq_in_cents,
                 labor_minutes=labor_minutes,
@@ -346,7 +321,6 @@ class PricingCalculator:
                 weight_oz=weight,
                 calculated_at=datetime.utcnow(),
                 reason="recalculate",
-                # Metadata
                 surface_area_sq_in=surface_area_sq_in,
                 material_cost_per_sq_in_cents=material_cost_per_sq_in_cents,
                 labor_minutes=labor_minutes,
@@ -355,11 +329,9 @@ class PricingCalculator:
             )
             self.db.add(history_row)
             
-        # self.db.flush() is called by caller or transaction commit
-        
         logger.info(f"variant success key={variant_key} model_id={model_id}")
         
-        self.db.flush() # Flush to detect errors but commit happens at top level
+        self.db.flush()
 
     def _resolve_materials(self) -> Dict[str, Material]:
         """Returns map of Role -> Material object for all currently active roles."""
@@ -369,8 +341,6 @@ class PricingCalculator:
             (MaterialRoleAssignment.end_date == None) | (MaterialRoleAssignment.end_date > now)
         ).all()
         
-        # Enforce single active row per role (app level check)
-        # We just take the latest one found if multiple (though DB constraints/logic should prevent)
         result = {}
         for a in assignments:
             result[a.role] = a.material
@@ -386,19 +356,6 @@ class PricingCalculator:
 
     def _get_material_cost_cents(self, material: Material, area_sq_in: float) -> int:
         """Calculates material cost in cents for the given area."""
-        # Find preferred supplier
-        # In real world, we'd query SupplierMaterial.is_preferred
-        # We need a fallback or strict check? Prompt says "preferred supplier only"
-        # We need price per sq inch.
-        # Existing logic has `cost_per_square_inch` property helper on models but let's query raw.
-        # Assuming we can derive it.
-        
-        # Logic: 
-        # SupplierMaterial has unit_cost (e.g. $10/yd)
-        # Material has linear_yard_width (e.g. 54")
-        # 1 linear yard = 36" length * width" width = Area per yard
-        # Cost per sq in = UnitCost / AreaPerYard
-        
         from app.models.core import SupplierMaterial
         
         sup_mat = self.db.query(SupplierMaterial).filter(
@@ -412,7 +369,7 @@ class PricingCalculator:
         if not material.linear_yard_width:
              raise ValueError(f"Material {material.name} missing linear yard width")
 
-        area_per_unit = material.linear_yard_width * 36.0 # sq inches per linear yard
+        area_per_unit = material.linear_yard_width * 36.0
         cost_per_sq_in = sup_mat.unit_cost / area_per_unit
         
         total_cost_dollars = cost_per_sq_in * area_sq_in
@@ -422,15 +379,8 @@ class PricingCalculator:
         if material.weight_per_sq_in_oz is not None:
             return float(material.weight_per_sq_in_oz) * area_sq_in
         
-        # Fallback if we haven't migrated data? Strict mode says NO FALLBACKS?
-        # But Phase 4 said "Add weight_per_sq_in_oz preferred".
-        # Let's try to calc from weight_per_linear_yard if existing field is null
         if material.weight_per_linear_yard and material.linear_yard_width:
-             area_per_yd = material.linear_yard_width * 36.0
-             oz_per_sq_in = material.weight_per_linear_yard / area_per_yd # assuming weight col is oz? 
-             # Wait, existing data might be lbs or oz? 
-             # Let's assume standard industry oz/yd^2 or linear yard oz.
-             # Strict mode: If weight_per_sq_in_oz is null, ERROR.
+             # Strict mode: do not infer; keep as-is.
              pass
         
         if material.weight_per_sq_in_oz is None:
@@ -450,10 +400,8 @@ class PricingCalculator:
              return self._get_fixed_cell_rate()
              
         # 3. Calculated Mode (Profile Required)
-        # However, for Reverb (where profile is forced to None), we MUST fallback to Fixed Cell Assumption per user request.
-        # This acts as a safety default for marketplaces that don't support weight-based calculation.
+        # However, for Reverb/eBay (where profile is forced to None), we MUST fallback to Fixed Cell Assumption.
         if profile is None:
-             # Safety Fallback -> Use Global Default
              return self._get_fixed_cell_rate()
              
         # 4. Standard Calculated Profile Logic
@@ -462,21 +410,12 @@ class PricingCalculator:
             try:
                 zone = int(defaults.default_zone_code)
             except ValueError:
-                pass # zone likely string code that needs mapping, dealt with below
+                pass
             
-        # If still no zone, we can't calculate. Existing logic implies profile.pricing_zone is required or errors.
-        # But if profile was missing defaults, we fallback. 
-        # CAUTION: pricing_zone column in MarketplaceShippingProfile is Integer normally? 
-        # Let's verify usage. profile.pricing_zone is likely int. default_zone_code is str.
-        
         effective_zone = zone
         if effective_zone is None:
              raise ValueError("No pricing zone available (neither profile nor default)")
 
-        # Find tier
-        # USPS standard logic: "Weight Not Over".
-        # We select the smallest tier where max_oz >= weight_oz.
-        # Deterministic ordering ensures stability.
         tier = self.db.query(ShippingRateTier).filter(
             ShippingRateTier.rate_card_id == profile.rate_card_id,
             ShippingRateTier.max_oz >= weight_oz
@@ -494,15 +433,9 @@ class PricingCalculator:
         ).first()
         
         if not rate:
-            # Try falling back to default zone? 
-            # Prompt says: "Only if no profile zone is available should it fall back". 
-            # We handled that above in `effective_zone` determination.
-            # If rate is missing for effective_zone, it's an error.
             raise ValueError(f"No shipping rate found for Tier {tier.id} Zone {effective_zone}")
             
         return rate.rate_cents
-
-
 
     @staticmethod
     def is_snapshot_stale(snapshot: ModelPricingSnapshot, current_version: int) -> bool:

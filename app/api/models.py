@@ -67,6 +67,113 @@ def generate_parent_sku(manufacturer_name: str, series_name: str, model_name: st
     
     return sku
 
+def _base36_2(n: int) -> str:
+    alphabet = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+    if n < 0 or n >= 36 * 36:
+        raise ValueError("base36_2 out of range")
+    return alphabet[n // 36] + alphabet[n % 36]
+
+def _process_name_full(name: str) -> str:
+    # Match generate_parent_sku's process_name behavior but without truncation/padding
+    words = name.split()
+    if len(words) > 1:
+        result = "".join(word.capitalize() for word in words)
+    else:
+        result = name.capitalize()
+    result = "".join(c for c in result if c.isalnum())
+    return result.upper()
+
+def generate_unique_parent_sku(
+    db: Session,
+    series_id: int,
+    manufacturer_name: str,
+    series_name: str,
+    model_name: str,
+    version: str = "V1",
+    exclude_model_id: Optional[int] = None
+) -> str:
+    """
+    Generate a unique parent SKU for a model within a series.
+    Uses Option 4: Tail Borrowing then Counter Overwrite.
+    """
+    # 1. Base SKU
+    base_sku = generate_parent_sku(manufacturer_name, series_name, model_name, version)
+    
+    # Check collision
+    query = db.query(Model).filter(
+        Model.series_id == series_id,
+        Model.parent_sku == base_sku
+    )
+    if exclude_model_id is not None:
+        query = query.filter(Model.id != exclude_model_id)
+        
+    if not query.first():
+        return base_sku
+
+    print(f"[SKU_COLLISION] Base SKU '{base_sku}' collides in series {series_id}")
+
+    # 2. Prepare for modifiers
+    # SKU Format: MFGR(8)-SERIES(8)-MODEL(13)V1(2) -> Model segment starts at index 18
+    # MFGR(8) + dash(1) + SERIES(8) + dash(1) = 18 chars prefix
+    MODEL_START_IDX = 18
+    MODEL_LEN = 13
+    
+    processed_full = _process_name_full(model_name)
+    tail = processed_full[MODEL_LEN:] # chars usually truncated
+    
+    # 3. Strategy A: Tail Borrowing (Replace end of model segment with hidden tail chars)
+    K = 5
+    for i in range(1, min(K, len(tail)) + 1):
+        # Construct candidate: replace last i chars of model segment (which is base_sku[18:31])
+        # base_sku[18:31] is the padded model chunk.
+        # We want to keep the first (13-i) chars of the segment, then append tail[:i]
+        
+        current_segment = base_sku[MODEL_START_IDX : MODEL_START_IDX + MODEL_LEN]
+        new_segment = current_segment[:MODEL_LEN - i] + tail[:i]
+        
+        # New SKU
+        prefix = base_sku[:MODEL_START_IDX]
+        suffix = base_sku[MODEL_START_IDX + MODEL_LEN:] # Version + padding
+        candidate = prefix + new_segment + suffix
+        
+        # Check collision
+        q_coll = db.query(Model).filter(Model.series_id == series_id, Model.parent_sku == candidate)
+        if exclude_model_id is not None:
+            q_coll = q_coll.filter(Model.id != exclude_model_id)
+            
+        if not q_coll.first():
+            if len(candidate) != 40:
+                 raise HTTPException(500, f"SKU length integrity violation: {len(candidate)}")
+            print(f"[SKU_RESOLVED] Strategy: Tail Borrowing ({i} chars). Final: {candidate}")
+            return candidate
+
+    # 4. Strategy B: Counter Overwrite (Replace last 2 chars of model segment with Base36)
+    # 00..ZZ (1296 variants)
+    for c in range(1296):
+        counter_str = _base36_2(c)
+        
+        current_segment = base_sku[MODEL_START_IDX : MODEL_START_IDX + MODEL_LEN]
+        # Replace last 2 chars
+        new_segment = current_segment[:MODEL_LEN - 2] + counter_str
+        
+        prefix = base_sku[:MODEL_START_IDX]
+        suffix = base_sku[MODEL_START_IDX + MODEL_LEN:]
+        candidate = prefix + new_segment + suffix
+        
+        q_coll = db.query(Model).filter(Model.series_id == series_id, Model.parent_sku == candidate)
+        if exclude_model_id is not None:
+            q_coll = q_coll.filter(Model.id != exclude_model_id)
+            
+        if not q_coll.first():
+            if len(candidate) != 40:
+                 raise HTTPException(500, f"SKU length integrity violation: {len(candidate)}")
+            print(f"[SKU_RESOLVED] Strategy: Counter Overwrite ({counter_str}). Final: {candidate}")
+            return candidate
+            
+    # Fallback (Should be unreachable practically)
+    print(f"[SKU_FAILED] Could not resolve collision for {base_sku}")
+    return base_sku # Return base and let DB constraint fail if it must
+
 def validate_design_option(option_id: Optional[int], expected_type: str, db: Session) -> None:
     """Validate that a design option exists and has the correct type."""
     if option_id is not None:
@@ -298,8 +405,15 @@ def create_model(data: ModelCreate, db: Session = Depends(get_db)):
         print("[DEBUG] Step 3: PASSED ✓")
         
         print("[DEBUG] Step 4: Generate SKU")
-        # Generate parent SKU
-        parent_sku = generate_parent_sku(manufacturer.name, series.name, data.name)
+        # Generate UNIQUE parent SKU
+        parent_sku = generate_unique_parent_sku(
+            db=db,
+            series_id=series.id,
+            manufacturer_name=manufacturer.name,
+            series_name=series.name,
+            model_name=data.name,
+            exclude_model_id=None
+        )
         print(f"[DEBUG] Generated SKU: {parent_sku}")
         print("[DEBUG] Step 4: PASSED ✓")
         
@@ -462,7 +576,14 @@ def update_model(id: int, data: ModelCreate, db: Session = Depends(get_db)):
         validate_design_option(data.angle_type_option_id, "angle_type", db)
         
         # Regenerate parent SKU if name, series, or manufacturer changed
-        parent_sku = generate_parent_sku(manufacturer.name, series.name, data.name)
+        parent_sku = generate_unique_parent_sku(
+            db=db,
+            series_id=data.series_id,
+            manufacturer_name=manufacturer.name,
+            series_name=series.name,
+            model_name=data.name,
+            exclude_model_id=id
+        )
         
         # Recalculate surface area
         surface_area = calculate_surface_area(data.width, data.depth, data.height)
@@ -665,14 +786,37 @@ def get_model_baseline_snapshots(
 
 @router.post("/{id}/pricing/recalculate", response_model=List[ModelPricingSnapshotResponse])
 def recalculate_model_pricing(id: int, marketplace: str = Query("amazon"), db: Session = Depends(get_db)):
-    """Manually trigger pricing recalculation for a model."""
-    try:
-        PricingCalculator(db).calculate_model_prices(id, marketplace=marketplace)
-        db.commit()
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    
-    # Return updated snapshots
+    """
+    Manually trigger pricing recalculation for a model.
+
+    IMPORTANT BEHAVIOR:
+    - Recalculates ALL supported marketplaces every time (amazon, reverb, ebay, etsy).
+    - Returns snapshots ONLY for the requested marketplace so the UI stays stable.
+    """
+    marketplaces = ["amazon", "reverb", "ebay", "etsy"]  # keep aligned with app/api/pricing.py
+
+    any_success = False
+    errors = []
+
+    for mp in marketplaces:
+        try:
+            # Nested transaction so one marketplace failure doesn't block others
+            with db.begin_nested():
+                PricingCalculator(db).calculate_model_prices(id, marketplace=mp)
+            any_success = True
+        except Exception as e:
+            # Collect errors but continue other marketplaces
+            errors.append(f"{mp}: {str(e)}")
+            continue
+
+    if not any_success:
+        # If nothing succeeded, return a clean 400 with combined errors
+        raise HTTPException(status_code=400, detail="Recalculation failed for all marketplaces. " + " | ".join(errors))
+
+    # Commit all successful marketplace recalcs
+    db.commit()
+
+    # Return updated snapshots for the currently selected marketplace (UI expects this)
     return db.query(ModelPricingSnapshot).filter(
         ModelPricingSnapshot.model_id == id,
         ModelPricingSnapshot.marketplace == marketplace
@@ -754,7 +898,14 @@ def regenerate_all_skus(db: Session = Depends(get_db)):
         if not manufacturer:
             continue
         
-        parent_sku = generate_parent_sku(manufacturer.name, series.name, model.name)
+        parent_sku = generate_unique_parent_sku(
+            db=db,
+            series_id=model.series_id,
+            manufacturer_name=manufacturer.name,
+            series_name=series.name,
+            model_name=model.name,
+            exclude_model_id=model.id
+        )
         if model.parent_sku != parent_sku:
             model.parent_sku = parent_sku
             updated_count += 1
