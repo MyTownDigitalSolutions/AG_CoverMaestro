@@ -613,7 +613,8 @@ class ModelVariationSKU(Base):
     is_parent = Column(Boolean, default=False, nullable=False)
     with_padding = Column(Boolean, nullable=False, default=False)
     retail_price_cents = Column(Integer, nullable=True)
-    
+    role_key = Column(String, nullable=True)
+        
     # Timestamps
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)

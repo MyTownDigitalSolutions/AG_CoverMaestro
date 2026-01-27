@@ -303,6 +303,7 @@ def generate_variations(
 
         if existing:
             existing.sku = final_sku
+            existing.role_key = data.role_key
             updated_count += 1
         else:
             new_variation = ModelVariationSKU(
@@ -314,7 +315,8 @@ def generate_variations(
                 pricing_option_ids=pricing_ids,
                 is_parent=False,
                 with_padding=data.with_padding,
-                retail_price_cents=None
+                retail_price_cents=None,
+                role_key=data.role_key
             )
             db.add(new_variation)
             created_count += 1

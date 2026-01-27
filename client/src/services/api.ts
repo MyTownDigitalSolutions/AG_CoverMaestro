@@ -556,8 +556,8 @@ export const ebayVariationsApi = {
 }
 
 export const ebayExportApi = {
-  exportCsv: async (modelIds: number[]) => {
-    const response = await api.post('/ebay-export/export', { model_ids: modelIds }, { responseType: 'blob' })
+  exportCsv: async (payload: { model_ids: number[], [key: string]: any }) => {
+    const response = await api.post('/ebay-export/export', payload, { responseType: 'blob' })
     return response
   }
 }

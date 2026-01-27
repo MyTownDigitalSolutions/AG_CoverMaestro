@@ -150,6 +150,12 @@ export default function EbayExportPage() {
         }
     }, [filteredModels, selectedManufacturer])
 
+    // Helper to normalize role key (ensure underscore format)
+    const normalizeRoleKey = (role: string): string => {
+        if (!role) return ''
+        return role.toUpperCase().replace(/\s+/g, '_')
+    }
+
     // Selectable roles (ebay_variation_enabled = true)
     const selectableRoles = useMemo(() => {
         return roleConfigs.filter(rc => rc.ebay_variation_enabled === true)
@@ -158,7 +164,7 @@ export default function EbayExportPage() {
     // Helper to resolve active assignment for a role
     const resolveActiveAssignmentForRole = (roleKey: string) => {
         return materialRoles.find(mr =>
-            mr.role === roleKey &&
+            normalizeRoleKey(mr.role) === roleKey &&
             (mr.end_date === null || mr.end_date === undefined || new Date(mr.end_date) > new Date())
         )
     }
@@ -320,7 +326,7 @@ export default function EbayExportPage() {
                 for (const colorId of colorIdsSorted) {
                     const payload = {
                         model_ids: modelIds,
-                        role_key: roleKey,
+                        role_key: roleKey, // Already normalized
                         material_colour_surcharge_id: colorId,
                         design_option_ids: selectedDesignOptionIds
                     }
@@ -386,8 +392,6 @@ export default function EbayExportPage() {
         setVariationResult(null)
         setGeneratingVariations(true)
 
-
-
         // Validation: Ensure every selected role has at least one color selected
         const unconfiguredRoles = selectedRoleKeys.filter(roleKey => {
             const colors = selectedColourSurchargeIdsByRole[roleKey] || []
@@ -396,8 +400,8 @@ export default function EbayExportPage() {
 
         if (unconfiguredRoles.length > 0) {
             const roleNames = unconfiguredRoles.map(key => {
-                const cfg = roleConfigs.find(c => c.role_key === key)
-                return cfg?.label || key
+                const cfg = roleConfigs.find(c => normalizeRoleKey(c.role) === key)
+                return cfg?.label || key // Fallback to key if label missing
             }).join(', ')
             setVariationError(`Please select at least one color for the following roles: ${roleNames}`)
             return
@@ -413,7 +417,7 @@ export default function EbayExportPage() {
             const allRows: VariationRow[] = []
 
             for (const roleKey of selectedRoleKeys) {
-                const config = roleConfigs.find(c => c.role_key === roleKey)
+                const config = roleConfigs.find(c => normalizeRoleKey(c.role) === roleKey)
                 const colorIds = selectedColourSurchargeIdsByRole[roleKey] || []
 
                 // Get color objects for sorting
@@ -519,12 +523,38 @@ export default function EbayExportPage() {
     }
 
 
-
-
     const handleExportCsv = async () => {
         try {
             setExportingCsv(true)
-            const response = await ebayExportApi.exportCsv(Array.from(selectedModels))
+
+            // Build payload
+            const modelIds = Array.from(selectedModels)
+
+            // Collect all selected color IDs across all roles
+            const allColorIds: number[] = []
+            for (const roleKey of selectedRoleKeys) {
+                const colors = selectedColourSurchargeIdsByRole[roleKey] || []
+                allColorIds.push(...colors)
+            }
+
+            // Check if we have active selections (Selection-Driven Mode)
+            const hasSelections = selectedRoleKeys.length > 0 || allColorIds.length > 0 || selectedDesignOptionIds.length > 0
+
+            const payload: any = {
+                model_ids: modelIds
+            }
+
+            if (hasSelections) {
+                payload.export_mode = 'selection_driven'
+                payload.role_keys = selectedRoleKeys
+                payload.color_surcharge_ids = allColorIds
+                payload.design_option_ids = selectedDesignOptionIds
+                // UI does not currently expose explicit padding toggle (it generates both if config allows), so request both.
+                payload.with_padding = 'both'
+            }
+
+            console.log("EBAY EXPORT PAYLOAD", payload)
+            const response = await ebayExportApi.exportCsv(payload)
 
             // Create blob link to download
             const url = window.URL.createObjectURL(new Blob([response.data]))
@@ -797,7 +827,7 @@ export default function EbayExportPage() {
                                 renderValue={(selected) => (
                                     <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
                                         {selected.map((roleKey) => {
-                                            const rc = roleConfigs.find(r => r.role === roleKey)
+                                            const rc = roleConfigs.find(r => normalizeRoleKey(r.role) === roleKey)
                                             return <Chip key={roleKey} label={rc?.display_name || roleKey} size="small" />
                                         })}
                                     </Box>
@@ -806,7 +836,7 @@ export default function EbayExportPage() {
                                 {selectableRoles.map(rc => {
                                     const skuPair = formatRoleSkuPair(rc.sku_abbrev_no_padding, rc.sku_abbrev_with_padding)
                                     return (
-                                        <MenuItem key={rc.role} value={rc.role}>
+                                        <MenuItem key={rc.role} value={normalizeRoleKey(rc.role)}>
                                             {rc.display_name || rc.role} ({rc.role}) — {skuPair}
                                         </MenuItem>
                                     )
@@ -817,7 +847,7 @@ export default function EbayExportPage() {
 
                     {/* Color dropdowns - one per selected role */}
                     {selectedRoleKeys.map((roleKey) => {
-                        const roleConfig = roleConfigs.find(rc => rc.role === roleKey)
+                        const roleConfig = roleConfigs.find(rc => normalizeRoleKey(rc.role) === roleKey)
                         const assignment = resolveActiveAssignmentForRole(roleKey)
                         const colors = surchargesByRole[roleKey] || []
 
@@ -1018,7 +1048,7 @@ export default function EbayExportPage() {
                         {selectedRoleKeys.map(roleKey => {
                             const activeAssignment = resolveActiveAssignmentForRole(roleKey)
                             const material = materials.find(m => m.id === activeAssignment?.material_id)
-                            const roleConfig = roleConfigs.find(rc => rc.role === roleKey)
+                            const roleConfig = roleConfigs.find(rc => normalizeRoleKey(rc.role) === roleKey)
                             const skuPair = formatRoleSkuPair(roleConfig?.sku_abbrev_no_padding, roleConfig?.sku_abbrev_with_padding)
                             const selectedColors = selectedColourSurchargeIdsByRole[roleKey] || []
                             const roleColors = surchargesByRole[roleKey] || []
