@@ -11,7 +11,6 @@ import EditIcon from '@mui/icons-material/Edit'
 import CheckIcon from '@mui/icons-material/Check'
 import CloseIcon from '@mui/icons-material/Close'
 import ReceiptIcon from '@mui/icons-material/Receipt'
-import CloudDownloadIcon from '@mui/icons-material/CloudDownload'
 
 import { customersApi } from '../services/api'
 import type { Customer } from '../types'
@@ -96,16 +95,6 @@ interface CleanupResult {
     affected_order_ids_sample: number[]
 }
 
-interface ReverbImportResponse {
-    import_run_id?: number | null
-    dry_run: boolean
-    total_fetched: number
-    total_created: number
-    total_updated: number
-    total_failed: number
-    failed_order_ids: string[]
-}
-
 interface OrderDetail extends MarketplaceOrder {
     addresses: OrderAddress[]
     lines: OrderLine[]
@@ -125,11 +114,6 @@ export default function MarketplaceOrdersPage() {
     const [orders, setOrders] = useState<MarketplaceOrder[]>([])
     const [isSearching, setIsSearching] = useState(false)
     const [error, setError] = useState<string | null>(null)
-
-    // Manual import state (Reverb)
-    const [reverbImportLoading, setReverbImportLoading] = useState(false)
-    const [reverbImportError, setReverbImportError] = useState<string | null>(null)
-    const [reverbImportResult, setReverbImportResult] = useState<ReverbImportResponse | null>(null)
 
     // Detail dialog state
     const [selectedOrderId, setSelectedOrderId] = useState<number | null>(null)
@@ -194,53 +178,6 @@ export default function MarketplaceOrdersPage() {
             setError(err instanceof Error ? err.message : 'Unknown error occurred')
         } finally {
             setIsSearching(false)
-        }
-    }
-
-    const handleImportReverbOrders = async () => {
-        setReverbImportLoading(true)
-        setReverbImportError(null)
-        setReverbImportResult(null)
-
-        try {
-            // Deterministic payload:
-            // - Always includes dry_run, limit, debug
-            // - If Date From is provided, use since_iso
-            // - Otherwise use days_back=30
-            const payload: Record<string, any> = {
-                dry_run: false,
-                limit: limit,
-                debug: false,
-            }
-
-            if (dateFrom) {
-                payload.since_iso = dateFrom
-            } else {
-                payload.days_back = 30
-            }
-
-            const response = await fetch('/api/reverb/orders/import', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify(payload),
-            })
-
-            if (!response.ok) {
-                const text = await response.text()
-                throw new Error(`Error ${response.status}: ${text.slice(0, 200)}`)
-            }
-
-            const data: ReverbImportResponse = await response.json()
-            setReverbImportResult(data)
-
-            // Refresh the current results using existing filters.
-            await handleSearch()
-        } catch (err) {
-            setReverbImportError(err instanceof Error ? err.message : 'Failed to import Reverb orders')
-        } finally {
-            setReverbImportLoading(false)
         }
     }
 
@@ -686,39 +623,15 @@ export default function MarketplaceOrdersPage() {
                     />
                 </Box>
 
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                    <Button
-                        variant="contained"
-                        startIcon={isSearching ? <CircularProgress size={16} color="inherit" /> : <SearchIcon />}
-                        onClick={handleSearch}
-                        disabled={isSearching || reverbImportLoading}
-                    >
-                        Search
-                    </Button>
-
-                    <Button
-                        variant="outlined"
-                        startIcon={reverbImportLoading ? <CircularProgress size={16} color="inherit" /> : <CloudDownloadIcon />}
-                        onClick={handleImportReverbOrders}
-                        disabled={reverbImportLoading || isSearching}
-                    >
-                        Import Reverb Orders
-                    </Button>
-                </Box>
+                <Button
+                    variant="contained"
+                    startIcon={isSearching ? <CircularProgress size={16} color="inherit" /> : <SearchIcon />}
+                    onClick={handleSearch}
+                    disabled={isSearching}
+                >
+                    Search
+                </Button>
             </Paper>
-
-            {/* Manual import feedback (Reverb) */}
-            {reverbImportError && (
-                <Alert severity="error" sx={{ mb: 2 }}>
-                    {reverbImportError}
-                </Alert>
-            )}
-
-            {reverbImportResult && (
-                <Alert severity="success" sx={{ mb: 2 }}>
-                    Reverb import complete. Fetched {reverbImportResult.total_fetched}, created {reverbImportResult.total_created}, updated {reverbImportResult.total_updated}, failed {reverbImportResult.total_failed}.
-                </Alert>
-            )}
 
             {/* Error display */}
             {error && (
