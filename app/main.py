@@ -6,7 +6,7 @@ from app.api import (
     materials, suppliers, customers, orders,
     pricing, templates, enums, export, design_options, settings, ebay_templates, variation_skus, material_role_configs, material_role_assignments, ebay_variations,
     marketplace_orders, marketplace_credentials, reverb_orders,
-    reverb_templates
+    reverb_templates, ebay_export
 )
 from app.services.storage_policy import ensure_storage_dirs_exist, cleanup_tmp_dir
 
@@ -75,6 +75,7 @@ app.include_router(marketplace_orders.router, prefix="/api")
 app.include_router(marketplace_credentials.router, prefix="/api")
 app.include_router(reverb_orders.router, prefix="/api")
 app.include_router(reverb_templates.router, prefix="/api")
+app.include_router(ebay_export.router, prefix="/api")
 
 # Serve static assets (JS, CSS, images) from React build
 from fastapi.staticfiles import StaticFiles

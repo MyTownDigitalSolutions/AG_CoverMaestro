@@ -6,7 +6,7 @@ import {
 import RefreshIcon from '@mui/icons-material/Refresh'
 import {
     manufacturersApi, seriesApi, modelsApi, pricingApi, materialsApi, designOptionsApi,
-    settingsApi, ebayVariationsApi, equipmentTypesApi,
+    settingsApi, ebayVariationsApi, equipmentTypesApi, ebayExportApi,
     type GenerateVariationsResponse, type VariationRow
 } from '../services/api'
 import type {
@@ -47,10 +47,13 @@ export default function EbayExportPage() {
     // Variation generation state
     const [generatingVariations, setGeneratingVariations] = useState(false)
     const [variationError, setVariationError] = useState<string | null>(null)
+
     const [variationResult, setVariationResult] = useState<GenerateVariationsResponse | null>(null)
+    const [loadingExisting, setLoadingExisting] = useState(false)
+    const [exportingCsv, setExportingCsv] = useState(false)
 
     // Existing variations viewer state
-    const [loadingExisting, setLoadingExisting] = useState(false)
+
     const [existingVariations, setExistingVariations] = useState<VariationRow[]>([])
 
     // Load initial data
@@ -147,6 +150,12 @@ export default function EbayExportPage() {
         }
     }, [filteredModels, selectedManufacturer])
 
+    // Helper to normalize role key (ensure underscore format)
+    const normalizeRoleKey = (role: string): string => {
+        if (!role) return ''
+        return role.toUpperCase().replace(/\s+/g, '_')
+    }
+
     // Selectable roles (ebay_variation_enabled = true)
     const selectableRoles = useMemo(() => {
         return roleConfigs.filter(rc => rc.ebay_variation_enabled === true)
@@ -155,7 +164,7 @@ export default function EbayExportPage() {
     // Helper to resolve active assignment for a role
     const resolveActiveAssignmentForRole = (roleKey: string) => {
         return materialRoles.find(mr =>
-            mr.role === roleKey &&
+            normalizeRoleKey(mr.role) === roleKey &&
             (mr.end_date === null || mr.end_date === undefined || new Date(mr.end_date) > new Date())
         )
     }
@@ -317,7 +326,7 @@ export default function EbayExportPage() {
                 for (const colorId of colorIdsSorted) {
                     const payload = {
                         model_ids: modelIds,
-                        role_key: roleKey,
+                        role_key: roleKey, // Already normalized
                         material_colour_surcharge_id: colorId,
                         design_option_ids: selectedDesignOptionIds
                     }
@@ -383,126 +392,183 @@ export default function EbayExportPage() {
         setVariationResult(null)
         setGeneratingVariations(true)
 
+        // Validation: Ensure every selected role has at least one color selected
+        const unconfiguredRoles = selectedRoleKeys.filter(roleKey => {
+            const colors = selectedColourSurchargeIdsByRole[roleKey] || []
+            return colors.length === 0
+        })
+
+        if (unconfiguredRoles.length > 0) {
+            const roleNames = unconfiguredRoles.map(key => {
+                const cfg = roleConfigs.find(c => normalizeRoleKey(c.role) === key)
+                return cfg?.label || key // Fallback to key if label missing
+            }).join(', ')
+            setVariationError(`Please select at least one color for the following roles: ${roleNames}`)
+            return
+        }
+
+        setGeneratingVariations(true)
+        setVariationError(null)
+
         try {
             const modelIds = Array.from(selectedModels)
             let totalCreated = 0
             let totalUpdated = 0
             const allRows: VariationRow[] = []
 
-            // Sort selected roles for deterministic order
-            const sortedSelectedRoles = [...selectedRoleKeys].sort()
+            for (const roleKey of selectedRoleKeys) {
+                const config = roleConfigs.find(c => normalizeRoleKey(c.role) === roleKey)
+                const colorIds = selectedColourSurchargeIdsByRole[roleKey] || []
 
-            // Validate that we have color selections for these roles
-            const missingColors = sortedSelectedRoles.filter(roleKey => {
-                const selectedColors = selectedColourSurchargeIdsByRole[roleKey] || []
-                return selectedColors.length === 0
-            })
-            if (missingColors.length > 0) {
-                const missingRoleNames = missingColors.map(k => {
-                    const rc = roleConfigs.find(r => r.role === k)
-                    return rc?.display_name || k
-                }).join(', ')
-                throw new Error(`No colors selected for: ${missingRoleNames}. Please select at least one color per role.`)
-            }
+                // Get color objects for sorting
+                const selectedColors = materials
+                    .flatMap(m => m.surcharges)
+                    .filter(s => colorIds.includes(s.id))
 
-            // Filter relevant design options (Pricing Relevant => eBay Enabled)
-            // Sort by Name Ascending (this is the authoritative order for option generation)
-            const sortedDesignOptionIds = designOptions
-                .filter(opt =>
-                    selectedDesignOptionIds.includes(opt.id) &&
-                    opt.is_pricing_relevant &&
-                    opt.ebay_variation_enabled
-                )
-                .sort((a, b) => a.name.localeCompare(b.name))
-                .map(opt => opt.id)
-
-            // Build option sets in required order:
-            // 1) baseline []
-            // 2) each option individually [id] (alpha order already)
-            // 3) combined [id,id,...] (only if more than 1 option)
-            const optionIdSets: number[][] = []
-            optionIdSets.push([]) // Always baseline
-            for (const optId of sortedDesignOptionIds) {
-                optionIdSets.push([optId])
-            }
-            if (sortedDesignOptionIds.length > 1) {
-                optionIdSets.push(sortedDesignOptionIds)
-            }
-
-            for (const roleKey of sortedSelectedRoles) {
-                // Determine padding configurations: No Padding (False), then With Padding (True)
-                const paddingConfigs = [false, true]
-
-                // Get SELECTED colors for this role
-                const selectedColorIds = selectedColourSurchargeIdsByRole[roleKey] || []
-
-                // We need the full color objects for sorting by abbreviation
-                const allRoleColors = surchargesByRole[roleKey] || []
-                const selectedColorsObjects = allRoleColors.filter(c => selectedColorIds.includes(c.id))
-
-                if (selectedColorsObjects.length === 0) continue
-
-                // Color Sorting:
-                // 1. PBK (abbrev case-insensitive 'pbk')
-                // 2. Others alphabetical by abbrev (or name)
-                const pbkRegex = /^pbk$/i
-                const pbkColors = selectedColorsObjects.filter(c => c.sku_abbreviation && pbkRegex.test(c.sku_abbreviation))
-                const otherColors = selectedColorsObjects.filter(c => !c.sku_abbreviation || !pbkRegex.test(c.sku_abbreviation))
-
-                otherColors.sort((a, b) => {
-                    const abbrevA = (a.sku_abbreviation || a.color_friendly_name || a.colour).toLowerCase()
-                    const abbrevB = (b.sku_abbreviation || b.color_friendly_name || b.colour).toLowerCase()
-                    return abbrevA.localeCompare(abbrevB)
+                // Sort colors: PBK first, then alphabetical by colour name
+                selectedColors.sort((a, b) => {
+                    const aIsPbk = a.colour === 'PBK'
+                    const bIsPbk = b.colour === 'PBK'
+                    if (aIsPbk && !bIsPbk) return -1
+                    if (!aIsPbk && bIsPbk) return 1
+                    return a.colour.localeCompare(b.colour)
                 })
 
-                const sortedColors = [...pbkColors, ...otherColors]
+                // Determine padding configurations
+                // Use settings based on valid abbreviation availability
+                const canNoPad = !!(config?.ebay_sku_abbrev_no_padding && config.ebay_sku_abbrev_no_padding.trim().length > 0 && config.ebay_sku_abbrev_no_padding.trim().length <= 3)
+                const canWithPad = !!(config?.ebay_sku_abbrev_with_padding && config.ebay_sku_abbrev_with_padding.trim().length > 0 && config.ebay_sku_abbrev_with_padding.trim().length <= 3)
+
+                const paddingConfigs: boolean[] = []
+                // Priority: No Pad, then With Pad
+                if (canNoPad) paddingConfigs.push(false)
+                if (canWithPad) paddingConfigs.push(true)
+
+                // Sort design options
+                // We generated them based on sorted `ebayDesignOptions`. 
+                // However, the selected list is just IDs. We should sort them to ensure deterministic key generation if array order matters backend (it usually sorts, but safe to be consistent)
+                const sortedDesignOptionIds = [...selectedDesignOptionIds].sort((a, b) => a - b)
+
+                if (paddingConfigs.length === 0) {
+                    console.warn(`Role ${roleKey} has no valid padding abbreviations configured. Skipping.`)
+                    continue
+                }
 
                 for (const withPadding of paddingConfigs) {
-                    for (const color of sortedColors) {
-                        // Required behavior: always baseline first, then each option individually, then combined
-                        for (const optionIds of optionIdSets) {
-                            const payload = {
+                    for (const color of selectedColors) {
+
+                        // 1. Always generate baseline with NO design options
+                        const payloadBaseline = {
+                            model_ids: modelIds,
+                            role_key: roleKey,
+                            material_colour_surcharge_id: color.id,
+                            design_option_ids: [], // Empty for baseline
+                            pricing_option_ids: [],
+                            with_padding: withPadding
+                        }
+
+                        try {
+                            const result = await ebayVariationsApi.generate(payloadBaseline)
+                            totalCreated += result.created
+                            totalUpdated += result.updated
+                            allRows.push(...result.rows)
+                        } catch (innerErr) {
+                            console.error("Baseline variant generation failed", innerErr)
+                            throw innerErr
+                        }
+
+                        // 2. If design options are selected, generate that variation too
+                        if (sortedDesignOptionIds.length > 0) {
+                            const payloadOptions = {
                                 model_ids: modelIds,
                                 role_key: roleKey,
                                 material_colour_surcharge_id: color.id,
-                                design_option_ids: optionIds,
+                                design_option_ids: sortedDesignOptionIds,
                                 pricing_option_ids: [],
                                 with_padding: withPadding
                             }
 
-                            const result = await ebayVariationsApi.generate(payload)
-                            totalCreated += result.created
-                            totalUpdated += result.updated
-                            allRows.push(...result.rows)
+                            try {
+                                const result = await ebayVariationsApi.generate(payloadOptions)
+                                totalCreated += result.created
+                                totalUpdated += result.updated
+                                allRows.push(...result.rows)
+                            } catch (innerErr) {
+                                console.error("Options variant generation failed", innerErr)
+                                throw innerErr
+                            }
                         }
                     }
                 }
             }
 
-            // Deduplicate by SKU
-            const uniqueRows = Array.from(
-                new Map(allRows.map(row => [row.sku, row])).values()
-            )
-
             setVariationResult({
                 created: totalCreated,
                 updated: totalUpdated,
-                rows: uniqueRows,
-                errors: []
+                errors: [],
+                rows: allRows // This might be massive, maybe just last batch? Or accumulated. 
+                // The API returns rows for the batch. We accumulated them.
+                // Ideally we should re-fetch all for these models to be sure we see everything.
             })
 
+            // Refresh existing variations list to show everything
+            await handleLoadExisting()
+
         } catch (err: any) {
-            // Handle structured error detail from backend
-            const detail = err.response?.data?.detail
-            let errorMessage = ''
-            if (typeof detail === 'object' && detail !== null) {
-                errorMessage = detail.message || 'Validation failed'
-            } else {
-                errorMessage = detail || err.message || 'Failed to generate base variations'
-            }
-            setVariationError(errorMessage)
+            console.error(err)
+            setVariationError(err.message || 'Failed to generate variants')
         } finally {
             setGeneratingVariations(false)
+        }
+    }
+
+
+    const handleExportCsv = async () => {
+        try {
+            setExportingCsv(true)
+
+            // Build payload
+            const modelIds = Array.from(selectedModels)
+
+            // Collect all selected color IDs across all roles
+            const allColorIds: number[] = []
+            for (const roleKey of selectedRoleKeys) {
+                const colors = selectedColourSurchargeIdsByRole[roleKey] || []
+                allColorIds.push(...colors)
+            }
+
+            // Check if we have active selections (Selection-Driven Mode)
+            const hasSelections = selectedRoleKeys.length > 0 || allColorIds.length > 0 || selectedDesignOptionIds.length > 0
+
+            const payload: any = {
+                model_ids: modelIds
+            }
+
+            if (hasSelections) {
+                payload.export_mode = 'selection_driven'
+                payload.role_keys = selectedRoleKeys
+                payload.color_surcharge_ids = allColorIds
+                payload.design_option_ids = selectedDesignOptionIds
+                // UI does not currently expose explicit padding toggle (it generates both if config allows), so request both.
+                payload.with_padding = 'both'
+            }
+
+            console.log("EBAY EXPORT PAYLOAD", payload)
+            const response = await ebayExportApi.exportCsv(payload)
+
+            // Create blob link to download
+            const url = window.URL.createObjectURL(new Blob([response.data]))
+            const link = document.createElement('a')
+            link.href = url
+            link.setAttribute('download', 'ebay_export.csv')
+            document.body.appendChild(link)
+            link.click()
+            link.remove() // Clean up
+        } catch (err: any) {
+            console.error('Export failed', err)
+            alert(`Export failed: ${err.message}`)
+        } finally {
+            setExportingCsv(false)
         }
     }
 
@@ -761,7 +827,7 @@ export default function EbayExportPage() {
                                 renderValue={(selected) => (
                                     <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
                                         {selected.map((roleKey) => {
-                                            const rc = roleConfigs.find(r => r.role === roleKey)
+                                            const rc = roleConfigs.find(r => normalizeRoleKey(r.role) === roleKey)
                                             return <Chip key={roleKey} label={rc?.display_name || roleKey} size="small" />
                                         })}
                                     </Box>
@@ -770,7 +836,7 @@ export default function EbayExportPage() {
                                 {selectableRoles.map(rc => {
                                     const skuPair = formatRoleSkuPair(rc.sku_abbrev_no_padding, rc.sku_abbrev_with_padding)
                                     return (
-                                        <MenuItem key={rc.role} value={rc.role}>
+                                        <MenuItem key={rc.role} value={normalizeRoleKey(rc.role)}>
                                             {rc.display_name || rc.role} ({rc.role}) — {skuPair}
                                         </MenuItem>
                                     )
@@ -781,7 +847,7 @@ export default function EbayExportPage() {
 
                     {/* Color dropdowns - one per selected role */}
                     {selectedRoleKeys.map((roleKey) => {
-                        const roleConfig = roleConfigs.find(rc => rc.role === roleKey)
+                        const roleConfig = roleConfigs.find(rc => normalizeRoleKey(rc.role) === roleKey)
                         const assignment = resolveActiveAssignmentForRole(roleKey)
                         const colors = surchargesByRole[roleKey] || []
 
@@ -879,8 +945,18 @@ export default function EbayExportPage() {
                     variant="outlined"
                     onClick={handleLoadExisting}
                     disabled={selectedModels.size === 0 || loadingExisting}
+                    sx={{ mr: 2 }}
                 >
                     {loadingExisting ? 'Loading...' : 'Load Existing Variations'}
+                </Button>
+                <Button
+                    variant="contained"
+                    color="success"
+                    onClick={handleExportCsv}
+                    disabled={selectedModels.size === 0 || exportingCsv}
+                    title={selectedModels.size === 0 ? "Select models to export" : "Download generated variations as CSV"}
+                >
+                    {exportingCsv ? 'Exporting...' : 'Download CSV'}
                 </Button>
             </Box>
 
@@ -972,7 +1048,7 @@ export default function EbayExportPage() {
                         {selectedRoleKeys.map(roleKey => {
                             const activeAssignment = resolveActiveAssignmentForRole(roleKey)
                             const material = materials.find(m => m.id === activeAssignment?.material_id)
-                            const roleConfig = roleConfigs.find(rc => rc.role === roleKey)
+                            const roleConfig = roleConfigs.find(rc => normalizeRoleKey(rc.role) === roleKey)
                             const skuPair = formatRoleSkuPair(roleConfig?.sku_abbrev_no_padding, roleConfig?.sku_abbrev_with_padding)
                             const selectedColors = selectedColourSurchargeIdsByRole[roleKey] || []
                             const roleColors = surchargesByRole[roleKey] || []

@@ -555,6 +555,13 @@ export const ebayVariationsApi = {
     api.get<VariationRow[]>(`/ebay-variations/by-models?model_ids=${modelIds.join(',')}`).then(r => r.data)
 }
 
+export const ebayExportApi = {
+  exportCsv: async (payload: { model_ids: number[], [key: string]: any }) => {
+    const response = await api.post('/ebay-export/export', payload, { responseType: 'blob' })
+    return response
+  }
+}
+
 // Reverb Templates API
 export interface ReverbTemplateResponse {
   id: number
