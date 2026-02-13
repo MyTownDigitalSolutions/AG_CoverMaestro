@@ -80,7 +80,7 @@ export default function AmazonExportPage() {
 
     const [listingType, setListingType] = useState<'individual' | 'parent_child'>('individual')
     const [downloading, setDownloading] = useState<string | null>(null)
-    const [includeCustomization, setIncludeCustomization] = useState(true)
+    const [includeCustomization] = useState(true)
 
     // Phase 9: File System Access
     const [baseDir, setBaseDir] = useState<any | null>(null) // Using any to avoid strict type ref issues if libs mismatch, though typed in service
@@ -457,73 +457,6 @@ export default function AmazonExportPage() {
         }
     }
 
-    const handleZipDownload = async () => {
-        try {
-            setDownloading('zip')
-            const modelIds = Array.from(selectedModels)
-
-            // Compute Tokens
-            const marketplaceToken = "Amazon" // Hardcoded for now
-
-            const mfr = manufacturers.find(m => m.id === selectedManufacturer)
-            const manufacturerToken = mfr ? normalizeName(mfr.name) : "UnknownManufacturer"
-
-            let seriesToken = "UnknownSeries"
-            if (selectedSeries !== '') {
-                const s = allSeries.find(s => s.id === selectedSeries)
-                seriesToken = s ? normalizeName(s.name) : "UnknownSeries"
-            } else {
-                // If no specific series selected, but we have models, it implies Multiple Series (or All)
-                seriesToken = "Multiple_Series"
-            }
-
-            const dateToken = new Date().toISOString().split('T')[0] // YYYY-MM-DD
-
-            const tokens = {
-                marketplace: marketplaceToken,
-                manufacturer: manufacturerToken,
-                series: seriesToken,
-                date: dateToken
-            }
-
-            console.log("[EXPORT][ZIP] Starting download", tokens)
-
-            const response = await exportApi.downloadZip(modelIds, listingType, includeCustomization, tokens, localCustomizationFormat)
-
-            // Filename from header
-            let filename = `${tokens.marketplace}-${tokens.manufacturer}-${tokens.series}-Product_Upload-${tokens.date}.zip`
-            const disposition = response.headers['content-disposition']
-            if (disposition && disposition.indexOf('attachment') !== -1) {
-                const filenameRegex = /filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/
-                const matches = filenameRegex.exec(disposition)
-                if (matches != null && matches[1]) {
-                    filename = matches[1].replace(/['"]/g, '')
-                }
-            }
-
-            const blob = new Blob([response.data], { type: 'application/zip' })
-            const url = window.URL.createObjectURL(blob)
-            const link = document.createElement('a')
-            link.href = url
-            link.setAttribute('download', filename)
-            document.body.appendChild(link)
-            link.click()
-
-            setTimeout(() => {
-                link.parentNode?.removeChild(link)
-                window.URL.revokeObjectURL(url)
-            }, 100)
-
-            setFsStatus("ZIP Download started.")
-            setTimeout(() => setFsStatus(null), 3000)
-
-        } catch (e: any) {
-            console.error("[EXPORT][ZIP] download failed", e)
-            setError("ZIP Download failed: " + (e.message || "Unknown error"))
-        } finally {
-            setDownloading(null)
-        }
-    }
 
 
 

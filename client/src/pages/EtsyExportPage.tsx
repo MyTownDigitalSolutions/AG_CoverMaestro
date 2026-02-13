@@ -299,7 +299,7 @@ export default function EtsyExportPage() {
                                                 tabIndex={-1}
                                                 key={row.id}
                                                 selected={isSelected}
-                                                onClick={(e) => {
+                                                onClick={() => {
                                                     const newSelected = new Set(selectedModels)
                                                     if (newSelected.has(row.id)) {
                                                         newSelected.delete(row.id)
