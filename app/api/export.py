@@ -1,3 +1,4 @@
+from __future__ import annotations
 import re
 import os
 import logging
@@ -7,7 +8,8 @@ import csv
 import json
 import copy
 import hashlib
-import requests # Added for image validation
+import urllib.error
+import urllib.request
 import concurrent.futures
 import time
 import traceback
@@ -378,8 +380,11 @@ def validate_export(request: ExportPreviewRequest, db: Session = Depends(get_db)
         def check_url_status(u):
             try:
                 # Short timeout, use HEAD to be lightweight
-                r = requests.head(u, timeout=2.0, allow_redirects=True)
-                return u, r.status_code, None
+                req = urllib.request.Request(u, method="HEAD")
+                with urllib.request.urlopen(req, timeout=2.0) as response:
+                    return u, response.getcode(), None
+            except urllib.error.HTTPError as e:
+                return u, e.code, None
             except Exception as e:
                 return u, None, str(e)
         
