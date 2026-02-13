@@ -35,8 +35,17 @@ export interface PricingRecalculateBulkResponse {
   }>
 }
 
+const envApiBaseUrl = (import.meta as any).env?.VITE_API_BASE_URL?.trim()
+
+const normalizedBaseUrl = envApiBaseUrl
+  ? (() => {
+      const cleanedUrl = envApiBaseUrl.replace(/\/+$/, '')
+      return cleanedUrl.endsWith('/api') ? cleanedUrl : `${cleanedUrl}/api`
+    })()
+  : '/api'
+
 const api = axios.create({
-  baseURL: '/api',
+  baseURL: normalizedBaseUrl,
 })
 
 export const manufacturersApi = {
