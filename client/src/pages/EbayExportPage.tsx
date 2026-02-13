@@ -328,7 +328,8 @@ export default function EbayExportPage() {
                         model_ids: modelIds,
                         role_key: roleKey, // Already normalized
                         material_colour_surcharge_id: colorId,
-                        design_option_ids: selectedDesignOptionIds
+                        design_option_ids: selectedDesignOptionIds,
+                        pricing_option_ids: []
                     }
 
                     console.log('Generate Variations Payload:', payload)
@@ -348,6 +349,7 @@ export default function EbayExportPage() {
             setVariationResult({
                 created: totalCreated,
                 updated: totalUpdated,
+                errors: [],
                 rows: uniqueRows
             })
         } catch (err: any) {

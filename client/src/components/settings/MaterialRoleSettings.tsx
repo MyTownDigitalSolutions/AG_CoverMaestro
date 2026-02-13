@@ -141,7 +141,7 @@ export const MaterialRoleSettings: React.FC = () => {
                             // Use role config abbreviations if available
                             const roleConfig = roleConfigs.find(rc => rc.role === a.role);
                             const matSku = roleConfig
-                                ? formatRoleSkuPair(roleConfig.sku_abbrev_no_padding, roleConfig.sku_abbrev_with_padding)
+                                ? formatRoleSkuPair(roleConfig.sku_abbrev_no_padding ?? undefined, roleConfig.sku_abbrev_with_padding ?? undefined)
                                 : (() => {
                                     const abbrev = material?.sku_abbreviation?.trim();
                                     if (!abbrev) return '-';

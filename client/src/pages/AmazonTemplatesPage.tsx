@@ -769,7 +769,7 @@ export default function AmazonTemplatesPage() {
 
       {/* Tabs */}
       <Box sx={{ borderBottom: 1, borderColor: 'divider', mb: 3 }}>
-        <Tabs value={templateType} onChange={(e, v) => { setTemplateType(v); setSelectedTemplate(null); }}>
+        <Tabs value={templateType} onChange={(_, v) => { setTemplateType(v); setSelectedTemplate(null); }}>
           <Tab label="Product Type Templates" value="product" />
           <Tab label="Customization Templates" value="customization" />
         </Tabs>
