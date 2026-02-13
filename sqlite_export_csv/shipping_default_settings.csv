@@ -1,0 +1,2 @@
+id,shipping_mode,flat_shipping_cents,default_rate_card_id,default_zone_code,shipping_settings_version,assumed_rate_card_id,assumed_tier_id,assumed_zone_code
+1,fixed_cell,0,,,9,3,17,7

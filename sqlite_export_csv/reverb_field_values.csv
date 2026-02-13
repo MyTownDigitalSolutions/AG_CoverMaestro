@@ -1,0 +1,33 @@
+id,reverb_field_id,value
+1,1,TRUE
+2,1,FALSE
+3,2,"[MANUFACTURER_NAME] [SERIES_NAME] [MODEL_NAME] Ultimate [EQUIPMENT_TYPE] Cover | Choose your Color, Fabric, Pocket, Padding & more | Made in the US"
+4,3,Brand New
+5,4,10
+8,10,accessories
+9,11,amp-covers
+10,28,TRUE
+11,28,FALSE
+12,30,FALSE
+14,33,TRUE
+15,33,FALSE
+16,34,US
+27,31,Free_Shipping
+28,31,Paid_Shipping
+30,6,[Manufacturer_Name]
+31,7,[Series_Name] [Model_Name]
+32,12,https://giggearcovers.com/amazon-images/[MANUFACTURER_NAME]/[SERIES_NAME]/[MANUFACTURER_NAME]_[SERIES_NAME]_[MODEL_NAME]_[EQUIPMENT_TYPE]_Cover_001.jpg
+33,13,https://giggearcovers.com/amazon-images/[MANUFACTURER_NAME]/[SERIES_NAME]/[MANUFACTURER_NAME]_[SERIES_NAME]_[MODEL_NAME]_[EQUIPMENT_TYPE]_Cover_002.jpg
+34,14,https://giggearcovers.com/amazon-images/[MANUFACTURER_NAME]/[SERIES_NAME]/[MANUFACTURER_NAME]_[SERIES_NAME]_[MODEL_NAME]_[EQUIPMENT_TYPE]_Cover_003.jpg
+35,15,https://giggearcovers.com/amazon-images/[MANUFACTURER_NAME]/[SERIES_NAME]/[MANUFACTURER_NAME]_[SERIES_NAME]_[MODEL_NAME]_[EQUIPMENT_TYPE]_Cover_004.jpg
+36,16,https://giggearcovers.com/amazon-images/[MANUFACTURER_NAME]/[SERIES_NAME]/[MANUFACTURER_NAME]_[SERIES_NAME]_[MODEL_NAME]_[EQUIPMENT_TYPE]_Cover_005.jpg
+37,18,https://giggearcovers.com/amazon-images/[MANUFACTURER_NAME]/[SERIES_NAME]/[MANUFACTURER_NAME]_[SERIES_NAME]_[MODEL_NAME]_[EQUIPMENT_TYPE]_Cover_007.jpg
+38,19,https://giggearcovers.com/amazon-images/[MANUFACTURER_NAME]/[SERIES_NAME]/[MANUFACTURER_NAME]_[SERIES_NAME]_[MODEL_NAME]_[EQUIPMENT_TYPE]_Cover_008.jpg
+39,20,https://giggearcovers.com/amazon-images/[MANUFACTURER_NAME]/[SERIES_NAME]/[MANUFACTURER_NAME]_[SERIES_NAME]_[MODEL_NAME]_[EQUIPMENT_TYPE]_Cover_009.jpg
+40,5,[SKU]
+41,9,[REVERB_PRICE_CHOICE_NP]
+42,9,[REVERB_PRICE_CHOICE_P]
+43,9,[REVERB_PRICE_PREMIUM_NP]
+44,9,[REVERB_PRICE_PREMIUM_P]
+45,8,"<p>Your <b>[Manufacturer_Name] [Series_Name] [Model_Name]</b> deserves serious protection — not a generic slip cover.<br> Our hand-crafted <b>Gig Gear Covers</b> are made in the <b>USA</b> using premium, first-quality materials to protect your amp from dust, moisture, sun, and everyday wear.</p> <p><b>🧵 Materials & Build Quality</b></p> <p><b>Choice™ Waterproof Fabric</b></p> <ul> <li>Heavy-duty 915 x 1220-denier Cordura</li> <li>Waterproof, tear-resistant, fade-resistant</li> <li>UV protection helps prevent yellowing & fading</li> </ul> <p><b>Premium Synthetic Leather</b></p> <ul> <li>Elegant, durable, water-resistant</li> <li>Easy to clean and built to last</li> </ul> <p><b>Built to Last</b></p> <ul> <li>Sewn with industrial machines</li> <li>Industrial-strength thread & reinforced seams</li> <li>Designed for real-world gigging and transport</li> </ul> <p><b>🧼 Easy Care</b><br> Just wipe clean with a damp cloth or non-abrasive cleaner.</p> <p><b>🔧 Available Options (Choose Any Combination)</b></p> <ul> <li><b>Padding</b> – Soft brushed black interior for extra protection</li> <li><b>2-in-1 Cargo “Pick Pocket”</b> – Holds cables, pedals, picks, phone, keys</li> <li><b>Zippered Handle Opening</b> – Extra protection around the amp handle</li> </ul> <p><b>🎨 Color Options</b></p> <p><b>Default color:</b> Pitch-Black<br> Want a different color? Message us after purchase.</p> <p><b>Premium Synthetic Leather Colors:</b><br> Pitch-Black, Pacific-Blue, Toasty-Tan, Fire-Engine-Red, Orange-Tea, Cloudy Gray, Marbled Brown, Jade-Green, Royal Purple, Magnificent-White</p> <p><b>Choice™ Fabric Colors:</b><br> Pitch-Black, Pacific-Blue, Toasty-Tan</p> <p><i>(See photos for color references.)</i></p> <hr> <p><b>💰 PRICING + HOW TO ORDER (PLEASE READ)</b><br> Reverb does <b>not</b> support variation listings. To choose your fabric type, padding, and add-ons, you will use <b>Make Offer</b> and enter the correct total.</p> <p><b>STEP 1 — Choose your 'base cover' price</b></p> <ul> <li><b>Choice™ Fabric (Non-Padded):</b> $[REVERB_PRICE_CHOICE_NP]</li> <li><b>Choice™ Fabric (Padded):</b> $[REVERB_PRICE_CHOICE_P]</li> <li><b>Premium Synthetic Leather (Non-Padded):</b> $[REVERB_PRICE_PREMIUM_NP]</li> <li><b>Premium Synthetic Leather (Padded):</b> $[REVERB_PRICE_PREMIUM_P]</li> </ul> <p><b>STEP 2 — Add any upgrades (add these to the base price)</b></p> <ul> <li><b>""2-in-1"" Zipper Pocket:</b> +$[2-in-1 Pocket]</li> <li><b>Zippered Top Amp Handle Opening:</b> +$[Zipperized TAH]</li> <li><b>Add both: ""2-in-1"" Zipper Pocket & Zippered Top Amp Handle to your selected base cover price:</b> +$[SUM:[2-in-1 Pocket]|[Zipperized TAH]]</li> </ul> <p><b>STEP 3 — Place your order</b></p> <ol> <li><b>If you ONLY WANT Choice™ Non-Padded & NO upgrades:</b> you may click <b>Buy Now</b>.</li> <li><b>For ALL other choices</b> (Choice™ Padded, any Premium Synthetic Leather, or any upgrades), click <b>Make Offer</b>.</li> <li>Enter your <b>TOTAL</b> price: <i>(Base Price + Upgrades)</i>.</li> <li>Send us a message with your selections: <ul> <li>Fabric type: Choice™ or Premium Synthetic Leather</li> <li>Padding: Padded or Non-Padded</li> <li>Add-ons: Pick Pocket and/or Zipper Handle</li> <li>Color choice (default is Pitch-Black)</li> </ul> </li> </ol> <p><b>Important:</b> We do not accept offers below the correct total. The <b>Make Offer</b> button is used to select options and enter the matching price.</p>"
+46,17,https://giggearcovers.com/amazon-images/[MANUFACTURER_NAME]\[SERIES_NAME]/[MANUFACTURER_NAME]_[SERIES_NAME]_[MODEL_NAME]_[EQUIPMENT_TYPE]_Cover_006.jpg

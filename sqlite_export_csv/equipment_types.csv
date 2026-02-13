@@ -1,0 +1,12 @@
+id,name,amazon_customization_template_id,reverb_template_id
+1,Guitar Amplifier,1,
+2,Bass Amplifier,1,
+3,Keyboard Amplifier,1,
+4,Cabinet,,
+5,Combo Amp,,
+6,Head,,
+8,Mixer,,
+9,Music Keyboard,2,
+10,Digital Piano,2,
+11,Bass Cabinet,1,
+12,Console Piano,2,

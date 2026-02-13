@@ -1,0 +1,4 @@
+id,carrier,name,effective_date,end_date,active
+1,USPS,USPS Ground Advantage 2024,2025-12-22 07:15:04.129780,,1
+2,USPS,Standard USPS,2025-12-23 08:25:26,,0
+3,USPS,USPS Ground Advantage 2026,2026-01-15 09:36:33.216690,,1

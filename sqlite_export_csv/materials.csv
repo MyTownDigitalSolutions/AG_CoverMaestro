@@ -1,0 +1,4 @@
+id,name,base_color,material_type,linear_yard_width,weight_per_linear_yard,unit_of_measure,package_quantity,weight_per_sq_in_oz,sku_abbreviation,ebay_variation_enabled
+2,"Liberty Headliner 1/4""",Black,FABRIC,60.0,12.0,YARD,,0.005,,false
+4,Cordura HP,Black,FABRIC,60.0,28.0,YARD,,0.005,,false
+5,Denali Automotive Vinyl,Black,FABRIC,60.0,28.0,YARD,,0.005,,false

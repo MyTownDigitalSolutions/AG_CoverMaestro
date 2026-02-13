@@ -1,0 +1,6 @@
+id,order_id,marketplace_item_id,sku,model_id,title,quantity,unit_price_cents,total_price_cents,customization_data,external_line_item_id,asin,listing_id,product_id,variant,currency_code,line_subtotal_cents,tax_cents,discount_cents,line_total_cents,fulfillment_status_raw,fulfillment_status_normalized,raw_marketplace_data
+1,1,,,161,(Reverb product 77054514),1,4398,,,24700013-1,,,77054514,,,,,,4398,,,
+2,2,,,,(Reverb product 85676515),1,4150,,,24694906-1,,,85676515,,,,,,4150,,,
+3,3,,,,(Reverb product 86515978),1,4950,,,24690317-1,,,86515978,,,,,,4950,,,
+4,4,,,,(Reverb product 64036007),1,4198,,,24676270-1,,,64036007,,,,,,4198,,,
+5,5,,,,(Reverb product 64035024),1,5398,,,24667486-1,,,64035024,,,,,,5398,,,

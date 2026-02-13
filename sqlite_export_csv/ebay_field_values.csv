@@ -1,0 +1,78 @@
+id,ebay_field_id,value
+1,1,Revise
+2,1,Relist
+3,1,Add
+4,1,Delete
+5,4,308
+6,6,"[MANUFACTURER_NAME] [SERIES_NAME] [MODEL_NAME]  Cover | Pick Color, fabric & more"
+7,7,Variation
+8,11,5
+9,12,https://giggearcovers.com/amazon-images/[Manufacturer_Name]/[Series_Name]/[Manufacturer_Name]_[Series_Name]_[Model_Name]_[Equipment_Type]_Cover_001.jpg
+10,13,3000
+11,13,1000
+12,14,N/A
+13,15,Auction
+14,15,FixedPrice
+15,16,1
+16,16,10
+17,16,3
+18,16,GTC
+19,16,7
+20,17,1
+21,18,78028
+22,19,3
+23,20,Flat-Fee
+24,20,Free Shipping w/ Upgrade Options
+25,21,Returns - 14 Days
+26,21,No returns
+27,22,ImmediatePay
+28,23,Gig Gear Covers
+29,24,[Series_Name] [Model_Name] Cover
+30,25,1
+31,26,Ounce
+32,27,Ounce
+33,27,Gram
+34,27,Kilogram
+35,27,Pound
+36,28,1
+37,29,12.5
+38,30,15
+39,35,Add
+40,35,Revise
+41,35,Relist
+42,35,Delete
+43,38,308
+44,40,"[MANUFACTURER_NAME] [SERIES_NAME] [MODEL_NAME]  Cover | Pick Color, fabric & more"
+45,41,Variation
+46,45,5
+47,46,https://giggearcovers.com/amazon-images/[Manufacturer_Name]/[Series_Name]/[Manufacturer_Name]_[Series_Name]_[Model_Name]_[Equipment_Type]_Cover_001.jpg
+48,47,1000
+49,47,3000
+50,49,Auction
+51,49,FixedPrice
+52,50,1
+53,50,3
+54,50,7
+55,50,10
+56,50,GTC
+57,51,1
+58,52,78028
+59,53,3
+60,54,Flat-Fee
+61,54,Free Shipping w/ Upgrade Options
+62,55,Returns - 14 Days
+63,55,No returns
+64,56,ImmediatePay
+65,57,Gig Gear Covers
+66,58,[Series_Name] [Model_Name] Cover
+67,59,1
+68,60,Ounce
+69,61,Pound
+70,61,Ounce
+71,61,Kilogram
+72,61,Gram
+73,62,1
+74,63,12.5
+75,64,15
+76,35,TestValue
+77,42,Fabric={{FABRIC_VARIANTS}}|Color={{COLORS}}|{{DESIGN_OPTIONS_YN}}

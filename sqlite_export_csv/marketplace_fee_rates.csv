@@ -1,0 +1,5 @@
+marketplace,fee_rate
+DEFAULT,0.15
+amazon,0.15
+ebay,0.13
+reverb,0.1

@@ -1,0 +1,572 @@
+id,conversation_id,external_message_id,sender_type,sent_at,body_text,raw_message_data
+1,1,synthetic:12e9a688681f9f9f75ae7800,unknown,2026-01-15 19:24:12.000000,Hey boss! Can I get one of these covers? I sent you an offer,"{""body"": ""Hey boss! Can I get one of these covers? I sent you an offer"", ""created_at"": ""2026-01-15T19:24:12-05:00"", ""author"": {""name"": ""Adam Fazio"", ""_links"": {""avatar"": {""href"": ""https://static.reverb-assets.com/assets/avatars/default-25153ae39d615d4d2253fd9be9e26489435c8e6fd165451ca51e90422c3d0881.jpg""}}}, ""authored"": false, ""photos"": []}"
+2,1,synthetic:473972dcac0ba6b480672d5e,unknown,2026-01-15 19:24:55.000000,"This is for the vertical 212 marshal codes speaker cab, correct?","{""body"": ""This is for the vertical 212 marshal codes speaker cab, correct?"", ""created_at"": ""2026-01-15T19:24:55-05:00"", ""author"": {""name"": ""Adam Fazio"", ""_links"": {""avatar"": {""href"": ""https://static.reverb-assets.com/assets/avatars/default-25153ae39d615d4d2253fd9be9e26489435c8e6fd165451ca51e90422c3d0881.jpg""}}}, ""authored"": false, ""photos"": []}"
+3,1,synthetic:c6aeb95a0bca71e20ff183a2,unknown,2026-01-03 01:18:06.000000,"Sorry about the delay . . .
+
+Hello Willen Jean-Jules
+
+All of our covers are custom-made upon placement of an order. Please review the following information:
+
+Acoustic Gamma G25
+Fabric: Choice Waterproof Fabric | No Padding
+Color: Pitch-Black
+
+Measurements: 
+Width: 15.4""
+Depth: 7.9""
+Height: 15""
+
+Top Depth: 7.25""
+
+Top Amp Handle  Measurements:
+10.5""L X 1.25""W offset 3.25"" from rear of amplifier.
+
+Zipper Handle: No
+2-in-1 Pick-Pocket: No
+Priority Shipping: No
+
+We use the manufacturer's information to custom-make your cover upon order. If anything looks wrong or you have concerns after you receive the item, please reach out to us.
+
+Sincerely
+
+Marc Stuart","{""body"": ""Sorry about the delay . . .\n\nHello Willen Jean-Jules\n\nAll of our covers are custom-made upon placement of an order. Please review the following information:\n\nAcoustic Gamma G25\nFabric: Choice Waterproof Fabric | No Padding\nColor: Pitch-Black\n\nMeasurements: \nWidth: 15.4\""\nDepth: 7.9\""\nHeight: 15\""\n\nTop Depth: 7.25\""\n\nTop Amp Handle  Measurements:\n10.5\""L X 1.25\""W offset 3.25\"" from rear of amplifier.\n\nZipper Handle: No\n2-in-1 Pick-Pocket: No\nPriority Shipping: No\n\nWe use the manufacturer's information to custom-make your cover upon order. If anything looks wrong or you have concerns after you receive the item, please reach out to us.\n\nSincerely\n\nMarc Stuart"", ""created_at"": ""2026-01-03T01:18:06-06:00"", ""author"": {""name"": ""Marc Stuart"", ""_links"": {""avatar"": {""href"": ""https://static.reverb-assets.com/assets/avatars/default-25153ae39d615d4d2253fd9be9e26489435c8e6fd165451ca51e90422c3d0881.jpg""}}}, ""authored"": true, ""photos"": []}"
+4,1,synthetic:9e7c32580b0a1fcd0028a620,unknown,2026-01-07 02:24:19.000000,"Good news! 
+Your custom-made cover is in our queue to be made.
+You will receive an automated email very soon with a tracking number if you haven't already.
+
+When a tracking # is issued, that means the cover is in our queue to be made and will be ready to ship soon. 
+It can then take 24 - 48 hours from when it is issued to when the cover will be picked up, scanned and updated on the USPS/UPS/ or FEDEX website. 
+
+This timing does not include holidays or weekends. However, it can also be updated before that as well.
+
+If you’ve received a previous email from us confirming size & customization options and you have not responded,  we encourage you to still do so, ASAP.  Especially if there is something wrong with the information we have. Thanks!
+
+We're glad we could help. If there are any problems at all with the cover, please contact us. We'll take care of you.
+
+It has been a pleasure.
+
+Marc Stuart
+Gig Gear Covers","{""body"": ""Good news! \nYour custom-made cover is in our queue to be made.\nYou will receive an automated email very soon with a tracking number if you haven't already.\n\nWhen a tracking # is issued, that means the cover is in our queue to be made and will be ready to ship soon. \nIt can then take 24 - 48 hours from when it is issued to when the cover will be picked up, scanned and updated on the USPS/UPS/ or FEDEX website. \n\nThis timing does not include holidays or weekends. However, it can also be updated before that as well.\n\nIf you\u2019ve received a previous email from us confirming size & customization options and you have not responded,  we encourage you to still do so, ASAP.  Especially if there is something wrong with the information we have. Thanks!\n\nWe're glad we could help. If there are any problems at all with the cover, please contact us. We'll take care of you.\n\nIt has been a pleasure.\n\nMarc Stuart\nGig Gear Covers"", ""created_at"": ""2026-01-07T02:24:19-06:00"", ""author"": {""name"": ""Marc Stuart"", ""_links"": {""avatar"": {""href"": ""https://static.reverb-assets.com/assets/avatars/default-25153ae39d615d4d2253fd9be9e26489435c8e6fd165451ca51e90422c3d0881.jpg""}}}, ""authored"": true, ""photos"": []}"
+5,1,synthetic:10d123570cc91c4df02ff3ea,unknown,2026-01-07 05:07:46.000000,"Hello Marc Stuart,
+
+Thank you for the message
+
+Your previous message regarding size and custom options is correct. I would just like the basic cover with no custom options.
+
+Thanks
+Willens Jean-Jules","{""body"": ""Hello Marc Stuart,\n\nThank you for the message\n\nYour previous message regarding size and custom options is correct. I would just like the basic cover with no custom options.\n\nThanks\nWillens Jean-Jules"", ""created_at"": ""2026-01-07T05:07:46-06:00"", ""author"": {""name"": ""Willens Jean-Jules"", ""_links"": {""avatar"": {""href"": ""https://static.reverb-assets.com/assets/avatars/default-25153ae39d615d4d2253fd9be9e26489435c8e6fd165451ca51e90422c3d0881.jpg""}}}, ""authored"": false, ""photos"": []}"
+6,1,synthetic:7b5a25cc328247bf99bf6720,unknown,2026-01-03 00:21:52.000000,"Hello Brandon Woods
+
+All of our covers are custom-made upon placement of an order. Please review the following information:
+
+Blackstar Artisan 30H
+Fabric: Choice Waterproof Fabric | No Padding
+Color: Pitch-Black
+
+Measurements: 
+Width: 28.14""
+Depth: 8.228""
+Height: 11.378""
+Zipper Handle: No
+2-in-1 Pick-Pocket: No
+Priority Shipping: No
+
+We use the manufacturer's information to custom-make your cover upon order. If anything looks wrong or you have concerns after you receive the item, please reach out to us.
+
+Sincerely
+
+Marc Stuart","{""body"": ""Hello Brandon Woods\n\nAll of our covers are custom-made upon placement of an order. Please review the following information:\n\nBlackstar Artisan 30H\nFabric: Choice Waterproof Fabric | No Padding\nColor: Pitch-Black\n\nMeasurements: \nWidth: 28.14\""\nDepth: 8.228\""\nHeight: 11.378\""\nZipper Handle: No\n2-in-1 Pick-Pocket: No\nPriority Shipping: No\n\nWe use the manufacturer's information to custom-make your cover upon order. If anything looks wrong or you have concerns after you receive the item, please reach out to us.\n\nSincerely\n\nMarc Stuart"", ""created_at"": ""2026-01-03T00:21:52-07:00"", ""author"": {""name"": ""Marc Stuart"", ""_links"": {""avatar"": {""href"": ""https://static.reverb-assets.com/assets/avatars/default-25153ae39d615d4d2253fd9be9e26489435c8e6fd165451ca51e90422c3d0881.jpg""}}}, ""authored"": true, ""photos"": []}"
+7,1,synthetic:f98af606690bf525f8ef700c,unknown,2026-01-03 10:23:44.000000,Hi!! What is a zipper cover?,"{""body"": ""Hi!! What is a zipper cover?"", ""created_at"": ""2026-01-03T10:23:44-07:00"", ""author"": {""name"": ""Brandon Woods"", ""_links"": {""avatar"": {""href"": ""https://rvb-img.reverb.com/i/s--JiX5WF3r--/q64c7lia0bjfmg5doytc.jpg""}}}, ""authored"": false, ""photos"": []}"
+8,1,synthetic:3256513a3f9a232ee6220fb9,unknown,2026-01-03 10:33:38.000000,"Also, the depth measurement seems perfect but the height and width are slightly shorter than listed; I will double check either later tonight or early tomorrow morning","{""body"": ""Also, the depth measurement seems perfect but the height and width are slightly shorter than listed; I will double check either later tonight or early tomorrow morning"", ""created_at"": ""2026-01-03T10:33:38-07:00"", ""author"": {""name"": ""Brandon Woods"", ""_links"": {""avatar"": {""href"": ""https://rvb-img.reverb.com/i/s--JiX5WF3r--/q64c7lia0bjfmg5doytc.jpg""}}}, ""authored"": false, ""photos"": []}"
+9,1,synthetic:64f750125109ee110bd5ff40,unknown,2026-01-04 18:06:36.000000,Those dimensions seem correct after measuring today :),"{""body"": ""Those dimensions seem correct after measuring today :)"", ""created_at"": ""2026-01-04T18:06:36-07:00"", ""author"": {""name"": ""Brandon Woods"", ""_links"": {""avatar"": {""href"": ""https://rvb-img.reverb.com/i/s--JiX5WF3r--/q64c7lia0bjfmg5doytc.jpg""}}}, ""authored"": false, ""photos"": []}"
+10,1,synthetic:0cb98c69dd3af40bfbf6631c,unknown,2026-01-05 16:23:16.000000,"Great! The zipper cover allows the top amp handle to open and close with a zipper, offering more protection from water, spills, etc..","{""body"": ""Great! The zipper cover allows the top amp handle to open and close with a zipper, offering more protection from water, spills, etc.."", ""created_at"": ""2026-01-05T16:23:16-07:00"", ""author"": {""name"": ""Marc Stuart"", ""_links"": {""avatar"": {""href"": ""https://static.reverb-assets.com/assets/avatars/default-25153ae39d615d4d2253fd9be9e26489435c8e6fd165451ca51e90422c3d0881.jpg""}}}, ""authored"": true, ""photos"": []}"
+11,1,synthetic:31ed8b45c11fbe316825c73e,unknown,2026-01-07 01:23:36.000000,"Good news! 
+Your custom-made cover is in our queue to be made.
+You will receive an automated email very soon with a tracking number if you haven't already.
+
+When a tracking # is issued, that means the cover is in our queue to be made and will be ready to ship soon. 
+It can then take 24 - 48 hours from when it is issued to when the cover will be picked up, scanned and updated on the USPS/UPS/ or FEDEX website. 
+
+This timing does not include holidays or weekends. However, it can also be updated before that as well.
+
+If you’ve received a previous email from us confirming size & customization options and you have not responded,  we encourage you to still do so, ASAP.  Especially if there is something wrong with the information we have. Thanks!
+
+We're glad we could help. If there are any problems at all with the cover, please contact us. We'll take care of you.
+
+It has been a pleasure.
+
+Marc Stuart
+Gig Gear Covers","{""body"": ""Good news! \nYour custom-made cover is in our queue to be made.\nYou will receive an automated email very soon with a tracking number if you haven't already.\n\nWhen a tracking # is issued, that means the cover is in our queue to be made and will be ready to ship soon. \nIt can then take 24 - 48 hours from when it is issued to when the cover will be picked up, scanned and updated on the USPS/UPS/ or FEDEX website. \n\nThis timing does not include holidays or weekends. However, it can also be updated before that as well.\n\nIf you\u2019ve received a previous email from us confirming size & customization options and you have not responded,  we encourage you to still do so, ASAP.  Especially if there is something wrong with the information we have. Thanks!\n\nWe're glad we could help. If there are any problems at all with the cover, please contact us. We'll take care of you.\n\nIt has been a pleasure.\n\nMarc Stuart\nGig Gear Covers"", ""created_at"": ""2026-01-07T01:23:36-07:00"", ""author"": {""name"": ""Marc Stuart"", ""_links"": {""avatar"": {""href"": ""https://static.reverb-assets.com/assets/avatars/default-25153ae39d615d4d2253fd9be9e26489435c8e6fd165451ca51e90422c3d0881.jpg""}}}, ""authored"": true, ""photos"": []}"
+12,1,synthetic:73551cd153994dda18aad2f9,unknown,2025-12-31 16:33:16.000000,Will this fit a vintage Fender Princeton 6G2 like a 1963 amp? Also how do you specify the color I want a tan or brown cover? Thanks.,"{""body"": ""Will this fit a vintage Fender Princeton 6G2 like a 1963 amp? Also how do you specify the color I want a tan or brown cover? Thanks."", ""created_at"": ""2025-12-31T16:33:16-05:00"", ""author"": {""name"": ""Randy Poznan"", ""_links"": {""avatar"": {""href"": ""https://static.reverb-assets.com/assets/avatars/default-25153ae39d615d4d2253fd9be9e26489435c8e6fd165451ca51e90422c3d0881.jpg""}}}, ""authored"": false, ""photos"": []}"
+13,1,synthetic:5c2941ac34ed9811b5fdc46f,unknown,2026-01-05 18:24:32.000000,"Hello:
+
+Sorry for the delay. If you're still interested, please provide the exact measurements of your model.
+
+
+Marc Stuart","{""body"": ""Hello:\n\nSorry for the delay. If you're still interested, please provide the exact measurements of your model.\n\n\nMarc Stuart"", ""created_at"": ""2026-01-05T18:24:32-05:00"", ""author"": {""name"": ""Marc Stuart"", ""_links"": {""avatar"": {""href"": ""https://static.reverb-assets.com/assets/avatars/default-25153ae39d615d4d2253fd9be9e26489435c8e6fd165451ca51e90422c3d0881.jpg""}}}, ""authored"": true, ""photos"": []}"
+14,1,synthetic:56ff6eb701efce510bbbfbf2,unknown,2026-01-03 01:21:12.000000,"Hello Elizabeth Leedy
+
+All of our covers are custom-made upon placement of an order. Please review the following information:
+
+Marshall Origin 50 Head
+Fabric: Choice Waterproof Fabric | No Padding
+Color: Pitch-Black
+
+Measurements: 
+Width: 22.7""
+Depth: 8.9""
+Height: 9""
+
+
+Top Amp Handle  Measurements:
+11.25""L X 1""W is centered on top of the amplifier.
+
+Zipper Handle: No
+2-in-1 Pick-Pocket: No
+Priority Shipping: No
+
+We use the manufacturer's information to custom-make your cover upon order. If anything looks wrong or you have concerns after you receive the item, please reach out to us.
+
+Sincerely
+
+Marc Stuart","{""body"": ""Hello Elizabeth Leedy\n\nAll of our covers are custom-made upon placement of an order. Please review the following information:\n\nMarshall Origin 50 Head\nFabric: Choice Waterproof Fabric | No Padding\nColor: Pitch-Black\n\nMeasurements: \nWidth: 22.7\""\nDepth: 8.9\""\nHeight: 9\""\n\n\nTop Amp Handle  Measurements:\n11.25\""L X 1\""W is centered on top of the amplifier.\n\nZipper Handle: No\n2-in-1 Pick-Pocket: No\nPriority Shipping: No\n\nWe use the manufacturer's information to custom-make your cover upon order. If anything looks wrong or you have concerns after you receive the item, please reach out to us.\n\nSincerely\n\nMarc Stuart"", ""created_at"": ""2026-01-03T01:21:12-06:00"", ""author"": {""name"": ""Marc Stuart"", ""_links"": {""avatar"": {""href"": ""https://static.reverb-assets.com/assets/avatars/default-25153ae39d615d4d2253fd9be9e26489435c8e6fd165451ca51e90422c3d0881.jpg""}}}, ""authored"": true, ""photos"": []}"
+15,1,synthetic:1fff39672d49da9e7c4432da,unknown,2026-01-03 12:23:34.000000,"Yes, that all looks good Marc. Thank you.","{""body"": ""Yes, that all looks good Marc. Thank you."", ""created_at"": ""2026-01-03T12:23:34-06:00"", ""author"": {""name"": ""Ellie Lee"", ""_links"": {""avatar"": {""href"": ""https://rvb-img.reverb.com/i/s--Xl760hS1--/u2kpz1t6vgqmgnjwk5ne.jpg""}}}, ""authored"": false, ""photos"": []}"
+16,1,synthetic:ffc9ab5c660b0e80cb974795,unknown,2026-01-05 16:29:28.000000,"Good news! 
+Your custom-made cover is in our queue to be made.
+You will receive an automated email very soon with a tracking number if you haven't already.
+
+When a tracking # is issued, that means the cover is in our queue to be made and will be ready to ship soon. 
+It can then take 24 - 48 hours from when it is issued to when the cover will be picked up, scanned and updated on the USPS/UPS/ or FEDEX website. 
+
+This timing does not include holidays or weekends. However, it can also be updated before that as well.
+
+If you’ve received a previous email from us confirming size & customization options and you have not responded,  we encourage you to still do so, ASAP.  Especially if there is something wrong with the information we have. Thanks!
+
+We're glad we could help. If there are any problems at all with the cover, please contact us. We'll take care of you.
+
+It has been a pleasure.
+
+Marc Stuart
+Gig Gear Covers","{""body"": ""Good news! \nYour custom-made cover is in our queue to be made.\nYou will receive an automated email very soon with a tracking number if you haven't already.\n\nWhen a tracking # is issued, that means the cover is in our queue to be made and will be ready to ship soon. \nIt can then take 24 - 48 hours from when it is issued to when the cover will be picked up, scanned and updated on the USPS/UPS/ or FEDEX website. \n\nThis timing does not include holidays or weekends. However, it can also be updated before that as well.\n\nIf you\u2019ve received a previous email from us confirming size & customization options and you have not responded,  we encourage you to still do so, ASAP.  Especially if there is something wrong with the information we have. Thanks!\n\nWe're glad we could help. If there are any problems at all with the cover, please contact us. We'll take care of you.\n\nIt has been a pleasure.\n\nMarc Stuart\nGig Gear Covers"", ""created_at"": ""2026-01-05T16:29:28-06:00"", ""author"": {""name"": ""Marc Stuart"", ""_links"": {""avatar"": {""href"": ""https://static.reverb-assets.com/assets/avatars/default-25153ae39d615d4d2253fd9be9e26489435c8e6fd165451ca51e90422c3d0881.jpg""}}}, ""authored"": true, ""photos"": []}"
+17,1,synthetic:c88a8204127490d93ab254fc,unknown,2026-01-05 17:11:04.000000,Thank you❤️🎼❤️,"{""body"": ""Thank you\u2764\ufe0f\ud83c\udfbc\u2764\ufe0f"", ""created_at"": ""2026-01-05T17:11:04-06:00"", ""author"": {""name"": ""Ellie Lee"", ""_links"": {""avatar"": {""href"": ""https://rvb-img.reverb.com/i/s--Xl760hS1--/u2kpz1t6vgqmgnjwk5ne.jpg""}}}, ""authored"": false, ""photos"": []}"
+18,1,synthetic:0bab9b23702ac23a63b3c61f,unknown,2026-01-03 01:19:38.000000,"Sorry about the delay . . .
+
+Hello Gary Collie
+
+All of our covers are custom-made upon placement of an order. Please review the following information:
+
+Fender Rumble 800 Combo
+Fabric: Choice Waterproof Fabric | No Padding
+Color: Pitch-Black
+
+Measurements: 
+Width: 19""
+Depth: 14""
+Height: 23.7""
+
+
+Top Amp Handle  Measurements:
+9""L X 1.25""W offset 7.5"" from rear of amplifier.
+
+Zipper Handle: No
+2-in-1 Pick-Pocket: No
+Priority Shipping: No
+
+We use the manufacturer's information to custom-make your cover upon order. If anything looks wrong or you have concerns after you receive the item, please reach out to us.
+
+Sincerely
+
+Marc Stuart","{""body"": ""Sorry about the delay . . .\n\nHello Gary Collie\n\nAll of our covers are custom-made upon placement of an order. Please review the following information:\n\nFender Rumble 800 Combo\nFabric: Choice Waterproof Fabric | No Padding\nColor: Pitch-Black\n\nMeasurements: \nWidth: 19\""\nDepth: 14\""\nHeight: 23.7\""\n\n\nTop Amp Handle  Measurements:\n9\""L X 1.25\""W offset 7.5\"" from rear of amplifier.\n\nZipper Handle: No\n2-in-1 Pick-Pocket: No\nPriority Shipping: No\n\nWe use the manufacturer's information to custom-make your cover upon order. If anything looks wrong or you have concerns after you receive the item, please reach out to us.\n\nSincerely\n\nMarc Stuart"", ""created_at"": ""2026-01-03T01:19:38-06:00"", ""author"": {""name"": ""Marc Stuart"", ""_links"": {""avatar"": {""href"": ""https://static.reverb-assets.com/assets/avatars/default-25153ae39d615d4d2253fd9be9e26489435c8e6fd165451ca51e90422c3d0881.jpg""}}}, ""authored"": true, ""photos"": []}"
+19,1,synthetic:25fd35bbc83ae59a0c02e1eb,unknown,2026-01-05 02:51:05.000000,"Good news! 
+Your custom-made cover is in our queue to be made.
+You will receive an automated email very soon with a tracking number if you haven't already.
+
+When a tracking # is issued, that means the cover is in our queue to be made and will be ready to ship soon. 
+It can then take 24 - 48 hours from when it is issued to when the cover will be picked up, scanned and updated on the USPS/UPS/ or FEDEX website. 
+
+This timing does not include holidays or weekends. However, it can also be updated before that as well.
+
+If you’ve received a previous email from us confirming size & customization options and you have not responded,  we encourage you to still do so, ASAP.  Especially if there is something wrong with the information we have. Thanks!
+
+We're glad we could help. If there are any problems at all with the cover, please contact us. We'll take care of you.
+
+It has been a pleasure.
+
+Marc Stuart
+Gig Gear Covers","{""body"": ""Good news! \nYour custom-made cover is in our queue to be made.\nYou will receive an automated email very soon with a tracking number if you haven't already.\n\nWhen a tracking # is issued, that means the cover is in our queue to be made and will be ready to ship soon. \nIt can then take 24 - 48 hours from when it is issued to when the cover will be picked up, scanned and updated on the USPS/UPS/ or FEDEX website. \n\nThis timing does not include holidays or weekends. However, it can also be updated before that as well.\n\nIf you\u2019ve received a previous email from us confirming size & customization options and you have not responded,  we encourage you to still do so, ASAP.  Especially if there is something wrong with the information we have. Thanks!\n\nWe're glad we could help. If there are any problems at all with the cover, please contact us. We'll take care of you.\n\nIt has been a pleasure.\n\nMarc Stuart\nGig Gear Covers"", ""created_at"": ""2026-01-05T02:51:05-06:00"", ""author"": {""name"": ""Marc Stuart"", ""_links"": {""avatar"": {""href"": ""https://static.reverb-assets.com/assets/avatars/default-25153ae39d615d4d2253fd9be9e26489435c8e6fd165451ca51e90422c3d0881.jpg""}}}, ""authored"": true, ""photos"": []}"
+20,1,synthetic:21106678b5512b798e8e1b06,unknown,2026-01-05 07:19:29.000000,Ok. Sounds good.,"{""body"": ""Ok. Sounds good."", ""created_at"": ""2026-01-05T07:19:29-06:00"", ""author"": {""name"": ""Gary Collie"", ""_links"": {""avatar"": {""href"": ""https://static.reverb-assets.com/assets/avatars/default-25153ae39d615d4d2253fd9be9e26489435c8e6fd165451ca51e90422c3d0881.jpg""}}}, ""authored"": false, ""photos"": []}"
+21,1,synthetic:bae672766db106760b0b6dc7,unknown,2026-01-03 01:16:15.000000,"Sorry about the delay . . .
+
+Hello Matthew Palomo
+
+All of our covers are custom-made upon placement of an order. Please review the following information:
+
+Acoustic C-Series B300C
+Fabric: Choice Waterproof Fabric | No Padding
+Color: Pitch-Black
+
+Measurements: 
+Width: 20.1""
+Depth: 15.4""
+Height: 28""
+
+Top Depth: 8""
+
+Top Amp Handle  Measurements:
+8.75""L X 1.25""W offset 0"" from rear of amplifier.
+
+Zipper Handle: No
+2-in-1 Pick-Pocket: No
+Priority Shipping: No
+
+We use the manufacturer's information to custom-make your cover upon order. If anything looks wrong or you have concerns after you receive the item, please reach out to us.
+
+Sincerely
+
+Marc Stuart","{""body"": ""Sorry about the delay . . .\n\nHello Matthew Palomo\n\nAll of our covers are custom-made upon placement of an order. Please review the following information:\n\nAcoustic C-Series B300C\nFabric: Choice Waterproof Fabric | No Padding\nColor: Pitch-Black\n\nMeasurements: \nWidth: 20.1\""\nDepth: 15.4\""\nHeight: 28\""\n\nTop Depth: 8\""\n\nTop Amp Handle  Measurements:\n8.75\""L X 1.25\""W offset 0\"" from rear of amplifier.\n\nZipper Handle: No\n2-in-1 Pick-Pocket: No\nPriority Shipping: No\n\nWe use the manufacturer's information to custom-make your cover upon order. If anything looks wrong or you have concerns after you receive the item, please reach out to us.\n\nSincerely\n\nMarc Stuart"", ""created_at"": ""2026-01-03T01:16:15-06:00"", ""author"": {""name"": ""Marc Stuart"", ""_links"": {""avatar"": {""href"": ""https://static.reverb-assets.com/assets/avatars/default-25153ae39d615d4d2253fd9be9e26489435c8e6fd165451ca51e90422c3d0881.jpg""}}}, ""authored"": true, ""photos"": []}"
+22,1,synthetic:e91facb474e2181ef890ce4e,unknown,2025-12-20 01:02:07.000000,"Hello Trish D
+
+All of our covers are custom-made upon placement of an order. Please review the following information:
+
+Yamaha P-Series 125
+Fabric: Choice Waterproof Fabric | No Padding
+Color: Pitch-Black
+
+Measurements: 
+Width: 52.25""
+Depth: 11.625""
+Height: 6.625""
+
+
+Music Rest Design: No
+Priority Shipping: No
+
+We use the manufacturer's information to custom-make your cover upon order. If anything looks wrong or you have concerns after you receive the item, please reach out to us.
+
+Sincerely
+
+Marc Stuart","{""body"": ""Hello Trish D\n\nAll of our covers are custom-made upon placement of an order. Please review the following information:\n\nYamaha P-Series 125\nFabric: Choice Waterproof Fabric | No Padding\nColor: Pitch-Black\n\nMeasurements: \nWidth: 52.25\""\nDepth: 11.625\""\nHeight: 6.625\""\n\n\nMusic Rest Design: No\nPriority Shipping: No\n\nWe use the manufacturer's information to custom-make your cover upon order. If anything looks wrong or you have concerns after you receive the item, please reach out to us.\n\nSincerely\n\nMarc Stuart"", ""created_at"": ""2025-12-20T01:02:07-06:00"", ""author"": {""name"": ""Marc Stuart"", ""_links"": {""avatar"": {""href"": ""https://static.reverb-assets.com/assets/avatars/default-25153ae39d615d4d2253fd9be9e26489435c8e6fd165451ca51e90422c3d0881.jpg""}}}, ""authored"": true, ""photos"": []}"
+23,1,synthetic:58818307d41175a3348a06df,unknown,2025-12-20 14:40:20.000000,"Good news! 
+Your custom-made cover is in our queue to be made.
+
+You will receive an automated email very soon with a tracking number if you haven't already.
+
+When a tracking # is issued, that means the cover is in our queue to be made and will be ready to ship soon. 
+
+It can then take 24 - 48 hours from when it is issued to when the cover will be picked up, scanned and updated on the USPS/UPS/ or FEDEX website. 
+
+This timing does not include holidays or weekends. However, it can also be updated before that as well.
+
+If you’ve received a previous email from us confirming size & customization options and you have not responded,  we encourage you to still do so, ASAP.  Especially if there is something wrong with the information we have. Thanks!
+
+We're glad we could help. If there are any problems at all with the cover, please contact us. We'll take care of you.
+
+It has been a pleasure.
+
+
+Marc Stuart
+Gig Gear Covers","{""body"": ""Good news! \nYour custom-made cover is in our queue to be made.\n\nYou will receive an automated email very soon with a tracking number if you haven't already.\n\nWhen a tracking # is issued, that means the cover is in our queue to be made and will be ready to ship soon. \n\nIt can then take 24 - 48 hours from when it is issued to when the cover will be picked up, scanned and updated on the USPS/UPS/ or FEDEX website. \n\nThis timing does not include holidays or weekends. However, it can also be updated before that as well.\n\nIf you\u2019ve received a previous email from us confirming size & customization options and you have not responded,  we encourage you to still do so, ASAP.  Especially if there is something wrong with the information we have. Thanks!\n\nWe're glad we could help. If there are any problems at all with the cover, please contact us. We'll take care of you.\n\nIt has been a pleasure.\n\n\nMarc Stuart\nGig Gear Covers"", ""created_at"": ""2025-12-20T14:40:20-06:00"", ""author"": {""name"": ""Marc Stuart"", ""_links"": {""avatar"": {""href"": ""https://static.reverb-assets.com/assets/avatars/default-25153ae39d615d4d2253fd9be9e26489435c8e6fd165451ca51e90422c3d0881.jpg""}}}, ""authored"": true, ""photos"": []}"
+24,1,synthetic:d68c9585ae3277127d97ec85,unknown,2025-12-19 12:20:34.000000,"Hello Herbart Rhay
+
+All of our covers are custom-made upon placement of an order. Please review the following information:
+
+Hammond XK 4
+Fabric: Choice Waterproof Fabric | No Padding
+Color: Pitch-Black
+
+Measurements: 
+Width: 39.52""
+Depth: 12.67""
+Height: 4.29""
+
+
+Music Rest Design: No
+Priority Shipping: No
+
+We use the manufacturer's information to custom-make your cover upon order. If anything looks wrong or you have concerns after you receive the item, please reach out to us.
+
+Sincerely
+
+Marc Stuart","{""body"": ""Hello Herbart Rhay\n\nAll of our covers are custom-made upon placement of an order. Please review the following information:\n\nHammond XK 4\nFabric: Choice Waterproof Fabric | No Padding\nColor: Pitch-Black\n\nMeasurements: \nWidth: 39.52\""\nDepth: 12.67\""\nHeight: 4.29\""\n\n\nMusic Rest Design: No\nPriority Shipping: No\n\nWe use the manufacturer's information to custom-make your cover upon order. If anything looks wrong or you have concerns after you receive the item, please reach out to us.\n\nSincerely\n\nMarc Stuart"", ""created_at"": ""2025-12-19T12:20:34-06:00"", ""author"": {""name"": ""Marc Stuart"", ""_links"": {""avatar"": {""href"": ""https://static.reverb-assets.com/assets/avatars/default-25153ae39d615d4d2253fd9be9e26489435c8e6fd165451ca51e90422c3d0881.jpg""}}}, ""authored"": true, ""photos"": []}"
+25,1,synthetic:186838be5fba59bb833209b6,unknown,2025-12-20 00:41:29.000000,"Good news! 
+Your custom-made cover is in our queue to be made.
+
+You will receive an automated email very soon with a tracking number if you haven't already.
+
+When a tracking # is issued, that means the cover is in our queue to be made and will be ready to ship soon. 
+
+It can then take 24 - 48 hours from when it is issued to when the cover will be picked up, scanned and updated on the USPS/UPS/ or FEDEX website. 
+
+This timing does not include holidays or weekends. However, it can also be updated before that as well.
+
+If you’ve received a previous email from us confirming size & customization options and you have not responded,  we encourage you to still do so, ASAP.  Especially if there is something wrong with the information we have. Thanks!
+
+We're glad we could help. If there are any problems at all with the cover, please contact us. We'll take care of you.
+
+It has been a pleasure.
+
+
+Marc Stuart
+Gig Gear Covers","{""body"": ""Good news! \nYour custom-made cover is in our queue to be made.\n\nYou will receive an automated email very soon with a tracking number if you haven't already.\n\nWhen a tracking # is issued, that means the cover is in our queue to be made and will be ready to ship soon. \n\nIt can then take 24 - 48 hours from when it is issued to when the cover will be picked up, scanned and updated on the USPS/UPS/ or FEDEX website. \n\nThis timing does not include holidays or weekends. However, it can also be updated before that as well.\n\nIf you\u2019ve received a previous email from us confirming size & customization options and you have not responded,  we encourage you to still do so, ASAP.  Especially if there is something wrong with the information we have. Thanks!\n\nWe're glad we could help. If there are any problems at all with the cover, please contact us. We'll take care of you.\n\nIt has been a pleasure.\n\n\nMarc Stuart\nGig Gear Covers"", ""created_at"": ""2025-12-20T00:41:29-06:00"", ""author"": {""name"": ""Marc Stuart"", ""_links"": {""avatar"": {""href"": ""https://static.reverb-assets.com/assets/avatars/default-25153ae39d615d4d2253fd9be9e26489435c8e6fd165451ca51e90422c3d0881.jpg""}}}, ""authored"": true, ""photos"": []}"
+26,1,synthetic:f59844411320efda951dbe1d,unknown,2025-12-20 07:04:48.000000,"Hi, the color and fabric are good to go. &nbsp;This keyboard does not travel so I don’t need padding. &nbsp;Thanks.Sent from my iPadOn Dec 19, 2025, at 10:41 PM, Reverb  wrote:﻿
+
+
+
+
+
+
+
+
+.order-item-row__cleared::before { content: ""✅""; }
+.seller-pushed-offer-table__offer-validity::before { content: ""🕓""; }
+
+
+
+
+
+
+
+
+
+
+
+Good news!
+Your custom-made cover is in our qu...
+
+
+Reply to this email to respond to Marc. Conversations remain open for 90 days.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+A Reverb user has sent you a message
+
+
+
+
+
+
+
+
+
+Hi Herbert,
+
+
+
+
+
+
+
+You have a new message on Reverb regarding your Hammond XK 4 Digital Piano Keyboard Dust Cover by DCFY!® | Customize Color, Fabric & Padding Options - Made in U.S.A..
+Simply reply to this email with your response, or create an account to respond to this message on Reverb.
+
+
+
+
+
+
+
+
+
+Received a suspicious message? Let us know.
+
+
+Reverb employees will never contact you via direct message through the Reverb messaging platform. When replying, avoid revealing personal information and be aware of potential scams.
+
+
+
+
+
+
+
+
+
+
+Report this message
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Contact Reverb Support
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Good news!
+Your custom-made cover is in our queue to be made.
+
+You will receive an automated email very soon with a tracking number if you haven't already.
+
+When a tracking # is issued, that means the cover is in our queue to be made and will be ready to ship soon.
+
+It can then take 24 - 48 hours from when it is issued to when the cover will be picked up, scanned and updated on the USPS/UPS/ or FEDEX website.
+
+This timing does not include holidays or weekends. However, it can also be updated before that as well.
+
+If you’ve received a previous email from us confirming size & customization options and you have not responded,  we encourage you to still do so, ASAP.  Especially if there is something wrong with the information we have. Thanks!
+
+We're glad we could help. If there are any problems at all with the cover, please contact us. We'll take care of you.
+
+It has been a pleasure.
+
+Marc Stuart
+Gig Gear Covers
+
+
+
+
+
+
+
+
+
+Marc Stuart
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+View message
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Privacy Policy
+·
+Terms of Service
+·
+© 2025 Reverb, Inc. All Rights Reserved.
+
+You are receiving this email based on your activity on Reverb.
+
+
+
+
+
+The Apple logo and the App Store are trademarks of Apple Inc. Google Play and the Google Play logo are trademarks of Google LLC.","{""body"": ""Hi, the color and fabric are good to go. &nbsp;This keyboard does not travel so I don\u2019t need padding. &nbsp;Thanks.Sent from my iPadOn Dec 19, 2025, at 10:41\u202fPM, Reverb  wrote:\ufeff\n\n\n\n\n\n\n\n\n.order-item-row__cleared::before { content: \""\u2705\""; }\n.seller-pushed-offer-table__offer-validity::before { content: \""\ud83d\udd53\""; }\n\n\n\n\n\n\n\n\n\n\n\nGood news!\nYour custom-made cover is in our qu...\n\n\nReply to this email to respond to Marc. Conversations remain open for 90 days.\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\nA Reverb user has sent you a message\n\n\n\n\n\n\n\n\n\nHi Herbert,\n\n\n\n\n\n\n\nYou have a new message on Reverb regarding your Hammond XK 4 Digital Piano Keyboard Dust Cover by DCFY!\u00ae | Customize Color, Fabric & Padding Options - Made in U.S.A..\nSimply reply to this email with your response, or create an account to respond to this message on Reverb.\n\n\n\n\n\n\n\n\n\nReceived a suspicious message? Let us know.\n\n\nReverb employees will never contact you via direct message through the Reverb messaging platform. When replying, avoid revealing personal information and be aware of potential scams.\n\n\n\n\n\n\n\n\n\n\nReport this message\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\nContact Reverb Support\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\nGood news!\nYour custom-made cover is in our queue to be made.\n\nYou will receive an automated email very soon with a tracking number if you haven't already.\n\nWhen a tracking # is issued, that means the cover is in our queue to be made and will be ready to ship soon.\n\nIt can then take 24 - 48 hours from when it is issued to when the cover will be picked up, scanned and updated on the USPS/UPS/ or FEDEX website.\n\nThis timing does not include holidays or weekends. However, it can also be updated before that as well.\n\nIf you\u2019ve received a previous email from us confirming size & customization options and you have not responded,  we encourage you to still do so, ASAP.  Especially if there is something wrong with the information we have. Thanks!\n\nWe're glad we could help. If there are any problems at all with the cover, please contact us. We'll take care of you.\n\nIt has been a pleasure.\n\nMarc Stuart\nGig Gear Covers\n\n\n\n\n\n\n\n\n\nMarc Stuart\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\nView message\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\nPrivacy Policy\n\u00b7\nTerms of Service\n\u00b7\n\u00a9 2025 Reverb, Inc. All Rights Reserved.\n\nYou are receiving this email based on your activity on Reverb.\n\n\n\n\n\nThe Apple logo and the App Store are trademarks of Apple Inc. Google Play and the Google Play logo are trademarks of Google LLC."", ""created_at"": ""2025-12-20T07:04:48-06:00"", ""author"": {""name"": ""Herbert Rhay"", ""_links"": {""avatar"": {""href"": ""https://static.reverb-assets.com/assets/avatars/default-25153ae39d615d4d2253fd9be9e26489435c8e6fd165451ca51e90422c3d0881.jpg""}}}, ""authored"": false, ""photos"": []}"
+27,1,synthetic:cd5305cf0a570230d4018382,unknown,2025-12-15 23:39:41.000000,Just paid-just double checking that you have the details-premium synthetic leather in black. Thanks! Ken,"{""body"": ""Just paid-just double checking that you have the details-premium synthetic leather in black. Thanks! Ken"", ""created_at"": ""2025-12-15T23:39:41-05:00"", ""author"": {""name"": ""Kenneth Rothfield"", ""_links"": {""avatar"": {""href"": ""https://static.reverb-assets.com/assets/avatars/default-25153ae39d615d4d2253fd9be9e26489435c8e6fd165451ca51e90422c3d0881.jpg""}}}, ""authored"": false, ""photos"": []}"
+28,1,synthetic:b6a89d46a71e9cc7c990633e,unknown,2025-12-15 23:59:08.000000,"Hello Kenneth Rothfield:
+
+Let us know if this all looks correct.
+
+All of our covers are custom-made upon placement of an order. Please review the following information:
+
+Fender Bassman 410 Neo Enclosure
+Fabric: Premium Synthetic Leather | No Padding
+Color: Pitch-Black
+
+Measurements: 
+Width: 26""
+Depth: 16.25""
+Height: 24.5""
+
+
+Side Amp Handle Measurements:
+9""H X 7""W
+The center of the handle is located down 6"" from the top of the amplifier.
+The center of the handle is also offset 8.75"" from the rear side panel of the cover.
+
+Zipper Handle: No
+2-in-1 Pick-Pocket: No
+Priority Shipping: No
+
+We use the manufacturer's information to custom-make your cover upon order. If anything looks wrong or you have concerns after you receive the item, please reach out to us.
+
+Sincerely
+
+Marc Stuart","{""body"": ""Hello Kenneth Rothfield:\n\nLet us know if this all looks correct.\n\nAll of our covers are custom-made upon placement of an order. Please review the following information:\n\nFender Bassman 410 Neo Enclosure\nFabric: Premium Synthetic Leather | No Padding\nColor: Pitch-Black\n\nMeasurements: \nWidth: 26\""\nDepth: 16.25\""\nHeight: 24.5\""\n\n\nSide Amp Handle Measurements:\n9\""H X 7\""W\nThe center of the handle is located down 6\"" from the top of the amplifier.\nThe center of the handle is also offset 8.75\"" from the rear side panel of the cover.\n\nZipper Handle: No\n2-in-1 Pick-Pocket: No\nPriority Shipping: No\n\nWe use the manufacturer's information to custom-make your cover upon order. If anything looks wrong or you have concerns after you receive the item, please reach out to us.\n\nSincerely\n\nMarc Stuart"", ""created_at"": ""2025-12-15T23:59:08-05:00"", ""author"": {""name"": ""Marc Stuart"", ""_links"": {""avatar"": {""href"": ""https://static.reverb-assets.com/assets/avatars/default-25153ae39d615d4d2253fd9be9e26489435c8e6fd165451ca51e90422c3d0881.jpg""}}}, ""authored"": true, ""photos"": []}"
+29,1,synthetic:6b83261cef5bd164138804d3,unknown,2025-12-16 09:05:10.000000,All that is correct – thanks!,"{""body"": ""All that is correct \u2013 thanks!"", ""created_at"": ""2025-12-16T09:05:10-05:00"", ""author"": {""name"": ""Kenneth Rothfield"", ""_links"": {""avatar"": {""href"": ""https://static.reverb-assets.com/assets/avatars/default-25153ae39d615d4d2253fd9be9e26489435c8e6fd165451ca51e90422c3d0881.jpg""}}}, ""authored"": false, ""photos"": []}"
+30,1,synthetic:7f866cc14c31e7b9b7b6bc3d,unknown,2025-12-16 23:06:41.000000,"Good news! 
+Your custom-made cover is in our queue to be made.
+
+You will receive an automated email very soon with a tracking number if you haven't already.
+
+When a tracking # is issued, that means the cover is in our queue to be made and will be ready to ship soon. 
+
+It can then take 24 - 48 hours from when it is issued to when the cover will be picked up, scanned and updated on the USPS/UPS/ or FEDEX website. 
+
+This timing does not include holidays or weekends. However, it can also be updated before that as well.
+
+If you’ve received a previous email from us confirming size & customization options and you have not responded,  we encourage you to still do so, ASAP.  Especially if there is something wrong with the information we have. Thanks!
+
+We're glad we could help. If there are any problems at all with the cover, please contact us. We'll take care of you.
+
+It has been a pleasure.
+
+
+Marc Stuart
+Gig Gear C","{""body"": ""Good news! \nYour custom-made cover is in our queue to be made.\n\nYou will receive an automated email very soon with a tracking number if you haven't already.\n\nWhen a tracking # is issued, that means the cover is in our queue to be made and will be ready to ship soon. \n\nIt can then take 24 - 48 hours from when it is issued to when the cover will be picked up, scanned and updated on the USPS/UPS/ or FEDEX website. \n\nThis timing does not include holidays or weekends. However, it can also be updated before that as well.\n\nIf you\u2019ve received a previous email from us confirming size & customization options and you have not responded,  we encourage you to still do so, ASAP.  Especially if there is something wrong with the information we have. Thanks!\n\nWe're glad we could help. If there are any problems at all with the cover, please contact us. We'll take care of you.\n\nIt has been a pleasure.\n\n\nMarc Stuart\nGig Gear C"", ""created_at"": ""2025-12-16T23:06:41-05:00"", ""author"": {""name"": ""Marc Stuart"", ""_links"": {""avatar"": {""href"": ""https://static.reverb-assets.com/assets/avatars/default-25153ae39d615d4d2253fd9be9e26489435c8e6fd165451ca51e90422c3d0881.jpg""}}}, ""authored"": true, ""photos"": []}"

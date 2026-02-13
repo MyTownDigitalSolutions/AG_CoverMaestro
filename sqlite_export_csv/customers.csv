@@ -1,0 +1,9 @@
+id,name,address,phone,first_name,last_name,buyer_email,marketplace_buyer_email,mobile_phone,work_phone,other_phone,billing_address1,billing_address2,billing_city,billing_state,billing_postal_code,billing_country,shipping_name,shipping_address1,shipping_address2,shipping_city,shipping_state,shipping_postal_code,shipping_country,source_marketplace,source_customer_id
+1,Test Customer,,,Test,User,test@example.com,,,,,,,,,,,,,,,,,,,
+2,Unknown,,9195911802,,,,buyer_mr5rwnz@private-relay.reverb.com,9195911802,,,,,,,,,Brandon Woods,5618 Preveza Place,,Raleigh,NC,27603,US,reverb,3164243
+3,Unknown,,6143021495,,,,buyer_y8kwmrw@private-relay.reverb.com,6143021495,,,,,,,,,Elizabeth Leedy,10010 Hamlin Boulevard Apt. 210,,Seminole,FL,33776-1042,US,reverb,278923
+4,Unknown,,+12766089118,,,,buyer_9pm39r5@private-relay.reverb.com,+12766089118,,,,,,,,,Gary Collie,12002 Collie Ln,,Sherwood,AR,72120,US,reverb,12326527
+5,Unknown,,6179684364,,,,buyer_jjyk9z9@private-relay.reverb.com,6179684364,,,,,,,,,Willens Jean-Jules,92 Harvard Ave,,Hyde Park,MA,02136,US,reverb,15200078
+6,Unknown,,+12104881051,,,,buyer_y8kj5kw@private-relay.reverb.com,+12104881051,,,,,,,,,Matthew Palomo,3787 Perrin Central Blvd,Apt 525,San Antonio,TX,78217,US,reverb,15465507
+7,Unknown,,9492284250,,,,buyer_w9z96jz@private-relay.reverb.com,9492284250,,,,,,,,,Travis Yokota,130 Canvas,,Irvine,CA,92620-2226,US,reverb,15448967
+8,Unknown,,8034767712,,,,buyer_74r7j39@private-relay.reverb.com,8034767712,,,,,,,,,Nathaniel  Rembert,594 Westmoreland Rd,,Columbia,SC,29229-6868,US,reverb,8749637

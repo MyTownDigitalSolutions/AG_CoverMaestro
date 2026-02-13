@@ -1,0 +1,5 @@
+variant_key,profit_cents
+choice_no_padding,2000
+premium_no_padding,3000
+choice_padded,2500
+premium_padded,3500
