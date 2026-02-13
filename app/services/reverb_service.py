@@ -13,7 +13,9 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional, Dict, List, Any, Tuple
 from dataclasses import dataclass, field
 
-import requests
+import urllib.error
+import urllib.parse
+import urllib.request
 from sqlalchemy.orm import Session
 
 from app.models.core import MarketplaceCredential
@@ -252,19 +254,24 @@ def fetch_reverb_orders(
             params["created_end_date"] = cutoff_end.strftime("%Y-%m-%dT%H:%M:%SZ")
         
         try:
-            response = requests.get(orders_url, headers=headers, params=params, timeout=30)
-            
-            if response.status_code == 401:
+            query = urllib.parse.urlencode(params)
+            request_url = f"{orders_url}?{query}" if query else orders_url
+            req = urllib.request.Request(request_url, headers=headers, method="GET")
+            with urllib.request.urlopen(req, timeout=30) as response:
+                status_code = response.getcode()
+                body_bytes = response.read()
+
+            if status_code == 401:
                 raise ReverbAPIError("Unauthorized - invalid or expired token", 401)
-            
-            if response.status_code == 403:
+
+            if status_code == 403:
                 raise ReverbAPIError("Forbidden - insufficient permissions", 403)
-            
-            if not response.ok:
-                error_text = response.text[:200] if response.text else f"HTTP {response.status_code}"
-                raise ReverbAPIError(f"Reverb API error: {error_text}", response.status_code)
-            
-            data = response.json()
+
+            if status_code >= 400:
+                error_text = body_bytes.decode(errors="ignore")[:200] if body_bytes else f"HTTP {status_code}"
+                raise ReverbAPIError(f"Reverb API error: {error_text}", status_code)
+
+            data = json.loads(body_bytes.decode()) if body_bytes else {}
             
             # Reverb returns orders in an "orders" array
             page_orders = data.get("orders", [])
@@ -311,9 +318,12 @@ def fetch_reverb_orders(
             if len(page_orders) < per_page:
                 break
                 
-        except requests.exceptions.Timeout:
+        except TimeoutError:
             raise ReverbAPIError("Request timeout", 408)
-        except requests.exceptions.RequestException as e:
+        except urllib.error.HTTPError as e:
+            error_text = e.read().decode(errors="ignore")[:200] if hasattr(e, "read") else str(e)
+            raise ReverbAPIError(f"Reverb API error: {error_text}", e.code)
+        except urllib.error.URLError as e:
             raise ReverbAPIError(f"Connection error: {str(e)}", 0)
     
     pages_fetched = page - 1
