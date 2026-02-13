@@ -403,7 +403,7 @@ export default function EbayExportPage() {
         if (unconfiguredRoles.length > 0) {
             const roleNames = unconfiguredRoles.map(key => {
                 const cfg = roleConfigs.find(c => normalizeRoleKey(c.role) === key)
-                return cfg?.label || key // Fallback to key if label missing
+                return cfg?.display_name || key // Fallback to key if label missing
             }).join(', ')
             setVariationError(`Please select at least one color for the following roles: ${roleNames}`)
             return
@@ -423,8 +423,7 @@ export default function EbayExportPage() {
                 const colorIds = selectedColourSurchargeIdsByRole[roleKey] || []
 
                 // Get color objects for sorting
-                const selectedColors = materials
-                    .flatMap(m => m.surcharges)
+                const selectedColors = (surchargesByRole[roleKey] || [])
                     .filter(s => colorIds.includes(s.id))
 
                 // Sort colors: PBK first, then alphabetical by colour name
@@ -438,8 +437,8 @@ export default function EbayExportPage() {
 
                 // Determine padding configurations
                 // Use settings based on valid abbreviation availability
-                const canNoPad = !!(config?.ebay_sku_abbrev_no_padding && config.ebay_sku_abbrev_no_padding.trim().length > 0 && config.ebay_sku_abbrev_no_padding.trim().length <= 3)
-                const canWithPad = !!(config?.ebay_sku_abbrev_with_padding && config.ebay_sku_abbrev_with_padding.trim().length > 0 && config.ebay_sku_abbrev_with_padding.trim().length <= 3)
+                const canNoPad = !!(config?.sku_abbrev_no_padding && config.sku_abbrev_no_padding.trim().length > 0 && config.sku_abbrev_no_padding.trim().length <= 3)
+                const canWithPad = !!(config?.sku_abbrev_with_padding && config.sku_abbrev_with_padding.trim().length > 0 && config.sku_abbrev_with_padding.trim().length <= 3)
 
                 const paddingConfigs: boolean[] = []
                 // Priority: No Pad, then With Pad
@@ -850,7 +849,6 @@ export default function EbayExportPage() {
                     {/* Color dropdowns - one per selected role */}
                     {selectedRoleKeys.map((roleKey) => {
                         const roleConfig = roleConfigs.find(rc => normalizeRoleKey(rc.role) === roleKey)
-                        const assignment = resolveActiveAssignmentForRole(roleKey)
                         const colors = surchargesByRole[roleKey] || []
 
                         return (

@@ -5,7 +5,7 @@ import {
     TableContainer, TableHead, TableRow, Chip, Stack, TextField,
     Dialog, DialogTitle, DialogContent, DialogActions,
     CircularProgress, Switch, FormControlLabel,
-    Autocomplete, List, ListItem, ListItemText, ListItemButton, ListItemSecondaryAction
+    Autocomplete, List, ListItem, ListItemText, ListItemButton
 } from '@mui/material'
 import CloudUploadIcon from '@mui/icons-material/CloudUpload'
 import AddIcon from '@mui/icons-material/Add'
@@ -28,7 +28,6 @@ import type { EquipmentType } from '../types'
 // --- Component: Valid Values Section in Modal ---
 
 function ValidValuesSection({
-    fieldName,
     values,
     valuesDetailed,
     selectedValue,
@@ -40,7 +39,6 @@ function ValidValuesSection({
     onAddValue,
     savingAdd
 }: {
-    fieldName: string,
     values: string[],
     valuesDetailed?: ReverbValidValueDetailed[],
     selectedValue?: string | null,
@@ -435,7 +433,6 @@ function FieldDetailsModal({
                     <Divider />
 
                     <ValidValuesSection
-                        fieldName={field.field_name}
                         values={field.allowed_values}
                         valuesDetailed={field.allowed_values_detailed}
                         selectedValue={field.selected_value}

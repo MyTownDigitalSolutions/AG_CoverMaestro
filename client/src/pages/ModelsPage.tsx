@@ -22,8 +22,6 @@ import ArrowDownwardIcon from '@mui/icons-material/ArrowDownward'
 import RemoveIcon from '@mui/icons-material/Remove'
 import LocalShippingIcon from '@mui/icons-material/LocalShipping'
 import SaveIcon from '@mui/icons-material/Save'
-import CloseIcon from '@mui/icons-material/Close'
-import BoltIcon from '@mui/icons-material/Bolt'
 import PricingAdminPanel from '../components/PricingAdminPanel'
 
 
@@ -838,9 +836,6 @@ export default function ModelsPage() {
   })
 
   // Row Edit State
-  const [editingRowId, setEditingRowId] = useState<number | null>(null)
-  const [editingRowData, setEditingRowData] = useState({ asin: '', notes: '' })
-  const [rowSaveError, setRowSaveError] = useState<string | null>(null)
 
   // Bulk Edit Columns Mode
   const [isBulkEditMode, setIsBulkEditMode] = useState(false)
@@ -1088,77 +1083,7 @@ export default function ModelsPage() {
     }
   }
 
-  const startRowEdit = (model: Model) => {
-    const amazon = model.marketplace_listings?.find(l => l.marketplace === 'amazon')?.external_id || ''
-    setEditingRowId(model.id)
-    setEditingRowData({ asin: amazon, notes: model.model_notes || '' })
-    setRowSaveError(null)
-  }
-
-  const cancelRowEdit = () => {
-    setEditingRowId(null)
-    setEditingRowData({ asin: '', notes: '' })
-    setRowSaveError(null)
-  }
-
-  const saveRowEdit = async (id: number) => {
-    try {
-      const model = models.find(m => m.id === id)
-      if (!model) return
-
-      // Prepare Payload via cloning
-      let listings = model.marketplace_listings ? [...model.marketplace_listings] : []
-      // Handle ASIN
-      if (editingRowData.asin.trim()) {
-        listings = listings.filter(l => l.marketplace !== 'amazon')
-        listings.push({ marketplace: 'amazon', external_id: editingRowData.asin.trim() } as any)
-      } else {
-        listings = listings.filter(l => l.marketplace !== 'amazon')
-      }
-
-      const payload = {
-        ...model,
-        model_notes: editingRowData.notes || null,
-        marketplace_listings: listings
-      }
-
-      await modelsApi.update(id, payload)
-
-      // Advance
-      // Recalculate index from current filtered list
-      const currentIndex = filteredModels.findIndex(m => m.id === id)
-      if (currentIndex >= 0 && currentIndex < filteredModels.length - 1) {
-        const nextModel = filteredModels[currentIndex + 1]
-        startRowEdit(nextModel)
-      } else {
-        cancelRowEdit()
-      }
-
-      loadData()
-
-    } catch (e) {
-      console.error("Row save failed", e)
-      setRowSaveError("Save failed")
-    }
-  }
-
   // Selection Handlers
-  const handleSelectAll = (checked: boolean) => {
-    if (checked) {
-      const ids = new Set(filteredModels.map(m => m.id))
-      setSelectedModelIds(ids)
-    } else {
-      setSelectedModelIds(new Set())
-    }
-  }
-
-  const handleSelectRow = (id: number, checked: boolean) => {
-    const newSelected = new Set(selectedModelIds)
-    if (checked) newSelected.add(id)
-    else newSelected.delete(id)
-    setSelectedModelIds(newSelected)
-  }
-
   // Bulk Apply
   const handleBulkApply = async () => {
     // Validation

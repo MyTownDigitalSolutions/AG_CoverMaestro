@@ -139,7 +139,7 @@ export default function MarketplaceOrdersPage() {
     const [editModelId, setEditModelId] = useState<number | null>(null)
     const [lineEditLoading, setLineEditLoading] = useState(false)
     const [lineEditError, setLineEditError] = useState<string | null>(null)
-    const [modelSearchQuery, setModelSearchQuery] = useState('')
+    const [, setModelSearchQuery] = useState('')
     const [modelSearchResults, setModelSearchResults] = useState<ModelSearchResult[]>([])
     const [modelSearchLoading, setModelSearchLoading] = useState(false)
 
@@ -791,7 +791,7 @@ export default function MarketplaceOrdersPage() {
                                     <Typography variant="subtitle1" fontWeight="bold" gutterBottom>
                                         Addresses
                                     </Typography>
-                                    {orderDetail.addresses.map((addr, idx) => (
+                                    {orderDetail.addresses.map((addr) => (
                                         <Box key={addr.id} sx={{ mb: 2, pl: 2 }}>
                                             <Typography variant="body2" color="primary">
                                                 <strong>{addr.address_type.toUpperCase()}</strong>
