@@ -9,6 +9,7 @@ dependencies = [
     "openpyxl>=3.1.5",
     "pandas>=2.3.3",
     "pydantic>=2.12.5",
+    "python-dotenv>=1.0.0",
     "python-multipart>=0.0.21",
     "sqlalchemy>=2.0.45",
     "uvicorn>=0.38.0",
