@@ -1,0 +1,35 @@
+# Phase XX Completion — <Project Name>
+Date: YYYY-MM-DD
+Status: Complete-Not-Approved | Approved
+
+## 1) Inputs Used
+- <links/files/notes>
+
+## 2) Outputs Produced
+- Created:
+  - <file>
+- Updated:
+  - <file>
+- Skipped:
+  - <file>
+
+## 3) Decisions Locked In
+- <decision>
+- <decision>
+
+## 4) Open Questions / Follow-ups
+- <question or TODO>
+
+## 5) Scope Boundary
+### In scope (this phase)
+- <item>
+### Out of scope (this phase)
+- <item>
+
+## 6) Next Phase
+Next phase: Phase XX
+Approval required phrase(s):
+- "Approve Phase XX"
+- "Proceed to Phase YY" (if applicable)
+
+STOP

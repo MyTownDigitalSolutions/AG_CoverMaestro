@@ -4,7 +4,7 @@ This document defines the **high-level rules, architecture, and intent**
 for the AG_CoverMaestro repository.
 
 It is written for **humans** and as an entry point for **agentic AI systems**.
-Detailed and enforceable AI rules live in the `.ai/` directory.
+Detailed and enforceable AI rules live in the `.agent/` directory.
 
 ---
 
@@ -16,14 +16,14 @@ The authoritative rules for agentic AI behavior do **not** live only in this fil
 
 They live here:
 
-.ai/
+.agent/
 agent_rules.md ← authoritative AI behavior rules
 DO_NOT_TOUCH.md ← locked areas (must ask before changing)
 pricing_audit_checklist.md ← validation checklist for pricing logic
 
 
 If there is any conflict:
-> **`.ai/agent_rules.md` always wins.**
+> **`.agent/agent_rules.md` always wins.**
 
 ---
 
@@ -122,7 +122,7 @@ Pricing uses a **two-layer persistence model**:
 - Records prior pricing values when costs/prices change
 - Immutable audit trail
 
-(Exact behavior is defined in `.ai/agent_rules.md`.)
+(Exact behavior is defined in `.agent/agent_rules.md`.)
 
 ---
 
@@ -167,11 +167,30 @@ The correct action is:
 
 ## 11) Where to Look Next
 
-- Authoritative AI rules → `.ai/agent_rules.md`
-- Locked areas → `.ai/DO_NOT_TOUCH.md`
-- Pricing validation → `.ai/pricing_audit_checklist.md`
+- Authoritative AI rules → `.agent/agent_rules.md`
+- Locked areas → `.agent/DO_NOT_TOUCH.md`
+- Pricing validation → `.agent/pricing_audit_checklist.md`
 
 ---
 
 This file is intentionally stable.
-Detailed operational rules belong in `.ai/`.
+Detailed operational rules belong in `.agent/`.
+
+---
+
+## 12) Governance Boundary (Phase 00R)
+
+**Effective Date:** 2026-02-14
+**Governance Model:** Phase → Chunk Execution (Strict)
+
+**Legacy Declaration:**
+All code, artifacts, and configurations existing prior to Phase 00R are designated as **"Pre-Governance Legacy State."**
+- **Legacy Baseline Information:**
+  - **Tech Stack:** Python 3.11, FastAPI, Vite, React 18, SQLite
+  - **Topology:** Vercel (Frontend), Railway (Backend), Supabase (Production)
+  - **Pre-Governance Commit:** HEAD (at time of Phase 00R adoption)
+
+**Boundary Rule:**
+From this point forward, NO changes may be made to the repository without a governed **Phase** and **Chunk**.
+Legacy code is accepted *as-is* and may only be modified via governed execution.
+
