@@ -1,7 +1,6 @@
 from logging.config import fileConfig
 
-import os
-from dotenv import load_dotenv
+
 
 from sqlalchemy import engine_from_config
 from sqlalchemy import pool
@@ -19,13 +18,10 @@ from app.models.templates import (
     EquipmentTypeProductType, AmazonCustomizationTemplate
 )
 
-# Load .env from repo root for local runs (Railway ignores .env and injects env vars)
-load_dotenv()
-
-config = context.config
+from app.config import settings
 
 # Prefer env vars over alembic.ini sqlalchemy.url so migrations target the right DB
-db_url = os.getenv("MIGRATION_DATABASE_URL") or os.getenv("DATABASE_URL")
+db_url = settings.MIGRATION_DATABASE_URL or settings.DATABASE_URL
 if db_url:
     # Alembic's configparser treats % as interpolation, which breaks URL-encoded passwords (%3F, etc).
     # Escape % so configparser doesn't try to interpolate.

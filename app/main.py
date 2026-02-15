@@ -1,15 +1,17 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.database import engine, Base
+from app.config import settings
 from app.api import (
     manufacturers, series, equipment_types, models,
     materials, suppliers, customers, orders,
-    pricing, templates, enums, export, design_options, settings, ebay_templates, variation_skus, material_role_configs, material_role_assignments, ebay_variations,
+    pricing, templates, enums, export, design_options, settings as api_settings, ebay_templates, variation_skus, material_role_configs, material_role_assignments, ebay_variations,
     marketplace_orders, marketplace_credentials, reverb_orders,
     reverb_templates, ebay_export
 )
 from app.services.storage_policy import ensure_storage_dirs_exist, cleanup_tmp_dir
 
+# Ensure database tables exist (though migrations are preferred)
 Base.metadata.create_all(bind=engine)
 
 
@@ -65,7 +67,7 @@ app.include_router(templates.router, prefix="/api")
 app.include_router(enums.router, prefix="/api")
 app.include_router(export.router, prefix="/api")
 app.include_router(design_options.router, prefix="/api")
-app.include_router(settings.router, prefix="/api")
+app.include_router(api_settings.router, prefix="/api")
 app.include_router(ebay_templates.router, prefix="/api")
 app.include_router(variation_skus.router, prefix="/api")
 app.include_router(material_role_configs.router, prefix="/api")
